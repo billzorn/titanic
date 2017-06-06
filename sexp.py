@@ -57,10 +57,11 @@ def impl_by_pairs(op, conj):
 def impl_all_pairs(op, conj):
     def impl(*args):
         if len(args) > 2:
-            pairs = []
-            for i in range(len(args)-1):
-                pairs += [op(args[i], args[j]) for j in range(i+1,len(args))]
-            return conj(*pairs)
+            # pairs = []
+            # for i in range(len(args)-1):
+            #     pairs += [op(args[i], args[j]) for j in range(i+1,len(args))]
+            # return conj(*pairs)
+            return conj(*(op(args[i], args[j]) for i in range(len(args)-1) for j in range(i+1,len(args))))
         else:
             return op(*args)    
     return impl

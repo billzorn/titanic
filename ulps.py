@@ -19,7 +19,7 @@ RNE = z3.RoundNearestTiesToEven()
 default_fplo = FP16
 default_fphi = FP32
 default_maxulps = (2 ** (default_fplo.ebits() + default_fplo.sbits())) - 1
-default_mpfr_ctx = 512
+default_mpfr_ctx = 4096
 
 # Convenient sort conversion.
 def fp_up(fpnum):
@@ -507,9 +507,15 @@ fpc_hamming_3_6 = '''(FPCore
  (- (/ 1 (sqrt x)) (/ 1 (sqrt (+ x 1)))))
 '''
 
+fpc_turbine = '''(FPCore
+ (v w r)
+ :name "Rosa's TurbineBenchmark"
+ :cite (darulova-kuncak-2014)
+ (- (- (+ 3 (/ 2 (* r r))) (/ (* (* 0.125 (- 3 (* 2 v))) (* (* (* w w) r) r)) (- 1 v))) 4.5))'''
+
 if __name__ == '__main__':
     # go
-    fpc = fpc2
+    fpc = fpc_turbine
     print(fpc)
     run_more(fpc, 3)
 
