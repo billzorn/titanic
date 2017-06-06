@@ -62,11 +62,21 @@ def get_brackets(e):
     return e.value()
 
 operations = {
-    '+' : ast.Add,
-    '-' : ast.Sub,
-    '*' : ast.Mul,
-    '/' : ast.Div,
-    
+    ast.Add.name : ast.Add,
+    ast.Sub.name : ast.Sub,
+    ast.Mul.name : ast.Mul,
+    ast.Div.name : ast.Div,
+    ast.Sqrt.name : ast.Sqrt,
+    ast.Neg.name : ast.Neg,
+    ast.LT.name : impl_by_pairs(ast.LT, ast.And),
+    ast.GT.name : impl_by_pairs(ast.GT, ast.And),
+    ast.LEQ.name : impl_by_pairs(ast.LEQ, ast.And),
+    ast.GEQ.name : impl_by_pairs(ast.GEQ, ast.And),
+    ast.EQ.name : impl_by_pairs(ast.EQ, ast.And),
+    ast.NEQ.name : impl_all_pairs(ast.NEQ, ast.And),
+    ast.And.name : ast.And,
+    ast.Or.name : ast.Or,
+    ast.Not.name : ast.Not,
 }
 
 def parse_expr(e):
@@ -80,43 +90,136 @@ def parse_expr(e):
         if op in {'if', 'let', 'while'}:
             raise ValueError('op {} is unimplemented'.format(op))
         # build ast
-    
+        elif op in operations:
+            return operations[op](*(parse_expr(child) for child in es))
+        else:
+            raise ValueError('unknown operation {}'.format(op))
+    else:
+        if is_number(e):
+            return ast.Val(get_number(e))
+        elif is_constant(e):
+            return ast.Val(get_constant(e))
+        elif is_symbol(e):
+            return ast.Var(get_symbol(e))
+        else:
+            raise ValueError('what is this? {}'.format(repr(e)))
+
+class FPCore(object):
+    def __init__(self, s):
+        core = sexpdata.loads(s)
+        if len(core) < 3 or core[0] != sexpdata.Symbol('FPCore'):
+            raise ValueError('invalid FPCore: expected ( FPCore (symbol*) property* expr )')
+        core_args = core[1]
+        core_expr = core[-1]
+        core_properties = core[2:-1]
+        self.core = core
+
+        if len(core_properties) % 2 != 0:
+            raise ValueError('invalid properties: missing key or value')
+        self.properties = {}
+        for i in range(0, len(core_properties), 2):
+            if not is_symbol(core_properties[i]):
+                raise ValueError('invalid properties: key {} is not a symbol'.format(core_properties[i]))
+            k = get_symbol(core_properties[i])
+            if not k.startswith(':'):
+                raise ValueError('invalid properties: key {} does not start with ":"'.format(k))
+            self.properties[k[1:]] = core_properties[i+1]
+
+        self.args = tuple(get_symbol(e) for e in core_args)
+        self.expr = parse_expr(core_expr)
+        self.name = self.properties['name'] if 'name' in self.properties else None
+        self.pre = parse_expr(self.properties['pre']) if 'pre' in self.properties else None
+
+    def __str__(self):
+        return 'FPCore( {}\n{}{}{}\n)'.format(
+            self.args,
+            ':name "' + self.name + '"\n' if self.name else '',
+            ':pre ' + str(self.pre) + '\n' if self.pre else '',
+            self.expr)
+
+    def __repr__(self):
+        return 'FPCore(' + repr(sexpdata.dumps(self.core)) + ')'
 
 
+if __name__ == '__main__':
+    examples = [
+'''(FPCore (x)
+ :name "NMSE example 3.1"
+ :cite (hamming-1987)
+ :pre (>= x 0)
+ (- (sqrt (+ x 1)) (sqrt x)))
+''',
+'''(FPCore (x)
+ :name "NMSE example 3.6"
+ :cite (hamming-1987)
+ :pre (>= x 0)
+ (- (/ 1 (sqrt x)) (/ 1 (sqrt (+ x 1)))))
+''',
+'''(FPCore (x)
+ :name "NMSE problem 3.3.1"
+ :cite (hamming-1987)
+ :pre (!= x 0)
+ (- (/ 1 (+ x 1)) (/ 1 x)))
+''',
+'''(FPCore (x)
+  :name "NMSE problem 3.3.3"
+  :cite (hamming-1987)
+  :pre (!= x 0)
+  (+ (- (/ 1 (+ x 1)) (/ 2 x)) (/ 1 (- x 1))))
+''',
+'''(FPCore (a b c)
+ :name "NMSE p42, positive"
+ :cite (hamming-1987)
+ :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
+ (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
+''',
+'''(FPCore (a b c)
+ :name "NMSE p42, negative"
+ :cite (hamming-1987)
+ :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
+ (/ (- (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
+''',
+'''(FPCore (a b2 c)
+ :name "NMSE problem 3.2.1, positive"
+ :cite (hamming-1987)
+ :pre (and (>= (* b2 b2) (* a c)) (!= a 0))
+ (/ (+ (- b2) (sqrt (- (* b2 b2) (* a c)))) a))
+''',
+'''(FPCore (a b2 c)
+  :name "NMSE problem 3.2.1, negative"
+  :cite (hamming-1987)
+  :pre (and (>= (* b2 b2) (* a c)) (!= a 0))
+  (/ (- (- b2) (sqrt (- (* b2 b2) (* a c)))) a))
+''',
+]
+    import z3
+    import random
+    sort = 32
+    z3sort = z3.FPSort(8, 24)
+    for s in examples:
+        core = FPCore(s)
+        print(core)
+        rargs = {a : str(random.random()) for a in core.args}
+        print(rargs)
+        native_ok = core.pre(rargs)
+        native = core.expr(rargs) if native_ok else None
+        print('  native : {} : {}'.format(native_ok, native))
+        np_ok = core.pre.apply_np(rargs, sort)
+        np_output = core.expr.apply_np(rargs, sort)
+        print('  numpy({}) : {} : {}'.format(sort, np_ok, np_output))
+        mp_ok = core.pre.apply_mp(rargs, sort)
+        mp_output = core.expr.apply_mp(rargs, sort)
+        print('  mpfr({}) : {} : {}'.format(sort, mp_ok, mp_output))
 
-s = '''(FPCore 
- (x)
- :name "Rosa's Benchmark"
- :cite (darulova-kuncak-2014)
- (- (* 0.954929658551372 x) (* 0.12900613773279798 (* (* [x x]) x))))
-'''
-e = sexpdata.loads(s)
+        z3_pre_r = core.pre.apply_z3(rargs, sort)
+        print(z3_pre_r)
+        z3_expr_r = core.expr.apply_z3(rargs, sort)
+        print(z3_expr_r)
 
-print(e)
+        z3args = {a : z3.FP(a, z3sort) for a in core.args}
+        z3_pre = core.pre.apply_z3(z3args, sort)
+        print(z3_pre)
+        z3_expr = core.expr.apply_z3(z3args, sort)
+        print(z3_expr)
 
-x = sexpdata.dumps(e)
-
-print(x)
-
-print(' '.join(x.strip().split()) == ' '.join(s.strip().split()))
-
-
-
-
-
-
-
-
-print('\n\n\n\n')
-
-
-
-class Foo(object):
-    name = 'foofoo'
-
-    def __init__(self):
-        print(self.__class__)
-        self.iname = self.__class__.name
-
-class Bar(Foo):
-    name = 'barbar'
+        print()
