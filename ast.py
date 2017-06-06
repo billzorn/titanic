@@ -6,7 +6,7 @@ import gmpy2
 from gmpy2 import mpfr
 import z3
 
-default_rm = z3.RoundNearestTiesToEven()
+import mathlib
 
 # main expression classes
 
@@ -44,54 +44,26 @@ class Expr(object):
             operation = type(self).op_mp if type(self).op_mp else type(self).op
             return operation(*(child.apply_mp(argctx, sort, toplevel=False) for child in self.data))
 
-    def apply_z3(self, argctx, sort, rm = default_rm):
+    def apply_z3(self, argctx, sort, rm = mathlib.default_rm):
         operation = type(self).op_z3 if type(self).op_z3 else type(self).op
         return operation(*(child.apply_z3(argctx, sort, rm=rm) for child in self.data))
 
 class ExprRM(Expr):
     name = 'ExprRM'
 
-    def apply_z3(self, argctx, sort, rm = default_rm):
+    def apply_z3(self, argctx, sort, rm = mathlib.default_rm):
         operation = type(self).op_z3 if type(self).op_z3 else type(self).op
         return operation(rm, *(child.apply_z3(argctx, sort, rm=rm) for child in self.data))
 
 # base case values
 
-# THERE WILL BE MORE STRING PARSING CODE HERE, AT LEAST FOR Z3 1.25*(2**42) STRINGS
-def fp_val(data):
-    return float(data)
-
-np_sorts = {
-    16 : np.float16,
-    32 : np.float32,
-    64 : np.float64,
-    #128 : np.float128,
-}
-def np_val(data, sort):
-    return np_sorts[sort](data)
-
-def mp_val(data, sort):
-    return mpfr(data, precision=sort)
-
-z3_sorts = {
-    16 : z3.FPSort(5, 11),
-    32 : z3.FPSort(8, 24),
-    64 : z3.FPSort(11, 53),
-    #128 : 
-}
-def z3_val(data, sort):
-    if sort in z3_sorts:
-        return z3.FPVal(data, z3_sorts[sort])
-    else:
-        return z3.FPVal(data, sort)
-
 class Val(Expr):
     name = 'Val'
     nargs = 1
-    op = fp_val
-    op_np = np_val
-    op_mp = mp_val
-    op_z3 = z3_val
+    op = mathlib.fp_val
+    op_np = mathlib.np_val
+    op_mp = mathlib.mp_val
+    op_z3 = mathlib.z3_val
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -109,7 +81,7 @@ class Val(Expr):
     def apply_mp(self, argctx, sort, toplevel = True):
         return type(self).op_mp(self.data, sort)
 
-    def apply_z3(self, argctx, sort, rm = default_rm):
+    def apply_z3(self, argctx, sort, rm = mathlib.default_rm):
         return type(self).op_z3(self.data, sort)
 
 # strings as values are special: they cause a call to the value constructor
@@ -137,7 +109,7 @@ class Var(Val):
         else:
             return v
 
-    def apply_z3(self, argctx, sort, rm = default_rm):
+    def apply_z3(self, argctx, sort, rm = mathlib.default_rm):
         v = argctx[self.data]
         if isinstance(v, str):
             return type(self).op_z3(v, sort)
