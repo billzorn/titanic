@@ -1,8 +1,7 @@
-from numbers import Number
 import math
 import operator
 
-import sexpdata
+from sexpdata import sexpdata
 import z3
 import gmpy2
 from gmpy2 import mpfr
@@ -98,14 +97,14 @@ needs_z3_rm = {
 def is_parens(e):
     return isinstance(e, list)
 def is_number(e):
-    return isinstance(e, Number)
+    return isinstance(e, sexpdata.Number)
 def is_constant(e):
     return isinstance(e, Sym) and str(e) in fpcore_constants
 def is_symbol(e):
     return isinstance(e, Sym) and str(e) not in fpcore_constants
 
 def get_number(e):
-    return float(e)
+    return float(e.value())
 def get_constant(e):
     x = fpcore_constants[str(e)]
     if x is None:

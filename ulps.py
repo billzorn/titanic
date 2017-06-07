@@ -434,6 +434,7 @@ def run_all(expr, nargs, ulps, min_input = None, min_open = True, max_input = No
     run_and_report(expr, with_NaN(expr, nargs,
                                    min_input=min_input, min_open=min_open, max_input=max_input, max_open=max_open,),
                    nargs, 'NaN')
+    return
     run_and_report(expr, with_Inf(expr, nargs,
                                    min_input=min_input, min_open=min_open, max_input=max_input, max_open=max_open,),
                    nargs, 'Inf')
@@ -513,11 +514,20 @@ fpc_turbine = '''(FPCore
  :cite (darulova-kuncak-2014)
  (- (- (+ 3 (/ 2 (* r r))) (/ (* (* 0.125 (- 3 (* 2 v))) (* (* (* w w) r) r)) (- 1 v))) 4.5))'''
 
+fpc_hamming_3_1 = '''(FPCore
+ (x)
+ :name "NMSE example 3.1"
+ :cite (hamming-1987)
+ :pre (>= x 0)
+ (- (sqrt (+ x 1)) (sqrt x)))
+'''
+
+
 if __name__ == '__main__':
     # go
-    fpc = fpc_turbine
+    fpc = fpc_hamming_3_1
     print(fpc)
-    run_more(fpc, 3)
+    run_more(fpc, 1)
 
 
 # # test ulps
