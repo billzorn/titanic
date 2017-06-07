@@ -29,6 +29,7 @@ def get_arghi(s):
 reslo = 'lo_result'
 reshi = 'hi_result'
 resexp = 'expected_result'
+resulps = 'ulps'
 
 # conversion of strings to values
 
@@ -76,7 +77,7 @@ def get_z3fp(v):
 # symbolic units in the last place difference
 
 def z3fp_to_ordinal(x, sort, rm = default_rm):
-    z3_sort = z3_sorts[sort] if sort in z3_sorts else sort
+    z3sort = z3_sort(sort)
     x_prime = z3.fpToFP(rm, x, z3sort) if x.sort() != z3sort else x 
     return z3.If(x_prime < z3.FPVal(0.0, x_prime.sort()),
                  -z3.fpToIEEEBV(-x_prime),

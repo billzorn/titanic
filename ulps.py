@@ -522,12 +522,34 @@ fpc_hamming_3_1 = '''(FPCore
  (- (sqrt (+ x 1)) (sqrt x)))
 '''
 
+fpc_hamming_3_1_herbie = '''(FPCore
+ (x)
+ :name "NMSE example 3.1, herbie"
+ :cite (hamming-1987)
+ :pre (>= x 0)
+ (/ 1 (+ (sqrt (+ x 1)) (sqrt x))))
+'''
+
+ex1 = '''(FPCore
+ (x)
+ :name "herbie ex1"
+ :pre (>= x -1)
+ (- (sqrt (+ 1 x)) 1))
+'''
+
+ex1_fixed = '''(FPCore
+ (x)
+ :name "herbie ex1 fixed"
+ :pre (>= x -1)
+ (/ x (+ (sqrt (+ 1 x)) 1)))
+'''
+
 
 if __name__ == '__main__':
     # go
-    fpc = fpc_hamming_3_1
+    fpc = fpc_turbine
     print(fpc)
-    run_more(fpc, 1)
+    run_more(fpc, 3)
 
 
 # # test ulps

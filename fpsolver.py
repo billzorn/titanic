@@ -36,6 +36,8 @@ def describe_results(results):
             body += '\n  low precision: {}'.format(mathlib.get_z3fp(model[mathlib.reslo]))
             body += '\n  exp precision: {}'.format(mathlib.get_z3fp(model[mathlib.resexp]))
             body += '\n  full precision: {}'.format(mathlib.get_z3fp(model[mathlib.reshi]))
+            if mathlib.resulps in model:
+                body += '\n    {} ulps'.format(model[mathlib.resulps])
         else:
             body = '  {}'.format(status)
         footer = '  statistics:'
@@ -73,6 +75,9 @@ class FPSolver(object):
         self.lo_result = z3.FP(mathlib.reslo, self.lo)
         self.hi_result = z3.FP(mathlib.reshi, self.hi)
         self.expected_result = z3.FP(mathlib.resexp, self.lo)
+
+        # ulps
+        self.ulps_result = z3.BitVec(mathlib.resulps, self.lo.ebits() + self.lo.sbits())
 
         self.solver = z3.Solver()
         self._init_solver()
@@ -162,25 +167,110 @@ class FPSolver(object):
 
     def check_NaN(self, lo = None):
         if lo is True:
-            descr = 'r=NaN, c!=NaN'
+            descr = 'r=NaN'
             e = z3.And(z3.fpIsNaN(self.lo_result), z3.Not(z3.fpIsNaN(self.expected_result)))
         elif lo is False:
-            descr = 'r!=NaN, c=NaN'
+            descr = 'c=NaN'
             e = z3.And(z3.Not(z3.fpIsNaN(self.lo_result)), z3.fpIsNaN(self.expected_result))
         else:
-            descr = 'r=NaN, c!=NaN OR r!=Nan, c=NaN'
+            descr = 'NaN'
             e = z3.Or(z3.And(z3.fpIsNaN(self.lo_result), z3.Not(z3.fpIsNaN(self.expected_result))),
                       z3.And(z3.Not(z3.fpIsNaN(self.lo_result)), z3.fpIsNaN(self.expected_result)))
         return self.query(descr, e)
 
+    def check_Inf(self, lo = None, neg = None):
+        if lo is True:
+            if neg is True:
+                descr = 'r=-Inf'
+                e = z3.And(z3.fpIsInf(self.lo_result), z3.fpIsNegative(self.lo_result), z3.Not(self.expected_result == self.lo_result))
+            elif neg is False:
+                descr = 'r=+Inf'
+                e = z3.And(z3.fpIsInf(self.lo_result), z3.fpIsPositive(self.lo_result), z3.Not(self.expected_result == self.lo_result))
+            else:
+                descr = 'r=Inf'
+                e = z3.And(z3.fpIsInf(self.lo_result), z3.Not(self.expected_result == self.lo_result))
+        elif lo is False:
+            if neg is True:
+                descr = 'c=-Inf'
+                e = z3.And(z3.fpIsInf(self.expected_result), z3.fpIsNegative(self.expected_result), z3.Not(self.expected_result == self.lo_result))
+            elif neg is False:
+                descr = 'c=+Inf'
+                e = z3.And(z3.fpIsInf(self.expected_result), z3.fpIsPositive(self.expected_result), z3.Not(self.expected_result == self.lo_result))
+            else:
+                descr = 'c=Inf'
+                e = z3.And(z3.fpIsInf(self.expected_result), z3.Not(self.expected_result == self.lo_result))            
+        else:
+            if neg is True:
+                descr = '-Inf'
+                e = z3.And(z3.Or(z3.And(z3.fpIsInf(self.lo_result), z3.fpIsNegative(self.lo_result)),
+                                 z3.And(z3.fpIsInf(self.expected_result), z3.fpIsNegative(self.expected_result))),
+                           z3.Not(self.expected_result == self.lo_result))
+            elif neg is False:
+                descr = '+Inf'
+                e = z3.And(z3.Or(z3.And(z3.fpIsInf(self.lo_result), z3.fpIsPositive(self.lo_result)),
+                                 z3.And(z3.fpIsInf(self.expected_result), z3.fpIsPositive(self.expected_result))),
+                           z3.Not(self.expected_result == self.lo_result))
+            else:
+                descr = 'Inf'
+                e = z3.And(z3.Or(z3.fpIsInf(self.lo_result), z3.fpIsInf(self.expected_result)),
+                           z3.Not(self.expected_result == self.lo_result))
+        self.query(descr, e)
+
+    def check_zero(self, neg = None):
+        if neg is True:
+            descr = 'r=-0.0, c=+0.0'
+            e = z3.And(self.lo_result == z3.FPVal('-0.0', self.lo), self.expected_result == z3.FPVal('+0.0', self.lo))
+        elif neg is False:
+            descr = 'r=+0.0, c=-0.0'
+            e = z3.And(self.lo_result == z3.FPVal('+0.0', self.lo), self.expected_result == z3.FPVal('-0.0', self.lo))
+        else:
+            descr = 'r=-0.0, c=+0.0 OR r=+0.0, c=-0.0'
+            e = z3.Or(z3.And(self.lo_result == z3.FPVal('+0.0', self.lo), self.expected_result == z3.FPVal('-0.0', self.lo)),
+                      z3.And(self.lo_result == z3.FPVal('-0.0', self.lo), self.expected_result == z3.FPVal('+0.0', self.lo)))
+        self.query(descr, e)
+
+    def _init_ulps(self):
+        # we have independent checks for all bad behavior involving NaN, Inf, and mismatched signs at zero.
+        # ulps inherently treat +-zero the same, so we only need explicit conditions about NaN and Inf
+        self.solver.add(z3.Not(z3.fpIsNaN(self.lo_result)),
+                        z3.Not(z3.fpIsNaN(self.expected_result)),
+                        z3.Not(z3.fpIsInf(self.lo_result)),
+                        z3.Not(z3.fpIsInf(self.expected_result)),
+                        self.ulps_result == mathlib.z3ulps(self.lo_result, self.expected_result, self.lo, rm=self.rm))
+
+    def check_ulps(self, ulps):
+        descr = '>= {:d} ulps'.format(ulps)
+        e = z3.UGE(self.ulps_result, z3.BitVecVal(ulps, self.ulps_result.size()))
+        self._init_ulps()
+        self.query_reset(descr, e)
+
+    def ulps_incremental_begin(self):
+        self._init_ulps()
+
+    def ulps_incremental(self, ulps):
+        descr = 'incremental >= {:d} ulps'.format(ulps)
+        e = z3.UGE(self.ulps_result, z3.BitVecVal(ulps, self.ulps_result.size()))
+        self.query_push(descr, e)
+
+    def ulps_incremental_end(self):
+        self.solver.reset()
+        self._init_solver()
+
+
 if __name__ == '__main__':
     from fpcore import FPCore
-    
-    core_str = '''(FPCore (x)
+
+    simple_core_str = '''(FPCore (x)
  :name "NMSE example 3.1"
  :cite (hamming-1987)
  :pre (>= x 0)
  (- (sqrt (+ x 1)) (sqrt x)))
+'''
+    core_str = '''(FPCore (a b c)
+ :name "NMSE p42, positive"
+ :cite (hamming-1987)
+ :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
+ (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
 '''
     core = FPCore(core_str)
 
@@ -200,5 +290,60 @@ if __name__ == '__main__':
     s2.check_NaN(lo = False)
     s2.describe_last()
 
-    s.check_NaN(lo = False)
+    s.check_Inf(lo = True, neg = True)
+    s.describe_last()
+    s.check_Inf(lo = True, neg = False)
+    s.describe_last()
+    s.check_Inf(lo = True, neg = None)
+    s.describe_last()
+    s.check_Inf(lo = False, neg = True)
+    s.describe_last()
+    s.check_Inf(lo = False, neg = False)
+    s.describe_last()
+    s.check_Inf(lo = False, neg = None)
+    s.describe_last()
+    s.check_Inf(lo = None, neg = True)
+    s.describe_last()
+    s.check_Inf(lo = None, neg = False)
+    s.describe_last()
+    s.check_Inf(lo = None, neg = None)
+    s.describe_last()
+
+    s.check_zero(neg = True)
+    s.describe_last()
+    s.check_zero(neg = False)
+    s.describe_last()
+    s.check_zero(neg = None)
+    s.describe_last()
+
+    s.check_ulps(10)
+    s.describe_last()
+    s.check_ulps(1000)
+    s.describe_last()
+    s.check_ulps(33000)
+    s.describe_last()
+    s.check_ulps(65535)
+    s.describe_last()
+
+    s.timeout_ms = 5000
+    s.ulps_incremental_begin()
+    s.ulps_incremental(1)
+    s.describe_last()
+
+    s.timeout_ms = 40000
+    s.ulps_incremental(1)
+    s.describe_last()    
+    s.ulps_incremental(10)
+    s.describe_last()
+    s.ulps_incremental(1000)
+    s.describe_last()
+    s.ulps_incremental(2000)
+    s.describe_last()
+    s.ulps_incremental(10000)
+    s.describe_last()
+    s.ulps_incremental(33000)
+    s.describe_last()
+    s.ulps_incremental_end()
+
+    s.check_Inf()
     s.describe_last()
