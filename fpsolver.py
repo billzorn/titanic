@@ -1,5 +1,6 @@
 import os
 import time
+import multiprocessing
 
 import z3
 # z3.set_option(max_args=10000000, max_lines=1000000, max_depth=10000000, max_visited=1000000)
@@ -11,6 +12,49 @@ from fpcore import FPCore
 default_lo_sort = 16
 default_hi_sort = 32
 
+# To allow for more understandable debug messages
+class SolverID(object):
+    def __init__(self):
+        self.i = 0
+        self.lock = multiprocessing.Lock()
+    def __call__(self):
+        with self.lock:
+            self.i += 1
+            return self.i
+# Use this instance
+sid = SolverID()
+
+# Standardized variable names inside solver formulas. Also used to extract
+# values from the models.
+arglo_str = '_arglo_'
+arghi_str = '_arghi_'
+argsep = '_'
+
+def arglo(i, name):
+    return '{}{:d}{}{}'.format(arglo_str, i, argsep, name)
+def arghi(i, name):
+    return '{}{:d}{}{}'.format(arghi_str, i, argsep, name)
+
+def get_arglo(s):
+    if s.startswith(arglo_str):
+        i_name = s[len(arglo_str):].split(argsep)
+        return int(i_name[0]), argsep.join(i_name[1:])
+    else:
+        return None, None
+def get_arghi(s):
+    if s.startswith(arghi_str):
+        i_name = s[len(arghi_str):].split(argsep)
+        return int(i_name[0]), argsep.join(i_name[1:])
+    else:
+        return None, None
+
+reslo = 'lo_result'
+reshi = 'hi_result'
+resexp = 'expected_result'
+resulps = 'ulps'
+
+# Serialize all information to dicts of strings so that results can be passed
+# around easily in a multiprocess environment.
 def serialize_model(m):
     return {str(k) : str(m[k]) for k in m}
 
@@ -50,6 +94,9 @@ class FPSolver(object):
     def __init__(self, core, lo_sort = default_lo_sort, hi_sort = default_hi_sort,
                  rm = mathlib.default_rm, timeout_ms = 3600 * 1000, verbosity = 1):
 
+        # debug identification
+        self.sid = sid()
+        
         # don't change these after initialization
         if not isinstance(core, FPCore):
             self.core = FPCore(core)

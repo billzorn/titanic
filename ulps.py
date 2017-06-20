@@ -333,6 +333,7 @@ def model_get_fp_by_name(m, name):
 def run_query(s, descr):
     if descr:
         print('Running check for {}.'.format(descr))
+    print(s.sexpr())
     return s.check()
 
 def report_query(query, descr, m, nargs, stats, elapsed):

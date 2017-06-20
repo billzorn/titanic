@@ -1,35 +1,11 @@
+import struct
+
 import numpy as np
 import gmpy2
 from gmpy2 import mpfr
 import z3
 
 default_rm = z3.RoundNearestTiesToEven()
-
-# variable names
-
-arglo_str = '_arglo_'
-arghi_str = '_arghi_'
-argsep = '_'
-def arglo(i, name):
-    return '{}{:d}{}{}'.format(arglo_str, i, argsep, name)
-def arghi(i, name):
-    return '{}{:d}{}{}'.format(arghi_str, i, argsep, name)
-def get_arglo(s):
-    if s.startswith(arglo_str):
-        i_name = s[len(arglo_str):].split(argsep)
-        return int(i_name[0]), argsep.join(i_name[1:])
-    else:
-        return None, None
-def get_arghi(s):
-    if s.startswith(arghi_str):
-        i_name = s[len(arghi_str):].split(argsep)
-        return int(i_name[0]), argsep.join(i_name[1:])
-    else:
-        return None, None
-reslo = 'lo_result'
-reshi = 'hi_result'
-resexp = 'expected_result'
-resulps = 'ulps'
 
 # conversion of strings to values
 
@@ -88,3 +64,88 @@ def z3ulps(x, y, sort, rm = default_rm):
     yz = z3fp_to_ordinal(y, sort, rm=rm)
     return z3.If(xz < yz, yz - xz, xz - yz)
 
+
+def np_bytes_to_int(a):
+    n = 0
+    for i, x in enumerate(a):
+        n |= x << (i * 8)
+    return n
+
+def np_int_to_bytes(x, n):
+    return bytes((x >> i) & 0xff for i in range(0, n, 8))
+
+def npfp_to_int(x):
+    return np_bytes_to_int(x.tobytes())
+
+def npfp_from_int(x):
+    pass
+
+def bitstr(x, sort):
+    npsort = np_sorts[sort]
+    bits = ('{:0' + str(sort) + 'b}').format(np_bytes_to_int(npsort(x).tobytes()))
+    exp_mant = 1 + np.finfo(npsort).nexp
+    return ','.join((bits[:1], bits[1:exp_mant], bits[exp_mant:]))
+
+# 0.0 and -0.0 both map to 0
+def npfp_to_ordinal(x, sort):
+    npsort = np_sorts[sort]
+    x_prime = npsort(x)
+    if x_prime < 0.0:
+        return -np_bytes_to_int((-x_prime).tobytes())
+    else:
+        return np_bytes_to_int(np.abs(x_prime).tobytes())
+
+# cannot produce -0.0
+def npfp_from_ordinal(x, sort):
+    npsort = np_sorts[sort]
+    if x < 0:
+        return None
+
+def npulps(x, y, sort):
+    xz = npfp_to_ordinal(x, sort)
+    yz = npfp_to_ordinal(y, sort)
+    if xz < yz:
+        return yz - xz
+    else:
+        return xz - yz
+
+def npfp_next(x, sort):
+    npsort = np_sorts[sort]
+    return np.nextafter(npsort(x), npsort('+inf'))
+
+def npfp_next0(x, sort):
+    npsort = np_sorts[sort]
+    if npsort(x) == npsort('0.0') and np.copysign(npsort('1.0'), npsort(x)) == npsort('-1.0'):
+        return npsort('0.0')
+    return np.nextafter(npsort(x), npsort('+inf'))
+
+def npfp_prev(x, sort):
+    npsort = np_sorts[sort]
+    return np.nextafter(npsort(x), npsort('-inf'))
+
+def npfp_prev0(x, sort):
+    npsort = np_sorts[sort]
+    if npsort(x) == npsort('0.0') and np.copysign(npsort('1.0'), npsort(x)) == npsort('1.0'):
+        return npsort('-0.0')
+    return np.nextafter(npsort(x), npsort('-inf'))
+
+
+def npfp_tiny(sort):
+    npsort = np_sorts[sort]
+    return np.finfo(npsort).tiny
+
+def npfp_inf(sort):
+    npsort = np_sorts[sort]
+    return npsort('inf')
+
+def npfp_one(sort):
+    npsort = np_sorts[sort]
+    return npsort('1.0')
+
+def npfp_zero(sort):
+    npsort = np_sorts[sort]
+    return npsort('0.0')
+
+if __name__ == '__main__':    
+    print(npulps(0, 1, 16))
+    print(npulps(-1, 0, 32))
