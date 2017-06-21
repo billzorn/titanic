@@ -122,7 +122,16 @@ Floating point numbers represent real numbers, but since they do so with bitvect
 
 To compute ulps, it can be helpful to think of floating point numbers as ordinals. By ``ordinals,'' we mean signed integers that impose a total ordering on all real values representable with a given floating point representation, not true ordinal numbers in the mathematical sense. A similar notion is presented in the IEEE 754 standard's totalOrder predicate. The floating point numbers of a given representation with finite $w$ and $p$ form a finite set, so a total ordering is possible, and indeed that is what totalOrder provides. However that ordering has some properties that might be surprising: all of the NaNs are ordered, which is necessary for a total ordering but perhaps not helpful, and more problematically -0.0 is less than +0.0, even though both have the same real value.
 
-Several different orderings are possible: we choose one that is hopefully the least surprising for implementers, and discuss
+Several different orderings are possible: we choose one that is hopefully the least surprising for implementers, and discuss how it compares to the totalOrder predicate and other alternatives. We implement this ordering with a function $ord(F)$, which takes a floating point number $F$ in some known representation (such as a packed bitvector or implicit triple with $w$ and $p$ known) and produces a positive or negative integer. We would like $ord(F)$ to have the following properties:
+
+\begin{enumerate}
+ \item If $real(F) = 0.0$, $ord(F) = 0$. I.e. all floating point numbers that represent a real value of zero (including ones that have a negative sign) have an order of 0.
+ \item If $real(F_1) = real(F_2)$, then $ord(F_1) = ord(F_2)$. I.e. floating point numbers that represent the same real value have the same order.
+ \item If $real(F_1) < real(F_2)$, then $ord(F_1) < ord(F_2)$. I.e. floating point numbers are ordered by their real value.
+ \item If $real(F_1) = -\infty$ and $real(F_2) = \infty$, then $ord(F_2) - ord(F_1)$ is equal to the number of distinct real values the representation can represent (including the two infinities, but not including any NaNs) minus one. I.e. the ordinals are tightly packed: there is no positive $i$ such that there is no $F$ that has $ord(F)$ and yet there is some $F'$ that has $ord(F') > i$, or analogously for negative $i$.
+ \item If $real(F)$ is NaN, then $ord(F)$ is undefined. In general, the order of a floating point number that represents NaN cannot be relied upon to be meaningful, so the safest thing to do is refuse to assign it meaning. An implementation might want to do something in this case like return an error, or extend the notion of an ordinal to include NaN and return that. In some cases there might be implementation-specific meaning, which we will discuss in more detail.
+\end{enumerate}
+
 
 \begin{figure}[h!]
  \centering
