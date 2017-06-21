@@ -63,14 +63,15 @@ To take advantage of these redundancies and eliminate a bit from the representat
 
 To take advantage of this, the IEEE 754 standard records the first bit of $C$ implicitly as the otherwise unused case where $E$ is 0, and keeps track of the rest of $C$ as a shorter bitvector $T$ of size $p - 1$. If $E$ is 0, the corresponding $C$ is $concat(\texttt{0b0}, T)$, otherwise $C$ is $concat(\texttt{0b1}, T)$. This ensures that all numbers are represented with their canonical representation: correctly converting a bitvector from the IEEE 754 binary interchange format to the explicit triple representation of Equation \ref{eq:real3} will always yield a canonical result. The only real number with multiple canonical representations is 0, which can take either sign.
 
-Equation \ref{eq:real4} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}).
+Equation \ref{eq:real4a} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}). Going the other way is trivial, as we can always recover $T$ from $C$ by dropping the first bit, as in Equation \ref{eq:real4b}.
 
-\begin{align} \label{eq:real4}
- C =
+\begin{align} 
+ C &= \label{eq:real4a}
  \begin{cases}
   concat(\texttt{0b0}, T) & uint(E) = 0 \\
   concat(\texttt{0b1}, T) & uint(E) \neq 0
- \end{cases}
+ \end{cases} \\
+ T &= extract(p-2, 0, C)  \label{eq:real4b}
 \end{align}
 
 The explicit mapping from IEEE 754 bitvectors to reals is given in Equation \ref{eq:real5},
@@ -119,7 +120,9 @@ The floating point theory defined as part of the SMT-LIB standard specifies floa
 
 Floating point numbers represent real numbers, but since they do so with bitvectors, they have some properties that bear more resemblance to integers. For example, it might be more important to know how close two real values $r1$ and $r2$ are, not in terms of their real difference $r2 - r1$, but in terms of the number of representable floating point numbers that exist between them. This quantity, ulps, is entirely dependent on the properties of the floating point representation in question and independent of the properties of real numbers.
 
-To compute ulps, it can be helpful to think of floating point numbers as ordinals---signed integers that impose a total ordering on all real values representable with a given representation. A similar notion is presented in the IEEE 754 standard's totalOrder predicate. The floating point numbers of a given representation with finite $w$ and $p$ form a finite set, so a total ordering is possible, and indeed that is what totalOrder provides. However that ordering has some properties that might be surprising: all of the NaNs are ordered, which is necessary for a total ordering but perhaps not helpful, and more problematically -0.0 is less than +0.0, even though both have the same real value.
+To compute ulps, it can be helpful to think of floating point numbers as ordinals. By ``ordinals,'' we mean signed integers that impose a total ordering on all real values representable with a given floating point representation, not true ordinal numbers in the mathematical sense. A similar notion is presented in the IEEE 754 standard's totalOrder predicate. The floating point numbers of a given representation with finite $w$ and $p$ form a finite set, so a total ordering is possible, and indeed that is what totalOrder provides. However that ordering has some properties that might be surprising: all of the NaNs are ordered, which is necessary for a total ordering but perhaps not helpful, and more problematically -0.0 is less than +0.0, even though both have the same real value.
+
+Several different orderings are possible: we choose one that is hopefully the least surprising for implementers, and discuss
 
 \begin{figure}[h!]
  \centering
