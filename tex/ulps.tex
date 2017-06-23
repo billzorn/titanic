@@ -63,15 +63,14 @@ To take advantage of these redundancies and eliminate a bit from the representat
 
 To take advantage of this, the IEEE 754 standard records the high bit of $C$ implicitly as the otherwise unused case where $E$ is 0, and keeps track of the rest of $C$ as a shorter bitvector $T$ of size $p - 1$. If $E$ is 0, the corresponding $C$ is $concat(\texttt{0b0}, T)$, otherwise $C$ is $concat(\texttt{0b1}, T)$. This ensures that all numbers are represented with their canonical representation: correctly converting a bitvector from the IEEE 754 binary interchange format to the explicit triple representation of Equation \ref{eq:real3} will always yield a canonical result. The only real number with multiple canonical representations is 0, which can take either sign.
 
-Equation \ref{eq:real4a} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}). Going the other way is trivial, as we can always recover $T$ from $C$ by dropping the high bit, as in Equation \ref{eq:real4b}.
+Equation \ref{eq:real4} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}). Going the other way might seem trivial, as we can simply recover $T$ from $C$ by dropping the high bit, but this only works if the bit we drop has the right value for the imlicit bit, i.e. if $C$ comes from a floating point number in canonical form.
 
-\begin{align} 
- C &= \label{eq:real4a}
+\begin{align} \label{eq:real4}
+ C &=
  \begin{cases}
   concat(\texttt{0b0}, T) & uint(E) = 0 \\
   concat(\texttt{0b1}, T) & uint(E) \neq 0
- \end{cases} \\
- T &= extract(p-2, 0, C)  \label{eq:real4b}
+ \end{cases}
 \end{align}
 
 The explicit mapping from IEEE 754 bitvectors to reals is given in Equation \ref{eq:real5},
