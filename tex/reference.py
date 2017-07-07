@@ -25,6 +25,17 @@ class BV(object):
         else:
             return self.i
     sint = property(_sint)
+
+    # count leading zeros
+    def _clz(self):
+        i = self.i
+        n = 0
+        msb_mask = 1 << (self.n - 1)
+        while i & msb_mask == 0:
+            i = i << 1
+            n = n + 1
+        return n
+    clz = property(_clz)
     
     def __init__(self, i, n):
         assert isinstance(i, int)
