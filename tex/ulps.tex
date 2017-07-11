@@ -65,6 +65,7 @@ To take advantage of this, the IEEE 754 standard records the high bit of $C$ imp
 
 Equation \ref{eq:real4} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}). Going the other way might seem trivial, as we can simply recover $T$ from $C$ by dropping the high bit, but this only works if the bit we drop has the right value for the imlicit bit, i.e. if $C$ comes from a floating point number in canonical form.
 
+THIS IS WRONG IT MESSES UP INFINITIES SEE PYTHON CODE
 \begin{align} \label{eq:real4}
  C &=
  \begin{cases}
@@ -75,6 +76,7 @@ Equation \ref{eq:real4} defines conversion between formats; in combination with 
 
 The explicit mapping from IEEE 754 bitvectors to reals is given in Equation \ref{eq:real5},
 
+THIS IS WRONG SEE THE PYTHON CODE
 \begin{align} \label{eq:real5}
  real(S, E, T) =
  \begin{cases}
