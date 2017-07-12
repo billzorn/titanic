@@ -16,22 +16,36 @@
 
 \section{Introduction}
 
-Floating point is tricky to get right. The idea is simple: represent real numbers with a discrete representation (such as bitvectors) that can be stored and manipulated by a computer. However, the implementation tends to be complex. Sometimes the difference between $\frac{4}{3}$ and 1.3333334 is unimportant, but sometimes it is the difference between the right answer and the wrong answer, or between SAT and UNSAT. The problem is that while they represent familiar real numbers, floating point numbers are incredibly specific: if you really want the right answer, you have to be precise down to the last bit. And for most people, a vector of bits like \texttt{0b00111111101010101010101010101011} is much less intuitive to think about than the real (rational, even) number $\frac{4}{3}$.
+Floating point is tricky to get right. The idea is simple: represent real numbers with a discrete representation (such as bitvectors) that can be stored and manipulated by a computer. However, the implementation tends to be complex. Sometimes the difference between $\frac{4}{3}$ and 1.3333334 is unimportant, but sometimes it is the difference between the right answer and the wrong answer, or between SAT and UNSAT. The problem is that while they represent familiar, continuous real numbers, their discrete representation makes floating point numbers incredibly specific. If you really want the right answer, you have to be precise down to the last bit. And for most people, a vector of bits like \texttt{0b00111111101010101010101010101011} is much less intuitive to think about than the real (rational, even) number $\frac{4}{3}$.
 
 The purpose of this text is to write down in a convient place, once and for all, the meaning of floating point numbers, and formalize the conversions between various bitvector representations that are compatible with the IEEE 754-2008 standard \cite{ieee754-2008} but general enough to be useful in other applications, for example when devising constraints for SMT solvers. This way, the author (and any other interested implementers) can avoid the trouble of having to write all this down again, or risk getting a bit of it wrong.
+
+\section{Notation}
+
+In order to be as general as possible, we will try to express relationships and algorithms as simple (integer or real) arithmetic rather than pseudocode which might be more ambiguous to interpret or port to a particular programming language. Since we are often working with bitvectors, it is essential that we define a formal bitvector arithmetic as well.
+
+We treat a bitvector as a nonempty zero-indexed array of bits that each are 0 or 1. We write bitvectors out as the prefix \texttt{0b} followed by the contents of the array, from most significant to least significant. A bitvector has size $n$ equal to the number of bits in the array, which must be at least one. The least significant bit is assigned index 0, and the most significant is assigned index $n-1$.
+
+Bitvectors support the following operations: getting the size, conversion to and from integers, indexing, concatenation and extraction, shifting left and right, and comparison for equality. Every bitvector has a fixed size: $size(\texttt{0b1}) = 1$, while $size(\texttt{0b01}) = 2$. Conversion to and from integers is straightforward and follows the typical binary representation of integers. $uint$ is an unsigned conversion, such that $uint(\texttt{0b101}) = 5$, while $sint$ is a signed conversion, such that $sint(\texttt{0b101}) = -3$. Indexing is written out using square brackets, and always yields 0 or 1: $\texttt{0b01}[0] = 1$, while $\texttt{0b01}[1] = 0$.
+
+Concatenation simply joins two bitvectors together, with the first argument being placed in the more significant bits of the output: $concat(\texttt{0b01}, \texttt{0b101}) = \texttt{0b01101}$. The syntax for extraction is slightly more complex. The first two arguments are the start and end indices, both inclusive, with the first argument being the more significant (i.e. larger). Extraction yields a new bitvector with the bits between these indices: $extract(3, 2, \texttt{0b01101}) = \texttt{0b11}$. For a bitvector $x$ of size $n$, $extract(n-1, 0, x) = x$ is the identity operation, while for all indices $0 \leq i < n$, $uint(extract(i, i, x)) = x[i]$; the application of $uint$ is necessary because extraction yields a bitvector while standard indexing yields an integer.
+
+Shifting is written infix with the right argument always being an integer. An arithmetic right shift is written as $\texttt{>>}$, while a logical one is $\texttt{>>>}$: $\texttt{0b1101} \;\texttt{>>}\; 1 = \texttt{0b1110}$, $\texttt{0b1101} \;\texttt{>>>}\; 1 = \texttt{0b0110}$, and $\texttt{0b1101} \;\texttt{<<}\; 1 = \texttt{0b1010}$. Shifts greater than the size are handled normally; they just produce uninteresting results such as $\texttt{0b1101} \;\texttt{>>}\; 8 = \texttt{0b1111}$ and $\texttt{0b1101} \;\texttt{<<}\; 257 = \texttt{0b0000}$. Comparison is only for equality (or inequality), and only allowed between bitvectors of the same size. To determine ordering, bitvectors can be converted to the appropriate integer representation.
+
+These conventions should translate naturally to most languages and efficient representations, such as C integers. The concatenation and extraction semantics are motivated by and identical to those used in the Rosette language \cite{rosette}.
 
 \section{Reals as Bitvectors}
 
 A floating point number is a triple of three things: a sign $s$, an exponent $e$, and a significand $c$. $s$ is either 0 or 1 and $e$ is a positive or negative integer. We would like $c$ to represent a fractional value; to do this, we can make it a positive integer and keep around some notion of precision $p$ which records the number of digits in $c$, as represented in a base $b$. The real value represented by a number in this representation is given in Equation \ref{eq:real}.
 
 \begin{align} \label{eq:real}
- (-1)^s \times b^e \times (c \times b^{1 - p})
+ real(s, e, c, b, p) = (-1)^s \times b^e \times (c \times b^{1 - p})
 \end{align}
 
-For lack of another widely supported alternative, we will specialize our discussion here to the IEEE 754 (binary) standard. We fix $b = 2$, and commit to representing $c$ as a bitvector $C$ of size $p$. As we can see in Equation \ref{eq:real2}, this eliminates all terms not explicit in our triple, assuming we can take the size of a bitvector and perform arithmetic on it as an unsigned integer.
+For lack of another widely supported alternative, we will specialize our discussion here to the IEEE 754 (binary) standard. We fix $b = 2$, and commit to representing $c$ as a bitvector $C$ of size $p$. As we can see in Equation \ref{eq:real2}, this eliminates the extra terms $b$ and $p$ so that our representation is really a triple.
 
 \begin{align} \label{eq:real2}
- (-1)^s \times 2^e \times (uint(C) \times 2^{1 - size(C)})
+ real(s, e, C) = (-1)^s \times 2^e \times (uint(C) \times 2^{1 - size(C)})
 \end{align}
 
 The IEEE 754 assigns some floating point numbers to represent values other than finite real numbers. Specifically, numbers with greater than some ``maximum'' $e$ and $c = 0$ represent infinite real numbers of the appropriate sign, and numbers with greater than this ``maximum'' $e$ but $c \neq 0$ represent something that is not a real number, or NaN, such as the indeterminate result of $\frac{0}{0}$. If we commit to representing $e$ as a bitvector $E$ of size $w$, then this ``maximum'' value is $emax = 2^{w-1} - 1$, the largest positive integer a bitvector of size $w$ can represent under a two's complement system. Instead of using two's complement directly, the IEEE 754 standard specifies a biased representation, defining also a minimum exponent $emin = 1 - emax$ and $e = max(uint(E) - emax, emin)$.

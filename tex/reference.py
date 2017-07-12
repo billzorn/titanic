@@ -102,6 +102,11 @@ def size(bv):
         
     return bv.n
 
+def clz(bv):
+    assert isinstance(bv, BV)
+
+    return bv.clz
+
 def concat(bv1, bv2):
     assert isinstance(bv1, BV)
     assert isinstance(bv2, BV)
@@ -116,11 +121,6 @@ def extract(left, right, bv):
     assert left < bv.n
 
     return BV((bv.i >> right), (left - right) + 1)
-
-def clz(bv):
-    assert isinstance(bv, BV)
-
-    return bv.clz
     
 
 # Python's integers are a good stand-in for mathematical integers, as they can have arbitrary size.
