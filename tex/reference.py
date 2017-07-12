@@ -117,7 +117,7 @@ def extract(left, right, bv):
 
     return BV((bv.i >> right), (left - right) + 1)
 
-def count_leading_zeros(bv):
+def clz(bv):
     assert isinstance(bv, BV)
 
     return bv.clz
@@ -224,8 +224,8 @@ def canonicalize(S, E, C):
     e = max(uint(E) - emax, emin)
     c = uint(C)
 
-    # note that clz is not a simple bitvector arithmetic operation
-    z = count_leading_zeros(C)
+    # Note that clz is not a simple bitvector arithmetic operation
+    z = clz(C)
     h = e - emin
     offset = min(z, h)
         
@@ -267,14 +267,17 @@ def explicit_to_implicit(S, E, C):
     p = size(C_canonical)
     T = extract(p - 2, 0, C_canonical)
 
-    # There is a horrible case where deleting the implicit bit from a NaN will
+    # There is an edge case where deleting the implicit bit from a NaN will
     # create an infinity if the remaining T is 0. To fix this, return some other
-    # NaN, here one with T=0b10..0
+    # NaN instead, here one with T=0b10..0
+
     if uint(E_canonical) == (2 ** w) - 1 and uint(C_canonical) != 0 and uint(T) == 0:
         return S_canonical, E_canonical, BV(1 << (p - 2), p - 1)
     else:
         return S_canonical, E_canonical, T
 
+
+# Sanity tests.
 
 def test_fp_identical(a, b):
     a1, a2, a3 = a
@@ -287,55 +290,24 @@ def test_same_real_value(a, b):
     else:
         return a == b
 
-def test_canon(w, p, verbose = False):
-    for s in range(2**1):
-        for e_prime in range(2**w):
-            for c in range(2**p):
-
-                S = BV(s, 1)
-                E = BV(e_prime, w)
-                C = BV(c, p)
-                R = real_explicit(S, E, C)
-
-                Sc, Ec, Cc = canonicalize(S, E, C)
-                assert is_canonical(Sc, Ec, Cc)
-                Rc = real_explicit(S, E, C)
-                
-                if verbose:
-                    print('    {:20} {:20}'.format(R, Rc))
-                if R.is_nan() and Rc.is_nan():
-                    if not (S == Sc and E == Ec and C == Cc):
-                        print('broken nan!')
-                        print(S, E, C)
-                        print(Sc, Ec, Cc)
-                elif R != Rc:
-                    print('BUG!    {:20} {:20}'.format(R, Rc))
-                    print(S, E, C)
-                    print(Sc, Ec, Cc)
-
-                else:                    
-                    w = size(Ec)
-                    p = size(Cc)
-                    emax = (2 ** (w - 1)) - 1
-                    emin = 1 - emax
-                    
-                    s = uint(Sc)
-                    e = max(uint(Ec) - emax, emin)
-                    c = uint(Cc)
-
-                    if not (Cc[p-1] == 1 or e == emin):
-                        if e > emax:
-                            assert R.is_infinite()
-                        else:
-                            print('canonicalization failed')
-                            print(S, E, C)
-                            print(Sc, Ec, Cc)
-                    elif verbose and (E != Ec or C != Cc):
-                            print( '  succeeded')
-                            print(' ', S, E, C)
-                            print(' ', Sc, Ec, Cc)
-
 def test_explicit_implicit(w, p, verbose = False):
+    total = (2**1) * (2**w) * (2**p)
+    dots = 50
+    dotmod = total // dots
+    tested = 0
+    print('{:d} explicit representations to test.'.format(total))
+    
+    # Make sure all possible implicit values are covered.
+    icov = {}
+    for s in range(2**1):
+        for e_prime in range(2**w):
+            for c_prime in range(2**(p-1)):
+                S = BV(s, 1)
+                E = BV(e_prime, w)
+                T = BV(c_prime, p-1)
+
+                icov[(uint(S), uint(E), uint(T),)] = False
+
     for s in range(2**1):
         for e_prime in range(2**w):
             for c in range(2**p):
@@ -343,23 +315,43 @@ def test_explicit_implicit(w, p, verbose = False):
                 S = BV(s, 1)
                 E = BV(e_prime, w)
                 C = BV(c, p)
-                R = real_explicit(S, E, C)
-    
+                R = real_explicit(S, E, C)    
                             
                 Si, Ei, Ti = explicit_to_implicit(S, E, C)
                 Ri = real_implicit(Si, Ei, Ti)
 
                 Sc, Ec, Cc = canonicalize(S, E, C)
                 Rc = real_explicit(Sc, Ec, Cc)
+                
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
                 R1 = real_explicit(S1, E1, C1)
 
                 if verbose:
                     print('    {:20} {:20} {:20} {:20}'.format(R, Ri, Rc, R1))
 
+                # These should always be canonical.
+                assert is_canonical(Sc, Ec, Cc)
+                assert is_canonical(S1, E1, C1)
+                    
+                # All real values should agree.
                 assert test_same_real_value(R, Ri)
                 assert test_same_real_value(R, Rc)
+                assert test_same_real_value(R, R1)
 
-                # we lose information, so we can't check this for NaN
+                # We actually lose information when converting some NaNs to implicit,
+                # so we can't get back the same canonical representation for them. We
+                # should be able to do so for all other numbers.
                 if not R.is_nan():
                     assert test_fp_identical((Sc, Ec, Cc), (S1, E1, C1))
+
+                icov[(uint(Si), uint(Ei), uint(Ti),)] = True
+
+                tested += 1
+                if (not verbose) and tested % dotmod == 0:
+                    print('.', end='', flush=True)
+    print()
+
+    # Check cover of implicit values
+    assert all(icov.values())
+
+    print('Tested {:d} explicit, {:d} implicit. Done.'.format(tested, len(icov)))
