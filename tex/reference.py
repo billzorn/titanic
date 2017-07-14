@@ -7,9 +7,8 @@ def bitmask(n):
         return (-1) << (-n)
 
 class BV(object):
-    # should think about if bitvectors can have 0 size, and what sizes are required for different
-    # versions of the FP representation
-
+    # Bitvectors must have a size of at least 1.
+    
     # test high (sign) bit
     def _negative(self):
         return self.i & (1 << (self.n - 1)) != 0
@@ -171,7 +170,7 @@ def real_explicit(S, E, C):
     else: # e <= emax
         return ((-1) ** s) * (2 ** Dec(e)) * (c * (2 ** Dec(1 - p)))
 
-# Equation 5
+# Equation 4
 def real_implicit(S, E, T):
     assert isinstance(S, BV)
     assert size(S) == 1
@@ -183,7 +182,7 @@ def real_implicit(S, E, T):
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
     s = uint(S)
-    e_prime = uint(E) - emax # can't min here, or we don't know what is a denorm
+    e_prime = uint(E) - emax
     c_prime = uint(T)
 
     if e_prime > emax and c_prime != 0:
@@ -195,6 +194,7 @@ def real_implicit(S, E, T):
     else: # e_prime < emin
         return ((-1) ** s) * (2 ** Dec(emin)) * (c_prime * (2 ** Dec(1 - p)))
 
+# Equation 5
 def implicit_to_explicit(S, E, T):
     assert isinstance(S, BV)
     assert size(S) == 1
@@ -203,14 +203,14 @@ def implicit_to_explicit(S, E, T):
 
     w = size(E)
     
-    # Equation 4 - also broken, as we need to preserve infinities
-    if uint(E) == 0 or uint(E) == (2 ** w) - 1 and uint(T) == 0:
+    if uint(E) == 0 or (uint(E) == (2 ** w) - 1 and uint(T) == 0):
         C = concat(BV(0, 1), T)
     else: # uint(E) != 0 and not an infinity
         C = concat(BV(1, 1), T)
 
     return S, E, C
 
+# Equation 6
 def canonicalize(S, E, C):
     assert isinstance(S, BV)
     assert size(S) == 1
@@ -253,7 +253,8 @@ def is_canonical(S, E, C):
     c = uint(C)
 
     return e > emax or e == emin or C[p-1] == 1
-    
+
+# Equation 7
 def explicit_to_implicit(S, E, C):
     assert isinstance(S, BV)
     assert size(S) == 1
@@ -272,7 +273,7 @@ def explicit_to_implicit(S, E, C):
     # NaN instead, here one with T=0b10..0
 
     if uint(E_canonical) == (2 ** w) - 1 and uint(C_canonical) != 0 and uint(T) == 0:
-        return S_canonical, E_canonical, BV(1 << (p - 2), p - 1)
+        return S_canonical, E_canonical, BV(1, p - 1) << (p - 2)
     else:
         return S_canonical, E_canonical, T
 
@@ -326,6 +327,11 @@ def test_explicit_implicit(w, p, verbose = False):
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
                 R1 = real_explicit(S1, E1, C1)
 
+                print(' ', S, E, C)
+                print(' ', Si, Ei, Ti)
+                print(' ', Sc, Ec, Cc)
+                print(' ', S1, E1, C1)
+                
                 if verbose:
                     print('    {:20} {:20} {:20} {:20}'.format(R, Ri, Rc, R1))
 

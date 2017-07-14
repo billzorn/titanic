@@ -26,9 +26,9 @@ In order to be as general as possible, we will try to express relationships and 
 
 We treat a bitvector as a nonempty zero-indexed array of bits that each are 0 or 1. We write bitvectors out as the prefix \texttt{0b} followed by the contents of the array, from most significant to least significant. A bitvector has size $n$ equal to the number of bits in the array, which must be at least one. The least significant bit is assigned index 0, and the most significant is assigned index $n-1$.
 
-Bitvectors support the following operations: getting the size, conversion to and from integers, indexing, concatenation and extraction, shifting left and right, and comparison for equality. Every bitvector has a fixed size: $size(\texttt{0b1}) = 1$, while $size(\texttt{0b01}) = 2$. Conversion to and from integers is straightforward and follows the typical binary representation of integers. $uint$ is an unsigned conversion, such that $uint(\texttt{0b101}) = 5$, while $sint$ is a signed conversion, such that $sint(\texttt{0b101}) = -3$. Indexing is written out using square brackets, and always yields 0 or 1: $\texttt{0b01}[0] = 1$, while $\texttt{0b01}[1] = 0$.
+Bitvectors support the following operations: getting the size, conversion to and from integers, indexing, concatenation and extraction, shifting left and right, and comparison for equality. Every bitvector has a fixed size: $size(\texttt{0b1}) = 1$, while $size(\texttt{0b01}) = 2$. Conversion to and from integers is straightforward and follows the typical binary representation of integers. $uint$ is an unsigned conversion, such that $uint(\texttt{0b101}) = 5$, while $sint$ is a two's complement signed conversion, such that $sint(\texttt{0b101}) = -3$. Conversion the other way is accomplished with a $bv$ constructor, which takes any positive or negative integer value as its first argument and an integer size greater than 0 as its second argument, and returns a bitvector that holds the typical two's complement binary representation of the value, masked to the appropriate size: $bv(1, 2) = \texttt{0b01}$, $bv(-1, 2) = \texttt{0b11} = bv(3, 2)$, and $bv(4, 2) = \texttt{0b00}$.
 
-Concatenation simply joins two bitvectors together, with the first argument being placed in the more significant bits of the output: $concat(\texttt{0b01}, \texttt{0b101}) = \texttt{0b01101}$. The syntax for extraction is slightly more complex. The first two arguments are the start and end indices, both inclusive, with the first argument being the more significant (i.e. larger). Extraction yields a new bitvector with the bits between these indices: $extract(3, 2, \texttt{0b01101}) = \texttt{0b11}$. For a bitvector $x$ of size $n$, $extract(n-1, 0, x) = x$ is the identity operation, while for all indices $0 \leq i < n$, $uint(extract(i, i, x)) = x[i]$; the application of $uint$ is necessary because extraction yields a bitvector while standard indexing yields an integer.
+Indexing is written out using square brackets, and always yields 0 or 1: $\texttt{0b01}[0] = 1$, while $\texttt{0b01}[1] = 0$. Concatenation simply joins two bitvectors together, with the first argument being placed in the more significant bits of the output: $concat(\texttt{0b01}, \texttt{0b101}) = \texttt{0b01101}$. The syntax for extraction is slightly more complex. The first two arguments are the start and end indices, both inclusive, with the first argument being the more significant (i.e. larger). Extraction yields a new bitvector with the bits between these indices: $extract(3, 2, \texttt{0b01101}) = \texttt{0b11}$. For a bitvector $x$ of size $n$, $extract(n-1, 0, x) = x$ is the identity operation, while for all indices $0 \leq i < n$, $uint(extract(i, i, x)) = x[i]$; the application of $uint$ is necessary because extraction yields a bitvector while standard indexing yields an integer.
 
 Shifting is written infix with the right argument always being an integer. An arithmetic right shift is written as $\texttt{>>}$, while a logical one is $\texttt{>>>}$: $\texttt{0b1101} \;\texttt{>>}\; 1 = \texttt{0b1110}$, $\texttt{0b1101} \;\texttt{>>>}\; 1 = \texttt{0b0110}$, and $\texttt{0b1101} \;\texttt{<<}\; 1 = \texttt{0b1010}$. Shifts greater than the size are handled normally; they just produce uninteresting results such as $\texttt{0b1101} \;\texttt{>>}\; 8 = \texttt{0b1111}$ and $\texttt{0b1101} \;\texttt{<<}\; 257 = \texttt{0b0000}$. Comparison is only for equality (or inequality), and only allowed between bitvectors of the same size. To determine ordering, bitvectors can be converted to the appropriate integer representation.
 
@@ -48,74 +48,121 @@ For lack of another widely supported alternative, we will specialize our discuss
  real(s, e, C) = (-1)^s \times 2^e \times (uint(C) \times 2^{1 - size(C)})
 \end{align}
 
-The IEEE 754 assigns some floating point numbers to represent values other than finite real numbers. Specifically, numbers with greater than some ``maximum'' $e$ and $c = 0$ represent infinite real numbers of the appropriate sign, and numbers with greater than this ``maximum'' $e$ but $c \neq 0$ represent something that is not a real number, or NaN, such as the indeterminate result of $\frac{0}{0}$. If we commit to representing $e$ as a bitvector $E$ of size $w$, then this ``maximum'' value is $emax = 2^{w-1} - 1$, the largest positive integer a bitvector of size $w$ can represent under a two's complement system. Instead of using two's complement directly, the IEEE 754 standard specifies a biased representation, defining also a minimum exponent $emin = 1 - emax$ and $e = max(uint(E) - emax, emin)$.
+The IEEE 754 assigns some floating point numbers to represent values other than finite real numbers. Specifically, numbers with greater than some ``maximum'' $e$ and $c = 0$ represent infinite real numbers of the appropriate sign, and numbers with greater than this ``maximum'' $e$ but $c \neq 0$ represent something that is not a real number, or NaN, such as the indeterminate result of $\frac{0}{0}$. If we commit to representing $e$ as a bitvector $E$ of size $w$, then this ``maximum'' value is $e_{max} = 2^{w-1} - 1$, the largest positive integer a bitvector of size $w$ can represent using a two's complement representation. Instead of using two's complement directly, the IEEE 754 standard specifies a biased representation, defining also a minimum exponent $e_{min} = 1 - e_{max}$ and $e = max(uint(E) - e_{max}, e_{min})$.
 
 Since the values of $e$ and $c$ are already represented as bitvectors, we might as well put $s$ in a 1-bit vector $S$ with $s = uint(S)$. We fully specify the meaning of our mapping from triples of bitvectors to finite real numbers (or one of two infinite real numbers, or a symbol representing something other than a real number) in Equation \ref{eq:real3},
 
 \begin{align} \label{eq:real3}
  real(S, E, C) =
  \begin{cases}
-  NaN                                           & e > emax \land c \neq 0 \\
-  (-1)^s \times \infty                          & e > emax \land c = 0    \\
-  (-1)^s \times 2^e \times (c \times 2^{1 - p}) & e \leq emax
+  NaN                                           & e > e_{max} \land c \neq 0 \\
+  (-1)^s \times \infty                          & e > e_{max} \land c = 0    \\
+  (-1)^s \times 2^e \times (c \times 2^{1 - p}) & e \leq e_{max}
  \end{cases}
 \end{align}
 where:
 \begin{description}
  \item $w = size(E)$
  \item $p = size(C)$
- \item $emax = 2^{w-1} - 1$
- \item $emin = 1 - emax$
+ \item $e_{max} = 2^{w-1} - 1$
+ \item $e_{min} = 1 - e_{max}$
  \item $s = uint(S)$
- \item $e = max(uint(E) - emax, emin)$
+ \item $e = max(uint(E) - e_{max}, e_{min})$
  \item $c = uint(C)$.
 \end{description}
 
-Let us call this the explicit triple of bitvectors or ``explicit triple'' representation of a floating point number. Except for its neglect of the distinction between quiet and signaling NaNs, this formulation agrees completely with IEEE 754, assuming the ability to identify the correct bitvectors $S$, $E$, and $C$. As presented in Equation \ref{eq:real3}, some real numbers can be represented in multiple ways. For example, the triple $(\texttt{0b0}, \texttt{0b01}, \texttt{0b10})$ represents $(-1)^0 \times 2^0 \times (2 \times 2^{-1}) = 1.0$. But so does $(\texttt{0b0}, \texttt{0b10}, \texttt{0b01})$, as $(-1)^0 \times 2^1 \times (1 \times 2^{-1}) = 1.0$ as well. Similarly, having $E$ as 0 or 1 gives an equivalent $e = emin$ due to the max in the definition of $e$. And there are $2 \times (2^w - 1)$ ways to represent 0.
+Let us call this the explicit triple of bitvectors or ``explicit triple'' representation of a floating point number. Except for its neglect of the distinction between quiet and signaling NaNs, this formulation agrees completely with IEEE 754, assuming the ability to identify the correct bitvectors $S$, $E$, and $C$. However, this representation is not as compact: as presented in Equation \ref{eq:real3}, some real numbers can be represented in multiple ways. For example, the triple $(\texttt{0b0}, \texttt{0b01}, \texttt{0b10})$ represents $(-1)^0 \times 2^0 \times (2 \times 2^{-1}) = 1$. But so does $(\texttt{0b0}, \texttt{0b10}, \texttt{0b01})$, as $(-1)^0 \times 2^1 \times (1 \times 2^{-1}) = 1$ as well. Similarly, having $E$ as 0 or 1 gives an equivalent $e = e_{min}$ due to the max in the definition of $e$. And there are $2 \times (2^w - 1)$ ways to represent 0.
 
-To take advantage of these redundancies and eliminate a bit from the representation, the IEEE 754 standard represents the high bit of $C$ implicitly. Any real number representable with $e > emin$ and $C[p-1] = 0$ (i.e. the high bit of $C$ is 0, or $c < 2^{p-1}$) can be similarly represented by shifting $C$ 1 bit to the left and subtracting 1 from E (which has the effect of subtracting 1 from $e$ as well, given $e > emin$). Thus each representable number has a canonical representation, where either $C[p-1] = 1$, or $e = emin$. 
+Any real number representable with $e > e_{min}$ and $C[p-1] = 0$ (i.e. the high bit of $C$ is 0, or $c < 2^{p-1}$) can be similarly represented by shifting $C$ 1 bit to the left and subtracting 1 from $e$. Thus each representable number has a canonical representation, where either $C[p-1] = 1$, or $e = e_{min}$. To take advantage of this, the IEEE 754 standard records the high bit of $C$ implicitly as the otherwise unused case where $E$ is 0, and keeps track of the rest of $C$ as a shorter bitvector $T$ of size $p - 1$.
 
-To take advantage of this, the IEEE 754 standard records the high bit of $C$ implicitly as the otherwise unused case where $E$ is 0, and keeps track of the rest of $C$ as a shorter bitvector $T$ of size $p - 1$. If $E$ is 0, the corresponding $C$ is $concat(\texttt{0b0}, T)$, otherwise $C$ is $concat(\texttt{0b1}, T)$. This ensures that all numbers are represented with their canonical representation: correctly converting a bitvector from the IEEE 754 binary interchange format to the explicit triple representation of Equation \ref{eq:real3} will always yield a canonical result. The only real number with multiple canonical representations is 0, which can take either sign.
+The mapping from IEEE 754 bitvectors to reals is given in Equation \ref{eq:real4},
 
-Equation \ref{eq:real4} defines conversion between formats; in combination with Equation \ref{eq:real3}, it is sufficient to fully specify the mapping from bitvectors in the IEEE 754 binary interchange formats to real numbers (or NaN), assuming the fields $S$, $E$, and $T$ are available or can be correctly extracted from a concatenated binary interchange bitvector (such as a fimiliar 32-bit \texttt{float}). Going the other way might seem trivial, as we can simply recover $T$ from $C$ by dropping the high bit, but this only works if the bit we drop has the right value for the imlicit bit, i.e. if $C$ comes from a floating point number in canonical form.
-
-THIS IS WRONG IT MESSES UP INFINITIES SEE PYTHON CODE
 \begin{align} \label{eq:real4}
- C &=
- \begin{cases}
-  concat(\texttt{0b0}, T) & uint(E) = 0 \\
-  concat(\texttt{0b1}, T) & uint(E) \neq 0
- \end{cases}
-\end{align}
-
-The explicit mapping from IEEE 754 bitvectors to reals is given in Equation \ref{eq:real5},
-
-THIS IS WRONG SEE THE PYTHON CODE
-\begin{align} \label{eq:real5}
  real(S, E, T) =
  \begin{cases}
-  NaN                                                      & e > emax \land c \neq 0 \\
-  (-1)^s \times \infty                                     & e > emax \land c = 0    \\
-  (-1)^s \times 2^e \times ((c' + 2^{p-1}) \times 2^{1-p}) & emin < e \leq emax      \\
-  (-1)^s \times 2^e \times (c' \times 2^{1 - p})           & e = emin
+  NaN                                                         & e' > e_{max} \land c \neq 0  \\
+  (-1)^s \times \infty                                        & e' > e_{max} \land c = 0     \\
+  (-1)^s \times 2^{e'} \times ((c' + 2^{p-1}) \times 2^{1-p}) & e_{min} \leq e' \leq e_{max} \\
+  (-1)^s \times 2^{e_{min}} \times (c' \times 2^{1 - p})      & e' < e_{min}
  \end{cases}
 \end{align}
 where:
 \begin{description}
  \item $w = size(E)$
  \item $p = size(T) + 1$
- \item $emax = 2^{w-1} - 1$
- \item $emin = 1 - emax$
+ \item $e_{max} = 2^{w-1} - 1$
+ \item $e_{min} = 1 - e_{max}$
  \item $s = uint(S)$
- \item $e = max(uint(E) - emax, emin)$
+ \item $e' = uint(E) - e_{max}$
  \item $c' = uint(T)$.
 \end{description}
 
 Let us call this the implicit triple of bitvectors, or ``implicit triple'' or ``IEEE 754 triple'' representation of floating point numbers. We also say that the IEEE binary interchange format uses a ``packed bitvector'' or ``implicit packed'' or just ``packed'' representation $B = concat(S, E, T)$. $S$ can always be recovered, and $E$ and $T$ can be recovered as long as $w$ or $p$ is known. 
 
-This formulation is equivalent to the description in section 3.4 of \cite{ieee754-2008}. For clarity, we have tried to name our terms according to similar concepts from the IEEE 754 standard, finally running into problems with the incomparable $c'$. The treatment here should not differ materially from the IEEE 754 standard, and is intended mostly to provide Equations \ref{eq:real3} and \ref{eq:real5} and their requisite definitions in a compact form for implementers of bitvector programs.
+This formulation is equivalent to the description in section 3.4 of \cite{ieee754-2008}. For clarity, we have tried to name our terms according to similar concepts from the IEEE 754 standard, distinguishing $e'$ and $c'$ because they are not necessarily the exact exponent or fractional value. The treatment here should not differ materially from the IEEE 754 standard, and is intended mostly to provide Equations \ref{eq:real3} and \ref{eq:real4} and their requisite definitions in a compact form.
 
-Often when discussing floating point representations, much ado is made about ``subnormal'' or ``denormalized'' numbers. We have neglected to discuss them at all, because in our formalization they can be treated the same as any other number. A subnormal number is simply a floating point number with minimum exponent $e = emin$ and a 0 in the high (implicit) bit of $C$. By definition, any such number can have only one representation (unless it representes 0). These numbers are important because they close the gap between the smallest number that can be represented with $C[p-1] = 1$ and 0 in a uniform way, as shown in \ref{idonthaveafigure}. Their existence explains the strange contortions we go through defining the relationship between $E$ and $e$; once we accept those contortions, their real value at least is easy to specify.
+Converting between the explicit and implicit representations is surprisingly tricky. When going from implicit to explicit, all we need to do is find the correct value of the implicit bit to concatenate with $T$. Usually, this is can be determined by checking if $uint(E) == 0$, but we also need to be careful not to concatenate $\texttt{0b1}$ to an infinity and turn it into NaN. The complete formula is given in Equation \ref{eq:conv1},
+
+\begin{align} \label{eq:conv1}
+ explicit(S, E, T) =
+ \begin{cases}
+  (S, E, concat(\texttt{0b0}, T)) & uint(E) = 0 \; \lor                   \\
+                                  & (uint(E) = 2^w - 1 \land uint(T) = 0) \\
+  (S, E, concat(\texttt{0b1}, T)) & \text{else}
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $w = size(E)$.
+\end{description}
+
+Going the other way, from the explicit to the implicit representation, is more complicated. First, we need to be able to put an explicitly represented floating point number in canonical form. One technique for doing this is expressed in Equation \ref{eq:canon},
+
+\begin{align} \label{eq:canon}
+ canonicalize(S, E, C) =
+ \begin{cases}
+  (S, E, C)                                             & e > e_{max} \\
+  (S, bv(0, w), C)                                      & c = 0       \\
+  (S, bv(0, w), C \;\texttt{<<}\: x                     & h < z       \\
+  (S, bv(e - offset + e_{max}, w), C \;\texttt{<<}\: x) & \text{else}
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $w = size(E)$
+ \item $e_{max} = 2^{w-1} - 1$
+ \item $e_{min} = 1 - e_{max}$
+ \item $e = max(uint(E) - e_{max}, e_{min})$
+ \item $c = uint(C)$
+ \item $z = clz(C)$
+ \item $h = e - e_{min}$
+ \item $x = min(z, h)$.
+\end{description}
+
+Note the use of $clz$, or ``count leading zeros'', which counts the number of zeros in the most significant bits of a bitvector before the most significant 1 (or the total number of bits, if all are 0). This is not generally considered a primitive operation in bitvector arithmetic, but it can be implemented efficiently for bitvectors of known size. $x$ is the largest offset we can shift by, to either ensure that $C[p-1] = 1$ or that $e = e_{min}$. Note also that for all floating point numbers that do not represent finite real numbers, i.e. infinities and NaNs, canonicalization is a no-op, as we need to be careful not to convert infinities to NaNs or vice versa and we have no mapping to real numbers to inform any changes to our representations of NaNs.
+
+With the ability to canonicalize our explicit representation, we can now convert it to the implicit representation used by IEEE 754. Given a canonical explicit representation, we can usually just chop off the most significant (implicit) bit of $C$ to produce the appropriate $T$. There is still one problematic edge case, when we have a NaN where only the most significant bit of $C$ is 1, as simply chopping that bit off will yield an infinity. To avoid this, we preserve the 1 in the most significant bit of $T$; this loses some information, but that is unavoidable anyway since there are more explicit NaNs due to the extra bit in $C$.
+
+Fortunately the conversion doesn't lose any information about representions of real numbers. This is why we use the perhaps odd-looking max in the definition $e = max(uint(E) - e_{max}, e_{min})$. We could just as well allow $e = -e_{max}$ in the explicit representation and represent more real numbers closer to zero, but this would cause another edge case in the conversion because those numbers would not be representable with the implicit representation. The explicit to implicit conversion is given in Equation \ref{eq:conv2},
+
+\begin{align} \label{eq:conv2}
+ implicit(S, E, C) =
+ \begin{cases}
+  (S_c, E_c, bv(1,p-1) \;\texttt{<<}\; (p-2)) & uint(E_c) = 2^w - 1 \; \land \\
+                                             & uint(C_c) \neq 0 \; \land    \\
+                                             & uint(T') = 0                  \\
+  (S_c, E_c, T') & \text{else}
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $(S_c, E_c, C_c) = canonicalize(S, E, C)$
+ \item $w = size(E_c)$
+ \item $p = size(C_c$
+ \item $T' = extract(p-2, 0, C_c)$.
+\end{description}
+
+Often when discussing floating point representations, much ado is made about ``subnormal'' or ``denormalized'' numbers. We have neglected to discuss them at all, because in our formalization they can be treated the same as any other number. A subnormal number is simply a floating point number with minimum exponent $e = e_{min}$ and a 0 in the high (implicit) bit of $C$. By definition, any such number can have only one representation (unless it representes 0). These numbers are important because they close the gap between the smallest number that can be represented with $C[p-1] = 1$ and 0 in a uniform way, as shown in \ref{idonthaveafigure}. Their existence explains the strange contortions we go through defining the relationship between $E$ and $e$; once we accept those contortions, their real value at least is easy to specify.
 
 It should be noted that most hardware implementations use the packed bitvector representation; i.e. on a typical implementation using 32-bit single-precision floats, $\frac{4}{3}$ would be represented as 
 \begin{align*}
@@ -133,6 +180,8 @@ The floating point theory defined as part of the SMT-LIB standard specifies floa
 \begin{align*}
  \texttt{(fp \#b0 \#b01111111 \#b01010101010101010101011)} \text{.}
 \end{align*}
+
+We should also comment briefly on the possible sizes of bitvectors that can be used in these representations. We require that $size(S) = 1$, $size(E) = w \geq 2$, and $size(C) = size(T) + 1 = p \geq 2$. Since a bitvector has to have at least one bit in our notation, the restriction on $p$ is obvious. The restriction on $w$ is due to issues that arise with the max-based definition of $e$ failing to properly distinguish between infinity and zero when $e_{min} = 0$, and could be lifted with the appropriate special cases.
 
 \section{Reals as Bitvectors as Ordinals}
 
