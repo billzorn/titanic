@@ -70,18 +70,18 @@ def describe_results(results):
             nargs = 0
             arg_data = {}
             for k in model:
-                i, argname = mathlib.get_arglo(k)
+                i, argname = get_arglo(k)
                 if i is not None:
                     arg_data[i] = (argname, model[k])
                     nargs += 1
             for i in range(nargs):
                 argname, argval = arg_data[i]
                 body += '\n    {} = {}'.format(argname, mathlib.get_z3fp(argval))
-            body += '\n  low precision: {}'.format(mathlib.get_z3fp(model[mathlib.reslo]))
-            body += '\n  exp precision: {}'.format(mathlib.get_z3fp(model[mathlib.resexp]))
-            body += '\n  full precision: {}'.format(mathlib.get_z3fp(model[mathlib.reshi]))
-            if mathlib.resulps in model:
-                body += '\n    {} ulps'.format(model[mathlib.resulps])
+            body += '\n  low precision: {}'.format(mathlib.get_z3fp(model[reslo]))
+            body += '\n  exp precision: {}'.format(mathlib.get_z3fp(model[resexp]))
+            body += '\n  full precision: {}'.format(mathlib.get_z3fp(model[reshi]))
+            if resulps in model:
+                body += '\n    {} ulps'.format(model[resulps])
         else:
             body = '  {}'.format(status)
         footer = '  statistics:'
@@ -105,6 +105,8 @@ class FPSolver(object):
         self.lo = mathlib.z3_sort(lo_sort)
         self.hi = mathlib.z3_sort(hi_sort)
         self.rm = rm
+        # can be improved
+        self.default_maxulps = (2 ** (self.lo.ebits() + self.lo.sbits())) - 1
 
         # these can be changed
         self.timeout_ms = timeout_ms
@@ -117,14 +119,14 @@ class FPSolver(object):
         self.lo_args = {}
         self.hi_args = {}
         for i, arg in enumerate(self.core.args):
-            self.lo_args[arg] = z3.FP(mathlib.arglo(i, arg), self.lo)
-            self.hi_args[arg] = z3.FP(mathlib.arghi(i, arg), self.hi)
-        self.lo_result = z3.FP(mathlib.reslo, self.lo)
-        self.hi_result = z3.FP(mathlib.reshi, self.hi)
-        self.expected_result = z3.FP(mathlib.resexp, self.lo)
+            self.lo_args[arg] = z3.FP(arglo(i, arg), self.lo)
+            self.hi_args[arg] = z3.FP(arghi(i, arg), self.hi)
+        self.lo_result = z3.FP(reslo, self.lo)
+        self.hi_result = z3.FP(reshi, self.hi)
+        self.expected_result = z3.FP(resexp, self.lo)
 
         # ulps
-        self.ulps_result = z3.BitVec(mathlib.resulps, self.lo.ebits() + self.lo.sbits())
+        self.ulps_result = z3.BitVec(resulps, self.lo.ebits() + self.lo.sbits())
 
         self.solver = z3.Solver()
         self._init_solver()
@@ -164,10 +166,10 @@ class FPSolver(object):
     def query_pred(self, descr, e):
         if self.verbosity >= 1:
             print('Checking {} (solver on {:d}) ...'.format(descr, os.getpid()))
-            
+
         b = z3.Bool(descr)
         self.solver.add(z3.Implies(b, e))
-        
+
         results = self._run_solver(b)
         self.last_results = (descr, *results,)
         return self.last_results
@@ -175,14 +177,14 @@ class FPSolver(object):
     def query_push(self, descr, e):
         if self.verbosity >= 1:
             print('Checking {} (solver on {:d}) ...'.format(descr, os.getpid()))
-            
+
         self.solver.push()
         self.solver.add(e)
-    
+
         results = self._run_solver()
-        
+
         self.solver.pop()
-        
+
         self.last_results = (descr, *results,)
         return self.last_results
 
@@ -261,7 +263,7 @@ class FPSolver(object):
                 descr = 'Inf'
                 e = z3.And(z3.Or(z3.fpIsInf(self.lo_result), z3.fpIsInf(self.expected_result)),
                            z3.Not(self.expected_result == self.lo_result))
-        self.query(descr, e)
+        return self.query(descr, e)
 
     def check_zero(self, neg = None):
         if neg is True:
@@ -274,7 +276,7 @@ class FPSolver(object):
             descr = 'r=-0.0, c=+0.0 OR r=+0.0, c=-0.0'
             e = z3.Or(z3.And(self.lo_result == z3.FPVal('+0.0', self.lo), self.expected_result == z3.FPVal('-0.0', self.lo)),
                       z3.And(self.lo_result == z3.FPVal('-0.0', self.lo), self.expected_result == z3.FPVal('+0.0', self.lo)))
-        self.query(descr, e)
+        return self.query(descr, e)
 
     def _init_ulps(self):
         # we have independent checks for all bad behavior involving NaN, Inf, and mismatched signs at zero.
@@ -289,7 +291,7 @@ class FPSolver(object):
         descr = '>= {:d} ulps'.format(ulps)
         e = z3.UGE(self.ulps_result, z3.BitVecVal(ulps, self.ulps_result.size()))
         self._init_ulps()
-        self.query_reset(descr, e)
+        return self.query_reset(descr, e)
 
     def ulps_incremental_begin(self):
         self._init_ulps()
@@ -297,11 +299,76 @@ class FPSolver(object):
     def ulps_incremental(self, ulps):
         descr = 'incremental >= {:d} ulps'.format(ulps)
         e = z3.UGE(self.ulps_result, z3.BitVecVal(ulps, self.ulps_result.size()))
-        self.query_push(descr, e)
+        return self.query_push(descr, e)
 
     def ulps_incremental_end(self):
         self.solver.reset()
         self._init_solver()
+
+    def binsearch_ulps(self, ulps_hi = None, incremental = False):
+        ulps_target = 1
+        ulps_lo = 1
+        # ulps_hi as provided
+        ulps_scale = 2
+
+        stored_results = [None, None]
+        total_time = [0]
+
+        def get_ulps(ulps):
+            if incremental:
+                results = self.ulps_incremental(ulps)
+            else:
+                results = self.check_ulps(ulps)
+            descr, status, elapsed, model, stats = results
+            total_time[0] += elapsed
+            if status == 'sat':
+                stored_results[0] = results
+                return int(model[resulps])
+            elif status == 'unsat':
+                stored_results[1] = results
+                return None
+            else:
+                self.describe_last()
+                raise ValueError('Binsearch: unknown query')
+
+        if self.verbosity >= 1:
+            print('Binsearch ulps up to {}, incremental={} ...'.format(ulps_hi, incremental))
+            
+        if incremental:
+            self.ulps_incremental_begin()
+
+        while ulps_hi is None:
+            ulps = get_ulps(ulps_target)
+            if ulps is None:
+                ulps_hi = ulps_target
+            else:
+                ulps_lo = ulps
+                ulps_target = min(ulps_lo * ulps_scale, self.default_maxulps)
+
+        while ulps_hi > ulps_lo + 1:
+            ulps_target = ((ulps_hi - ulps_lo) // 2) + ulps_lo
+            ulps = get_ulps(ulps_target)
+            if ulps is None:
+                ulps_hi = ulps_target
+            else:
+                ulps_lo = ulps
+
+        if incremental:
+            self.ulps_incremental_end()
+
+        if self.verbosity >= 1:
+            print('Binsearch finished in {}s.'.format(total_time[0]))
+            print(describe_results(stored_results[0]))
+            print(describe_results(stored_results[1]))
+                
+        if stored_results[0]:
+            return int(stored_results[0][3][resulps])
+        else:
+            return None
+
+    def ransearch_point(self, ulps, point):
+        pass
+        # needs ordinals
 
 
 if __name__ == '__main__':
@@ -394,3 +461,9 @@ if __name__ == '__main__':
 
     s.check_Inf()
     s.describe_last()
+
+    s.timeout_ms = 3600 * 1000
+    ur = s.binsearch_ulps()
+    ui = s.binsearch_ulps(incremental=True)
+
+    print(ur, ui, ur == ui)
