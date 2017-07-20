@@ -198,7 +198,7 @@ To compute ulps, it can be helpful to think of floating point numbers as ordinal
 Several different orderings are possible: we choose one that is hopefully the least surprising for implementers, and discuss how it compares to the totalOrder predicate and other alternatives. We implement this ordering with a function $ord(F)$, which takes a floating point number $F$ in some known representation (such as a packed bitvector or implicit triple with known $w$ and $p$) and produces a positive or negative integer. We would like $ord(F)$ to have the following properties:
 
 \begin{enumerate}
- \item If $real(F) = 0.0$, $ord(F) = 0$. I.e. all floating point numbers that represent a real value of zero (including ones that have a negative sign) have an order of 0.
+ \item If $real(F) = 0$, $ord(F) = 0$. I.e. all floating point numbers that represent a real value of zero (including ones that have a negative sign) have an order of 0.
  \item If $real(F_1) = real(F_2)$, then $ord(F_1) = ord(F_2)$. I.e. floating point numbers that represent the same real value have the same order.
  \item If $real(F_1) < real(F_2)$, then $ord(F_1) < ord(F_2)$. I.e. floating point numbers are ordered by their real value.
  \item If $real(F_1) = -\infty$ and $real(F_2) = \infty$, then $ord(F_2) - ord(F_1)$ is equal to the number of distinct real values the representation can represent (including the two infinities, but not including any NaNs) minus one. I.e. the ordinals are tightly packed: there is no positive $i$ such that there is no $F$ that has $ord(F) = i$ and yet there is some $F'$ that has $ord(F') > i$, or analogously for negative $i$.
@@ -313,6 +313,18 @@ where:
 Here $w$ and $p$ are only needed to figure out the size of the packed bitvector. The ordinal representation is dependent only on their sum, other than the very slight difference in the largest allowed magnitude $u_{max}$. Moving bits between $E$ and $T$ changes the spacing of real numbers represented, but not their relative ordering.
 
 Ordering is much harder to compute for the explicit representation. Because of the inherent redundancy, it is difficult to write down a simple arithmetic or bitvector expression to convert an explicit triple into an ordinal. Any such algorithm will have to effectively canonicalize the representation, so we might as well just convert it to the implicit representation and take the ordinal of that. We can think of the implicit representation as a way of assigning the canonical floating point representations to reals in a convenient order.
+
+\section{Ulps: units in the last place}
+
+\begin{itemize}
+ \item ulps as ordinal difference
+ \item special cases
+ \subitem zeros
+ \subitem infinities
+ \subitem other pitfalls?
+ \item posix nextafter
+ \item table of useful constants (1, tiny, umax, etc.)
+\end{itemize}
 
 \bibliographystyle{ieeetr}
 \bibliography{ref}
