@@ -8,12 +8,12 @@ def bitmask(n):
 
 class BV(object):
     # Bitvectors must have a size of at least 1.
-    
+
     # test high (sign) bit
     def _negative(self):
         return self.i & (1 << (self.n - 1)) != 0
     negative = property(_negative)
-    
+
     # unsigned integer representation
     def _uint(self):
         return self.i
@@ -39,12 +39,12 @@ class BV(object):
             z = z + 1
         return z
     clz = property(_clz)
-    
+
     def __init__(self, i, n):
         assert isinstance(i, int)
         assert isinstance(n, int)
         assert n > 0
-        
+
         self.i = i & bitmask(n)
         self.n = n
 
@@ -59,7 +59,7 @@ class BV(object):
     def __eq__(self, y):
         assert isinstance(y, BV)
         assert y.n == self.n
-        
+
         return self.i == y.i
 
     def __ne__(self, y):
@@ -70,7 +70,7 @@ class BV(object):
     def __lshift__(self, y):
         assert isinstance(y, int)
         assert y >= 0
-        
+
         return BV((self.i << y), self.n)
 
     # this is arithmetic right shift
@@ -95,12 +95,12 @@ class BV(object):
 
 def uint(bv):
     assert isinstance(bv, BV)
-    
+
     return bv.uint
 
 def size(bv):
     assert isinstance(bv, BV)
-        
+
     return bv.n
 
 def clz(bv):
@@ -111,7 +111,7 @@ def clz(bv):
 def concat(bv1, bv2):
     assert isinstance(bv1, BV)
     assert isinstance(bv2, BV)
-    
+
     return BV((bv1.i << bv2.n) | bv2.i, bv1.n + bv2.n)
 
 # bounds are inclusive, first argument is higher index, higher indices are more significant bits
@@ -122,7 +122,7 @@ def extract(left, right, bv):
     assert left < bv.n
 
     return BV((bv.i >> right), (left - right) + 1)
-    
+
 
 # Python's integers are a good stand-in for mathematical integers, as they can have arbitrary size.
 # For displaying Reals, we can probably get away with Python's decimal module, as all we really
@@ -143,7 +143,7 @@ def real1(s, e, c, b, p):
     assert b >= 2
     assert isinstance(p, int)
     assert p >= 1
-    
+
     return ((-1) ** s) * (b ** Dec(e)) * (c * (b ** Dec(1 - p)))
 
 # Equation 2
@@ -163,7 +163,7 @@ def real_explicit(S, E, C):
     assert size(E) >= 2
     assert isinstance(C, BV)
     assert size(C) >= 2
-    
+
     w = size(E)
     p = size(C)
     emax = (2 ** (w - 1)) - 1
@@ -224,7 +224,7 @@ def unpackf(B, w, p):
     assert size(B) == w + p
 
     return extract(w + p - 1, w + p - 1, B), extract(w + p - 2, p - 1, B), extract(p - 2, 0, B)
-    
+
 # Equation 7
 def implicit_to_explicit(S, E, T):
     assert isinstance(S, BV)
@@ -234,7 +234,7 @@ def implicit_to_explicit(S, E, T):
     assert isinstance(T, BV)
 
     w = size(E)
-    
+
     if uint(E) == 0 or uint(E) == (2 ** w) - 1:
         C = concat(BV(0, 1), T)
     else: # uint(E) != 0 and not an infinity
@@ -254,7 +254,7 @@ def canonicalize(S, E, C):
     w = size(E)
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
-    
+
     e_prime = max(uint(E) - emax, emin)
     c = uint(C)
 
@@ -262,7 +262,7 @@ def canonicalize(S, E, C):
     z = clz(C)
     h = e_prime - emin
     x = min(z, h)
-        
+
     if e_prime > emax:
         return S, E, C
     elif c == 0:
@@ -279,12 +279,12 @@ def is_canonical(S, E, C):
     assert size(E) >= 2
     assert isinstance(C, BV)
     assert size(C) >= 2
-    
+
     w = size(E)
     p = size(C)
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
-    
+
     e_prime = max(uint(E) - emax, emin)
     c = uint(C)
 
@@ -332,6 +332,9 @@ def ordinal(S, E, T):
     s = uint(S)
     u = (uint(E) * (2 ** (p - 1))) + uint(T)
 
+    # alternatively,
+    # u = uint(concat(E,T))
+
     if u > umax:
         raise OrdinalError()
     else: # u <= umax
@@ -348,13 +351,50 @@ def refloat(i, w, p):
 
     u = abs(i)
     U = BV(u, w + p - 1)
+    E = extract(w + p - 2, p - 1, U)
+    T = extract(p - 2, 0, U)
 
     if i >= 0:
-        return BV(0, 1), extract(w + p - 2, p - 1, U), extract(p - 2, 0, U)
-    else:
-        return BV(1, 1), extract(w + p - 2, p - 1, U), extract(p - 2, 0, U)
-    
-    
+        return BV(0, 1), E, T
+    else: # i < 0
+        return BV(1, 1), E, T
+
+# Equation 12
+def ordinal_packed(B, w, p):
+    assert isinstance(B, BV)
+    assert w >= 2
+    assert p >= 2
+    assert size(B) == w + p
+
+    S = extract(w + p - 1, w + p - 1, B)
+    ET = extract(w + p - 2, 0, B)
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+    s = uint(S)
+    u = uint(ET)
+
+    if u > umax:
+        raise OrdinalError()
+    else: # u <= umax
+        return ((-1) ** s) * u
+
+# Equation 13
+def refloat_packed(i, w, p):
+    assert w >= 2
+    assert p >= 2
+
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+
+    assert -umax <= i and i <= umax
+
+    u = abs(i)
+    ET = BV(u, w + p - 1)
+
+    if i >= 0:
+        return concat(BV(0, 1), ET)
+    else: # i < 0
+        return concat(BV(1, 1), ET)
+
+
 # Sanity tests.
 
 def test_fp_identical(a, b):
@@ -391,7 +431,7 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 T = BV(c_prime, p-1)
 
                 icov[(uint(S), uint(E), uint(T),)] = False
-                
+
     # Make sure all possible ordinals are covered.
     ocov = {i : False for i in range(-umax, umax + 1)}
 
@@ -406,8 +446,8 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 S = BV(s, 1)
                 E = BV(e_prime, w)
                 C = BV(c, p)
-                R = real_explicit(S, E, C)    
-                            
+                R = real_explicit(S, E, C)
+
                 Si, Ei, Ti = explicit_to_implicit(S, E, C)
                 Ri = real_implicit(Si, Ei, Ti)
                 try:
@@ -421,10 +461,18 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
 
                 B = packf(Si, Ei, Ti)
                 Sp, Ep, Tp = unpackf(B, w, p)
-                
+
+                try:
+                    ip = ordinal_packed(B, w, p)
+                    Bo = refloat_packed(ip, w, p)
+                    inrange_packed = True
+                except OrdinalError:
+                    ip = 'packord out of range'
+                    inrange_packed = False
+
                 Sc, Ec, Cc = canonicalize(S, E, C)
                 Rc = real_explicit(Sc, Ec, Cc)
-                
+
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
                 R1 = real_explicit(S1, E1, C1)
 
@@ -433,14 +481,14 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 # print(' ', Sc, Ec, Cc)
                 # print(' ', S1, E1, C1)
                 # print(' ', Sp, Ep, Tp)
-                
+
                 if verbose:
                     print('    {:20} {:20} {:20} {:20} {:20}'.format(R, Ri, Rc, R1, i))
 
                 # These should always be canonical.
                 assert is_canonical(Sc, Ec, Cc)
                 assert is_canonical(S1, E1, C1)
-                    
+
                 # All real values should agree.
                 assert test_same_real_value(R, Ri)
                 if inrange:
@@ -461,6 +509,13 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
 
                 # Packed representations should always give us back the same thing.
                 assert test_fp_identical((Si, Ei, Ti,), (Sp, Ep, Tp,))
+
+                # Ordinals should work the same with packed and unpacked implicit.
+                assert inrange == inrange_packed
+                if inrange:
+                    assert i == ip
+                    if not R.is_zero():
+                        assert B == Bo
 
                 icov[(uint(Si), uint(Ei), uint(Ti),)] = True
                 if inrange:

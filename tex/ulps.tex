@@ -243,22 +243,76 @@ We can implement $ord(F)$ using arithmetic. The computation for implicit triples
 \begin{align} \label{eq:ord1}
  ord(S, E, T) = 
  \begin{cases}
-  undefined       & u > umax\\
-  (-1)^s \times u & u \leq umax
+  undefined       & u > u_{max}\\
+  (-1)^s \times u & u \leq u_{max}
  \end{cases}
 \end{align}
 where:
 \begin{description}
  \item $w = size(E)$
  \item $p = size(T) + 1$
- \item $umax = (2^w-1) \times 2^{p-1}$
+ \item $u_{max} = (2^w-1) \times 2^{p-1}$
  \item $s = uint(S)$
  \item $u = (uint(E) \times 2^{p-1}) + uint(T)$.
 \end{description}
 
-The new quatities $u$ and $umax$ represent the absolute value of the order and the maximum defined order, or the order of $\infty$, respectively.
+The new quatities $u$ and $u_{max}$ represent the absolute value of the order and the maximum defined order, or the order of $\infty$, respectively. Given an implicit triple, $u$ can be computed easily by taking the concatenation of $E$ and $T$ and treating it as an unsigned integer: $u = (uint(E) \times 2^{p-1}) + uint(T) = uint(concat(E,T))$.
 
+Given some ordinal $i$ (and $w$ and $p$ such that $\lvert i \rvert \leq u_{max} = 2^w-1) \times 2^{p-1}$), we can convert back to an implicit triple according to Equation \ref{eq:ord2},
 
+\begin{align} \label{eq:ord2}
+ float(i, w, p) = 
+ \begin{cases}
+  (\texttt{0b0}, E, T) & i \geq 0 \\
+  (\texttt{0b1}, E, T) & i < 0
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $u = \lvert i \rvert$
+ \item $U = bv(u, w + p - 1)$
+ \item $E = extract(w + p - 2, p - 1, U)$
+ \item $T = extract(p - 2, 0, U)$.
+\end{description}
+
+Because of the way the implicit bit is handled, ordinals are extremely straightforward to work with for the implicit representation. With the implicit bit, there is no overlap of representable real values between different exponents; the subnormals naturally occupy the space closest to 0, as they have the smallest exponent; and the two infinities occupy the points farthest away, even conveniently having $uint(T) = 0$. Conversion formulas are even simpler for the packed representation, as $E$ and $T$ are effectively already concatenated together. These are given in Equations \ref{eq:ord3} and \ref{eq:ord4}. Again, it is assumed that $\lvert i \rvert \leq u_{max} = 2^w-1) \times 2^{p-1}$ for the appropriate $w$ and $p$; larger or smaller values of $i$ are outside the set of ordinals for the floating point representation.
+
+The conversion from packed representation to ordinal is
+
+\begin{align} \label{eq:ord3}
+ ord(B, w, p) = 
+ \begin{cases}
+  undefined       & u > u_{max}\\
+  (-1)^s \times u & u \leq u_{max}
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $S = extract(w + p - 1, w + p - 1, B)$
+ \item $ET = extract(w + p - 2, 0, B)$
+ \item $u_{max} = (2^w-1) \times 2^{p-1}$
+ \item $s = uint(S)$
+ \item $u = uint(ET)$.
+\end{description}
+
+Note that $w$ and $p$ are only needed to check that the real number the ordinal represents isn't NaN. Similarly, the conversion back to a packed representation is
+
+\begin{align} \label{eq:ord4}
+ float(i, w, p) = 
+ \begin{cases}
+  concat(\texttt{0b0}, ET) & i \geq 0 \\
+  concat(\texttt{0b1}, ET) & i < 0
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $u = \lvert i \rvert$
+ \item $ET = bv(u, w + p - 1)$.
+\end{description}
+
+Here $w$ and $p$ are only needed to figure out the size of the packed bitvector. The ordinal representation is dependent only on their sum, other than the very slight difference in the largest allowed magnitude $u_{max}$. Moving bits between $E$ and $T$ changes the spacing of real numbers represented, but not their relative ordering.
+
+Ordering is much harder to compute for the explicit representation. Because of the inherent redundancy, it is difficult to write down a simple arithmetic or bitvector expression to convert an explicit triple into an ordinal. Any such algorithm will have to effectively canonicalize the representation, so we might as well just convert it to the implicit representation and take the ordinal of that. We can think of the implicit representation as a way of assigning the canonical floating point representations to reals in a convenient order.
 
 \bibliographystyle{ieeetr}
 \bibliography{ref}
