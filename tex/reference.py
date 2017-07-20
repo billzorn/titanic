@@ -395,6 +395,25 @@ def refloat_packed(i, w, p):
         return concat(BV(1, 1), ET)
 
 
+# Conversion to other formats
+import struct
+import numpy as np
+
+def np_float16_to_packed(f):
+    assert isinstance(f, np.float16)
+    fbytes = f.tobytes()
+    x = struct.unpack('H', fbytes)[0]
+    return BV(x, 16)
+
+def packed_to_np_float16(B):
+    assert isinstance(B, BV)
+    assert size(B) == 16
+
+    decimal.getcontext().prec = 32
+    r = str(real_implicit(*unpackf(B, 5, 11)))
+    return np.float16(r)
+
+
 # Sanity tests.
 
 def test_fp_identical(a, b):
@@ -412,7 +431,7 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
     # We need to make sure we have enough precision to represent values exactly
     # with Decimal, or comparisons for equality will fail. This formula might
     # not be exactly right...
-    decimal.getcontext().prec = max(1, (2 ** w) // 2, p)
+    decimal.getcontext().prec = max(32, (2 ** w), p * 2)
 
     total = (2**1) * (2**w) * (2**p)
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
@@ -545,3 +564,23 @@ if __name__ == '__main__':
     test_explicit_implicit(2,2,True)
     test_explicit_implicit(5,11,False,dots=131)
     test_explicit_implicit(11,5,False,dots=131)
+
+    # janky np.float16 test
+    fp16_tests = 0
+    for x in range(2**16):
+        B = BV(x, 16)
+        fp16 = packed_to_np_float16(B)
+        B1 = np_float16_to_packed(fp16)
+
+        R = real_implicit(*unpackf(B, 5, 11))
+        R16 = Dec(float(fp16))
+
+        if R.is_nan():
+            assert R16.is_nan()
+        else:
+            assert B == B1
+            assert R == R16
+        
+        fp16_tests += 1
+
+    print('did {:d} fp16 tests against numpy'.format(fp16_tests))
