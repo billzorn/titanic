@@ -160,15 +160,18 @@ def real_explicit(S, E, C):
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
     s = uint(S)
-    e = max(uint(E) - emax, emin)
+    e = uint(E) - emax
     c = uint(C)
 
     if e > emax and c != 0:
         return Dec('nan')
     elif e > emax and c == 0:
         return ((-1) ** s) * Dec('inf')
-    else: # e <= emax
+    elif emin <= e and e <= emax:
         return ((-1) ** s) * (2 ** Dec(e)) * (c * (2 ** Dec(1 - p)))
+    else: # e < emin
+        return ((-1) ** s) * (2 ** Dec(emin)) * (c * (2 ** Dec(1 - p)))
+
 
 # Equation 4
 def real_implicit(S, E, T):
@@ -203,7 +206,7 @@ def implicit_to_explicit(S, E, T):
 
     w = size(E)
     
-    if uint(E) == 0 or (uint(E) == (2 ** w) - 1 and uint(T) == 0):
+    if uint(E) == 0 or uint(E) == (2 ** w) - 1:
         C = concat(BV(0, 1), T)
     else: # uint(E) != 0 and not an infinity
         C = concat(BV(1, 1), T)
@@ -221,22 +224,22 @@ def canonicalize(S, E, C):
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
     
-    e = max(uint(E) - emax, emin)
+    e_prime = max(uint(E) - emax, emin)
     c = uint(C)
 
     # Note that clz is not a simple bitvector arithmetic operation
     z = clz(C)
-    h = e - emin
-    offset = min(z, h)
+    h = e_prime - emin
+    x = min(z, h)
         
-    if e > emax:
+    if e_prime > emax:
         return S, E, C
     elif c == 0:
         return S, BV(0, w), C
     elif h < z:
-        return S, BV(0, w), C << offset
+        return S, BV(0, w), C << x
     else: # h >= z
-        return S, BV(e - offset + emax, w), C << offset
+        return S, BV(e_prime - x + emax, w), C << x
 
 def is_canonical(S, E, C):
     assert isinstance(S, BV)
@@ -249,10 +252,10 @@ def is_canonical(S, E, C):
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
     
-    e = max(uint(E) - emax, emin)
+    e_prime = max(uint(E) - emax, emin)
     c = uint(C)
 
-    return e > emax or e == emin or C[p-1] == 1
+    return e_prime > emax or e_prime == emin or C[p-1] == 1
 
 # Equation 7
 def explicit_to_implicit(S, E, C):
@@ -273,7 +276,7 @@ def explicit_to_implicit(S, E, C):
     # NaN instead, here one with T=0b10..0
 
     if uint(E_canonical) == (2 ** w) - 1 and uint(C_canonical) != 0 and uint(T) == 0:
-        return S_canonical, E_canonical, BV(1, p - 1) << (p - 2)
+        return S_canonical, E_canonical, BV(2 ** (p - 2), p - 1)
     else:
         return S_canonical, E_canonical, T
 
@@ -291,10 +294,10 @@ def test_same_real_value(a, b):
     else:
         return a == b
 
-def test_explicit_implicit(w, p, verbose = False):
+def test_explicit_implicit(w, p, verbose = False, dots = 50):
     total = (2**1) * (2**w) * (2**p)
-    dots = 50
-    dotmod = total // dots
+    if dots:
+        dotmod = max(total // dots, 1)
     tested = 0
     print('{:d} explicit representations to test.'.format(total))
     
@@ -327,10 +330,10 @@ def test_explicit_implicit(w, p, verbose = False):
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
                 R1 = real_explicit(S1, E1, C1)
 
-                print(' ', S, E, C)
-                print(' ', Si, Ei, Ti)
-                print(' ', Sc, Ec, Cc)
-                print(' ', S1, E1, C1)
+                # print(' ', S, E, C)
+                # print(' ', Si, Ei, Ti)
+                # print(' ', Sc, Ec, Cc)
+                # print(' ', S1, E1, C1)
                 
                 if verbose:
                     print('    {:20} {:20} {:20} {:20}'.format(R, Ri, Rc, R1))
@@ -353,9 +356,10 @@ def test_explicit_implicit(w, p, verbose = False):
                 icov[(uint(Si), uint(Ei), uint(Ti),)] = True
 
                 tested += 1
-                if (not verbose) and tested % dotmod == 0:
+                if (not verbose) and dots and tested % dotmod == 0:
                     print('.', end='', flush=True)
-    print()
+    if (not verbose) and dots:
+        print()
 
     # Check cover of implicit values
     assert all(icov.values())
