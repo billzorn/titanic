@@ -98,11 +98,16 @@ where:
  \item $c' = uint(T)$.
 \end{description}
 
-Let us call this the implicit triple of bitvectors, or ``implicit triple'' or ``IEEE 754 triple'' representation of floating point numbers. We also say that the IEEE binary interchange format uses a ``packed bitvector'' or ``implicit packed'' or just ``packed'' representation $B = concat(S, E, T)$. $S$ can always be recovered, and $E$ and $T$ can be recovered as long as $w$ or $p$ is known. 
+Let us call this the implicit triple of bitvectors, or ``implicit triple'' or ``IEEE 754 triple'' representation of floating point numbers. We also say that the IEEE binary interchange format uses a ``packed bitvector'' or ``implicit packed'' or just ``packed'' representation $B = concat(S, concat(E, T))$. $S$ can always be recovered, and $E$ and $T$ can be recovered as long as $w$ or $p$ is known. Conversion between the packed and implicit representions is expressed in Equations \ref{eq:pack1} and \ref{eq:pack2}.
 
-This formulation is equivalent to the description in section 3.4 of \cite{ieee754-2008}. For clarity, we have tried to name our terms according to similar concepts from the IEEE 754 standard, distinguishing $c'$ because it is usually not the same as the explicit fractional value $c$. The treatment here should not differ materially from the IEEE 754 standard, and is intended mostly to provide Equations \ref{eq:real3} and \ref{eq:real4} and their requisite definitions in a compact form.
+\begin{align}
+ packf(S, E, T)   = \;\;\, &concat(S, concat(E, T)) \label{eq:pack1} \\
+ unpackf(B, w, p) = (&extract(w + p - 1, w + p - 1, B), \label{eq:pack2} \\
+                     &extract(w + p - 2, p - 1, B), \nonumber \\
+                     &extract(p - 2, 0, B)) \nonumber
+\end{align}
 
-Converting between the explicit and implicit representations is surprisingly tricky. When going from implicit to explicit, all we need to do is find the correct value of the implicit bit to concatenate with $T$. Usually this is $\texttt{0b1}$, unless $uint(E) = 0$, in which case it is $\texttt{0b0}$, or $uint(E) = 2^w - 1$, in which case we have to be careful not to accidentally convert infinity into NaN. One way to avoid this is to assume the implicit bit for representations of non-finite reals is always $\texttt{0b0}$, as in Equation \ref{eq:conv1},
+While packing and unpacking implicit representations is straightforward, converting between the implicit and explicit representations is surprisingly tricky. When going from implicit to explicit, all we need to do is find the correct value of the implicit bit to concatenate with $T$. Usually this is $\texttt{0b1}$, unless $uint(E) = 0$, in which case it is $\texttt{0b0}$, or $uint(E) = 2^w - 1$, in which case we have to be careful not to accidentally convert infinity into NaN. One way to avoid this is to assume the implicit bit for representations of non-finite reals is always $\texttt{0b0}$, as in Equation \ref{eq:conv1},
 
 \begin{align} \label{eq:conv1}
  explicit(S, E, T) =
@@ -197,41 +202,41 @@ Several different orderings are possible: we choose one that is hopefully the le
  \item If $real(F_1) = real(F_2)$, then $ord(F_1) = ord(F_2)$. I.e. floating point numbers that represent the same real value have the same order.
  \item If $real(F_1) < real(F_2)$, then $ord(F_1) < ord(F_2)$. I.e. floating point numbers are ordered by their real value.
  \item If $real(F_1) = -\infty$ and $real(F_2) = \infty$, then $ord(F_2) - ord(F_1)$ is equal to the number of distinct real values the representation can represent (including the two infinities, but not including any NaNs) minus one. I.e. the ordinals are tightly packed: there is no positive $i$ such that there is no $F$ that has $ord(F) = i$ and yet there is some $F'$ that has $ord(F') > i$, or analogously for negative $i$.
- \item If $real(F)$ is NaN, then $ord(F)$ is undefined. In general, the order of a floating point number that represents NaN cannot be relied upon to be meaningful, so the safest thing to do is refuse to assign it meaning. An implementation might want to do something in this case like return an error, or extend the notion of an ordinal to include NaN and return that. In some situations there might be implementation-specific meaning, which we will discuss in more detail later.
+ \item If $real(F)$ is NaN, then $ord(F)$ is undefined. In general, the order of a floating point number that represents NaN cannot be relied upon to be meaningful, so the safest thing to do is refuse to assign it meaning. An implementation might want to do something in this case like signal an error, or extend the notion of an ordinal to include NaN.
 \end{enumerate}
 
-To help visualize, we can draw a floating point representation out on a number line, as in Figures \ref{fig:numberline1} and \ref{fig:numberline2}. Each tick on the line indicates a representable floating point number $F$, with $real(F)$ printed above the line and $ord(F)$ below it. Positive and negative 0 overlap, and share an order of 0. We draw the NaNs somewhere past the infinities, just as a reminder of their existence; they have no meaningful position on the number line. In Figure \ref{fig:numberline1}, we distribute the numbers according to their real value, while in Figure \ref{fig:numberline1} we distribute them evenly, more in accordance with their order or their properties as bitvectors.
-
-\begin{figure}[t!]
- \centering
- \caption{Floating point numbers with $w=2$, $p=2$, distributed by real value.} \label{fig:numberline1}
- \smallskip
- \centering
- \resizebox{\textwidth}{!}{
- \begin{tikzpicture}[scale= 7.0/5.0]
-  \draw (-4,0) -- (4,0);
-   \foreach \i/\o/\r in {0.0/0/\pm0.0,0.5/1/0.5,1.0/2/1.0,1.5/3/1.5,2.0/4/2.0,3.0/5/3.0,4.0/6/\infty,5.0/\text{N/A}/nan,-0.5/-1/-0.5,-1.0/-2/-1.0,-1.5/-3/-1.5,-2.0/-4/-2.0,-3.0/-5/-3.0,-4.0/-6/-\infty,-5.0/\text{N/A}/nan}
-   {
-    \draw (\i,0.1) -- + (0,-0.2) node[below] {\small $\o$} + (0,0.0) node[above] {\small $\r$};
-   }
-    \end{tikzpicture}
- }
-\end{figure}
-
-\begin{figure}[t!]
- \centering
- \caption{Floating point numbers with $w=2$, $p=2$, distributed uniformly.} \label{fig:numberline2}
- \smallskip
- \resizebox{\textwidth}{!}{
- \begin{tikzpicture}[scale=1.0]
-  \draw (-6,0) -- (6,0);
-   \foreach \i/\o/\r in {0/0/\pm0.0,1/1/0.5,2/2/1.0,3/3/1.5,4/4/2.0,5/5/3.0,6/6/\infty,7/\text{N/A}/nan,-1/-1/-0.5,-2/-2/-1.0,-3/-3/-1.5,-4/-4/-2.0,-5/-5/-3.0,-6/-6/-\infty,-7/\text{N/A}/nan}
-   {
-    \draw (\i,0.1) -- + (0,-0.2) node[below] {\small $\o$} + (0,0.0) node[above] {\small $\r$};
-   }
-    \end{tikzpicture}
- }
-\end{figure}
+% To help visualize, we can draw a floating point representation out on a number line, as in Figures \ref{fig:numberline1} and \ref{fig:numberline2}. Each tick on the line indicates a representable floating point number $F$, with $real(F)$ printed above the line and $ord(F)$ below it. Positive and negative 0 overlap, and share an order of 0. We draw the NaNs somewhere past the infinities, just as a reminder of their existence; they have no meaningful position on the number line. In Figure \ref{fig:numberline1}, we distribute the numbers according to their real value, while in Figure \ref{fig:numberline1} we distribute them evenly, more in accordance with their order or their properties as bitvectors.
+% 
+% \begin{figure}[t!]
+%  \centering
+%  \caption{Floating point numbers with $w=2$, $p=2$, distributed by real value.} \label{fig:numberline1}
+%  \smallskip
+%  \centering
+%  \resizebox{\textwidth}{!}{
+%  \begin{tikzpicture}[scale= 7.0/5.0]
+%   \draw (-4,0) -- (4,0);
+%    \foreach \i/\o/\r in {0.0/0/\pm0.0,0.5/1/0.5,1.0/2/1.0,1.5/3/1.5,2.0/4/2.0,3.0/5/3.0,4.0/6/\infty,5.0/\text{N/A}/nan,-0.5/-1/-0.5,-1.0/-2/-1.0,-1.5/-3/-1.5,-2.0/-4/-2.0,-3.0/-5/-3.0,-4.0/-6/-\infty,-5.0/\text{N/A}/nan}
+%    {
+%     \draw (\i,0.1) -- + (0,-0.2) node[below] {\small $\o$} + (0,0.0) node[above] {\small $\r$};
+%    }
+%     \end{tikzpicture}
+%  }
+% \end{figure}
+% 
+% \begin{figure}[t!]
+%  \centering
+%  \caption{Floating point numbers with $w=2$, $p=2$, distributed uniformly.} \label{fig:numberline2}
+%  \smallskip
+%  \resizebox{\textwidth}{!}{
+%  \begin{tikzpicture}[scale=1.0]
+%   \draw (-6,0) -- (6,0);
+%    \foreach \i/\o/\r in {0/0/\pm0.0,1/1/0.5,2/2/1.0,3/3/1.5,4/4/2.0,5/5/3.0,6/6/\infty,7/\text{N/A}/nan,-1/-1/-0.5,-2/-2/-1.0,-3/-3/-1.5,-4/-4/-2.0,-5/-5/-3.0,-6/-6/-\infty,-7/\text{N/A}/nan}
+%    {
+%     \draw (\i,0.1) -- + (0,-0.2) node[below] {\small $\o$} + (0,0.0) node[above] {\small $\r$};
+%    }
+%     \end{tikzpicture}
+%  }
+% \end{figure}
 
 We can implement $ord(F)$ using arithmetic. The computation for implicit triples is given in Equation \ref{eq:ord1},
 
