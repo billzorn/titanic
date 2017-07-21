@@ -42,6 +42,8 @@ A floating point number is a triple of three things: a sign $s$, an exponent $e$
  real(s, e, c, b, p) = (-1)^s \times b^e \times (c \times b^{1 - p})
 \end{align}
 
+% Note here that we'll be looking at a series of representations, we don't get anything exactly like IEEE 754 until like Equation 4 or something
+
 For lack of another widely supported alternative, we will specialize our discussion here to the IEEE 754 (binary) standard. We fix $b = 2$, and commit to representing $c$ as a bitvector $C$ of size $p$. As we can see in Equation \ref{eq:real2}, this eliminates the extra terms $b$ and $p$ so that our representation is really a triple.
 
 \begin{align} \label{eq:real2}
@@ -322,7 +324,10 @@ Ordering is much harder to compute for the explicit representation. Because of t
  \subitem zeros
  \subitem infinities
  \subitem other pitfalls?
- \item posix nextafter
+ \item posix nextafter (test with z3?)
+ % iff (conjunction of conditions: not 0/-0, etc) then posix nextafter / IEEE totalOrder agree
+ % and likewise for ulps? yes
+ % validated by a sat solver, here's a box with the requirements
  \item table of useful constants (1, tiny, umax, etc.)
 \end{itemize}
 
