@@ -1,10 +1,12 @@
+import sys
+
 # bitvectors
 
 def bitmask(n):
     if n > 0:
         return (1 << n) - 1
     else:
-        return (-1) << (-n)
+        return (-1) << (-n)    
 
 class BV(object):
     # Bitvectors must have a size of at least 1.
@@ -40,7 +42,12 @@ class BV(object):
         return z
     clz = property(_clz)
 
-    def __init__(self, i, n):
+    def __init__(self, i, n = sys.byteorder):
+        if isinstance(i, bytes):
+            _n = len(i) * 8
+            i = int.from_bytes(i, byteorder=n)
+            n = _n
+
         assert isinstance(i, int)
         assert isinstance(n, int)
         assert n > 0
@@ -53,6 +60,12 @@ class BV(object):
 
     def __repr__(self):
         return ('BV(0b{:0' + str(self.n) + 'b}, {:d})').format(self.i, self.n)
+
+    def to_bytes(self, byteorder=sys.byteorder):
+        length = self.n // 8
+        if self.n % 8 > 0:
+            length += 1
+        return int.to_bytes(self.i, length, byteorder=byteorder)
 
     # limited support for comparison
 
@@ -125,11 +138,26 @@ def extract(left, right, bv):
 
 
 # Python's integers are a good stand-in for mathematical integers, as they can have arbitrary size.
-# For displaying Reals, we can probably get away with Python's decimal module, as all we really
-# want to do in this code is print things out.
+# To represent reals, we can get away with rational numbers as represented by python's fractions,
+# unless we want to do operations that might have irrational answers. In that case we would need
+# constructive reals.
 
-import decimal
-Dec = decimal.Decimal
+import math
+def is_nan(r):
+    return math.isnan(r)
+def is_inf(r):
+    return math.isinf(r)
+
+import fractions
+def Real(v):
+    if v == 'nan':
+        return float('nan')
+    elif v == 'inf':
+        return float('inf')
+    elif is_nan(v) or is_inf(v):
+        return v
+    else:
+        return fractions.Fraction(v)
 
 
 # Equation 1
@@ -144,7 +172,7 @@ def real1(s, e, c, b, p):
     assert isinstance(p, int)
     assert p >= 1
 
-    return ((-1) ** s) * (b ** Dec(e)) * (c * (b ** Dec(1 - p)))
+    return (Real(-1) ** s) * (Real(b) ** e) * (Real(c) * (Real(b) ** (1 - p)))
 
 # Equation 2
 def real2(s, e, C):
@@ -153,7 +181,7 @@ def real2(s, e, C):
     assert isinstance(e, int)
     assert isinstance(C, BV)
 
-    return ((-1) ** s) * (2 ** Dec(e)) * (uint(C) * (2 ** Dec(1 - size(C))))
+    return (Real(-1) ** s) * (Real(2) ** e) * (Real(uint(C)) * (Real(2) ** (1 - size(C))))
 
 # Equation 3
 def real_explicit(S, E, C):
@@ -173,13 +201,13 @@ def real_explicit(S, E, C):
     c = uint(C)
 
     if e > emax and c != 0:
-        return Dec('nan')
+        return Real('nan')
     elif e > emax and c == 0:
-        return ((-1) ** s) * Dec('inf')
+        return (Real(-1) ** s) * Real('inf')
     elif emin <= e and e <= emax:
-        return ((-1) ** s) * (2 ** Dec(e)) * (c * (2 ** Dec(1 - p)))
+        return (Real(-1) ** s) * (Real(2) ** e) * (Real(c) * (Real(2) ** (1 - p)))
     else: # e < emin
-        return ((-1) ** s) * (2 ** Dec(emin)) * (c * (2 ** Dec(1 - p)))
+        return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c) * (Real(2) ** (1 - p)))
 
 # Equation 4
 def real_implicit(S, E, T):
@@ -198,13 +226,13 @@ def real_implicit(S, E, T):
     c_prime = uint(T)
 
     if e_prime > emax and c_prime != 0:
-        return Dec('nan')
+        return Real('nan')
     elif e_prime > emax and c_prime == 0:
-        return ((-1) ** s) * Dec('inf')
+        return (Real(-1) ** s) * Real('inf')
     elif emin <= e_prime and e_prime <= emax:
-        return ((-1) ** s) * (2 ** Dec(e_prime)) * ((c_prime + (2 ** Dec(p - 1))) * (2 ** Dec(1 - p)))
+        return (Real(-1) ** s) * (Real(2) ** e_prime) * ((Real(c_prime) + (Real(2) ** (p - 1))) * (Real(2) ** (1 - p)))
     else: # e_prime < emin
-        return ((-1) ** s) * (2 ** Dec(emin)) * (c_prime * (2 ** Dec(1 - p)))
+        return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c_prime) * (Real(2) ** (1 - p)))
 
 # Equation 5
 def packf(S, E, T):
@@ -395,23 +423,65 @@ def refloat_packed(i, w, p):
         return concat(BV(1, 1), ET)
 
 
-# Conversion to other formats
-import struct
+# Conversions for numpy 16, 32, and 64-bit floats.
+# float16 : w = 5,  p = 11
+# float32 : w = 8,  p = 24
+# float64 : w = 11, p = 53
+# float128: not an IEEE 754 128-bit float, possibly 80bit x87?
 import numpy as np
 
-def np_float16_to_packed(f):
-    assert isinstance(f, np.float16)
-    fbytes = f.tobytes()
-    x = struct.unpack('H', fbytes)[0]
-    return BV(x, 16)
+def np_byteorder(ftype):
+    bo = np.dtype(ftype).byteorder
+    if bo == '=':
+        return sys.byteorder
+    elif bo == '<':
+        return 'little'
+    elif bo == '>':
+        return 'big'
+    else:
+        raise ValueError('unknown numpy byteorder {} for dtype {}'.format(repr(bo), repr(ftype)))
 
-def packed_to_np_float16(B):
-    assert isinstance(B, BV)
-    assert size(B) == 16
+def np_float_to_packed(f):
+    assert isinstance(f, np.float16) or isinstance(f, np.float32) or isinstance(f, np.float64)
+    
+    return BV(f.tobytes(), np_byteorder(type(f)))
 
-    decimal.getcontext().prec = 32
-    r = str(real_implicit(*unpackf(B, 5, 11)))
-    return np.float16(r)
+def np_float_to_implicit(f):
+    assert isinstance(f, np.float16) or isinstance(f, np.float32) or isinstance(f, np.float64)
+    
+    if isinstance(f, np.float16):
+        w = 5
+        p = 11
+    elif isinstance(f, np.float32):
+        w = 8
+        p = 24
+    else: # isinstance(f, np.float64)
+        w = 11
+        p = 53
+
+    B = np_float_to_packed(f)
+    return unpackf(B, w, p)
+
+def packed_to_np_float(B):
+    assert size(B) == 16 or size(B) == 32 or size(B) == 64
+
+    if size(B) == 16:
+        ftype = np.float16
+    elif size(B) == 32:
+        ftype = np.float32
+    else: # size(B) == 64
+        ftype = np.float64
+
+    return np.frombuffer(B.to_bytes(byteorder=np_byteorder(ftype)), dtype=ftype, count=1, offset=0)[0]
+
+def implicit_to_np_float(S, E, T):
+    assert isinstance(S, BV)
+    assert size(S) == 1
+    assert isinstance(E, BV)
+    assert isinstance(T, BV)
+    assert (size(E) == 5 and size(T) == 10) or (size(E) == 8 and size(T) == 23) or (size(E) == 11 and size(T) == 52)
+
+    return packed_to_np_float(packf(S, E, T))
 
 
 # Sanity tests.
@@ -422,23 +492,18 @@ def test_fp_identical(a, b):
     return a1 == b1 and a2 == b2 and a3 == b3
 
 def test_same_real_value(a, b):
-    if a.is_nan() and b.is_nan():
+    if is_nan(a) and is_nan(b):
         return True
     else:
         return a == b
 
 def test_explicit_implicit(w, p, verbose = False, dots = 50):
-    # We need to make sure we have enough precision to represent values exactly
-    # with Decimal, or comparisons for equality will fail. This formula might
-    # not be exactly right...
-    decimal.getcontext().prec = max(32, (2 ** w), p * 2)
-
     total = (2**1) * (2**w) * (2**p)
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
     if dots:
         dotmod = max(total // dots, 1)
     tested = 0
-    print('{:d} explicit representations to test, prec={}.'.format(total, decimal.getcontext().prec))
+    print('{:d} explicit representations to test.'.format(total))
 
     # Make sure all possible implicit values are covered.
     icov = {}
@@ -502,7 +567,8 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 # print(' ', Sp, Ep, Tp)
 
                 if verbose:
-                    print('    {:20} {:20} {:20} {:20} {:20}'.format(R, Ri, Rc, R1, i))
+                    print('    {:20} {:20} {:20} {:20} {:20}'
+                          .format(repr(R), repr(Ri), repr(Rc), repr(R1), repr(i)))
 
                 # These should always be canonical.
                 assert is_canonical(Sc, Ec, Cc)
@@ -518,12 +584,12 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 # We actually lose information when converting some NaNs to implicit,
                 # so we can't get back the same canonical representation for them. We
                 # should be able to do so for all other numbers.
-                if not R.is_nan():
+                if not is_nan(R):
                     assert test_fp_identical((Sc, Ec, Cc,), (S1, E1, C1,))
 
                 # We should also get identical representations back from ordinals, except
                 # for the zeros which both map to i=0.
-                if inrange and (not R.is_zero()):
+                if inrange and R != 0:
                     assert test_fp_identical((Si, Ei, Ti,), (So, Eo, To,))
 
                 # Packed representations should always give us back the same thing.
@@ -533,7 +599,7 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 assert inrange == inrange_packed
                 if inrange:
                     assert i == ip
-                    if not R.is_zero():
+                    if R != 0:
                         assert B == Bo
 
                 icov[(uint(Si), uint(Ei), uint(Ti),)] = True
@@ -562,25 +628,33 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
 # Automatic tests
 if __name__ == '__main__':
     test_explicit_implicit(2,2,True)
-    test_explicit_implicit(5,11,False,dots=131)
-    test_explicit_implicit(11,5,False,dots=131)
+    # test_explicit_implicit(5,11,False,dots=131)
+    # test_explicit_implicit(11,5,False,dots=131)
 
     # janky np.float16 test
-    fp16_tests = 0
+    fp_tests = 0
     for x in range(2**16):
         B = BV(x, 16)
-        fp16 = packed_to_np_float16(B)
-        B1 = np_float16_to_packed(fp16)
+        f = packed_to_np_float(B)
+        S, E, T = np_float_to_implicit(f)
+        B1 = packf(S, E, T)
+        f1 = implicit_to_np_float(S, E, T)
 
-        R = real_implicit(*unpackf(B, 5, 11))
-        R16 = Dec(float(fp16))
+        R = real_implicit(S, E, T)
+        # This only works because python's floats have at least as much precision
+        # as the supported numpy types.
+        Rf = Real(float(f))
 
-        if R.is_nan():
-            assert R16.is_nan()
-        else:
-            assert B == B1
-            assert R == R16
+        assert B == B1
         
-        fp16_tests += 1
+        if is_nan(R):
+            assert is_nan(Rf)
+            assert is_nan(f)
+            assert is_nan(f1)
+        else:
+            assert R == Rf
+            assert f == f1
+        
+        fp_tests += 1
 
-    print('did {:d} fp16 tests against numpy'.format(fp16_tests))
+    print('did {:d} fp16 tests against numpy'.format(fp_tests))
