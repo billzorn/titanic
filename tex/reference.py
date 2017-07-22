@@ -6,7 +6,7 @@ def bitmask(n):
     if n > 0:
         return (1 << n) - 1
     else:
-        return (-1) << (-n)    
+        return (-1) << (-n)
 
 class BV(object):
     # Bitvectors must have a size of at least 1.
@@ -158,6 +158,26 @@ def Real(v):
         return v
     else:
         return fractions.Fraction(v)
+
+# For printing out pretty decimal values. Optional sign parameter to print
+# the correct sign for -0.
+import decimal
+def dec(r, prec, sign = None):
+    if is_nan(r):
+        return 'nan'
+    elif is_inf(r):
+        if r > 0:
+            return 'inf'
+        else:
+            return '-inf'
+
+    decimal.getcontext().prec = prec
+    d = decimal.Decimal(r.numerator) / decimal.Decimal(r.denominator)
+
+    if sign is not None and d == 0 and uint(sign) == 1:
+        return '-' + str(d)
+    else:
+        return str(d)
 
 
 # Equation 1
@@ -443,12 +463,12 @@ def np_byteorder(ftype):
 
 def np_float_to_packed(f):
     assert isinstance(f, np.float16) or isinstance(f, np.float32) or isinstance(f, np.float64)
-    
+
     return BV(f.tobytes(), np_byteorder(type(f)))
 
 def np_float_to_implicit(f):
     assert isinstance(f, np.float16) or isinstance(f, np.float32) or isinstance(f, np.float64)
-    
+
     if isinstance(f, np.float16):
         w = 5
         p = 11
@@ -503,6 +523,9 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
     if dots:
         dotmod = max(total // dots, 1)
     tested = 0
+    # precision to use when printing in decimal form... not sure if this is enough
+    prec = max(28, 2 ** w, p * 2)
+
     print('{:d} explicit representations to test.'.format(total))
 
     # Make sure all possible implicit values are covered.
@@ -540,7 +563,7 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                     Ro = real_implicit(So, Eo, To)
                     inrange = True
                 except OrdinalError:
-                    i = 'ordinal out of range'
+                    i = 'undefined'
                     inrange = False
 
                 B = packf(Si, Ei, Ti)
@@ -560,15 +583,9 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
                 R1 = real_explicit(S1, E1, C1)
 
-                # print(' ', S, E, C)
-                # print(' ', Si, Ei, Ti)
-                # print(' ', Sc, Ec, Cc)
-                # print(' ', S1, E1, C1)
-                # print(' ', Sp, Ep, Tp)
-
                 if verbose:
-                    print('    {:20} {:20} {:20} {:20} {:20}'
-                          .format(repr(R), repr(Ri), repr(Rc), repr(R1), repr(i)))
+                    print('  {} {} {} {}  {:10} {:20} {:20}'
+                          .format(Si, Ei, C[p-1], Ti, str(i), str(R), dec(R, prec, sign=S)))
 
                 # These should always be canonical.
                 assert is_canonical(Sc, Ec, Cc)
@@ -618,23 +635,27 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
     assert all(ocov.values())
     assert all(pcov.values())
 
-    # print(icov)
-    # print(ocov)
-    # print(pcov)
-
     print('Tested {:d} explicit, {:d} implicit, {:d} ordinals. Done.'.format(tested, len(icov), len(ocov)))
 
+def test_numpy_fp(points, ftype, dots = 50):
+    total = len(points)
+    if dots:
+        dotmod = max(total // dots, 1)
+    tested = 0
 
-# Automatic tests
-if __name__ == '__main__':
-    test_explicit_implicit(2,2,True)
-    # test_explicit_implicit(5,11,False,dots=131)
-    # test_explicit_implicit(11,5,False,dots=131)
+    print('{:d} points to test against {}.'.format(total, ftype))
 
-    # janky np.float16 test
-    fp_tests = 0
-    for x in range(2**16):
-        B = BV(x, 16)
+    if ftype == np.float16:
+        width = 16
+    elif ftype == np.float32:
+        width = 32
+    elif ftype == np.float64:
+        width = 64
+    else:
+        raise ValueError('unsupported floating point format {}'.format(repr(ftype)))
+
+    for x in points:
+        B = BV(x, width)
         f = packed_to_np_float(B)
         S, E, T = np_float_to_implicit(f)
         B1 = packf(S, E, T)
@@ -646,7 +667,7 @@ if __name__ == '__main__':
         Rf = Real(float(f))
 
         assert B == B1
-        
+
         if is_nan(R):
             assert is_nan(Rf)
             assert is_nan(f)
@@ -654,7 +675,28 @@ if __name__ == '__main__':
         else:
             assert R == Rf
             assert f == f1
-        
-        fp_tests += 1
 
-    print('did {:d} fp16 tests against numpy'.format(fp_tests))
+        tested += 1
+
+        if dots and tested % dotmod == 0:
+            print('.', end='', flush=True)
+    if dots:
+        print()
+
+    print('Tested {:d} points against {}. Done.'.format(tested, ftype))
+
+
+# Automatic tests
+if __name__ == '__main__':
+    import random
+
+    test_explicit_implicit(2, 2, True)
+
+    test_explicit_implicit(4, 8, False, dots=8)
+    test_explicit_implicit(5, 11, False, dots=131)
+    test_explicit_implicit(11, 5, False, dots=131)
+
+    test_numpy_fp(range(2**16), np.float16, dots=65)
+
+    test_numpy_fp([random.randrange(2**32) for j in range(100000)], np.float32, dots=100)
+    test_numpy_fp([random.randrange(2**64) for j in range(100000)], np.float64, dots=100)
