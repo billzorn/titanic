@@ -443,6 +443,128 @@ def refloat_packed(i, w, p):
         return concat(BV(1, 1), ET)
 
 
+# Floating point rounding
+def round_to_float(frac, w, p, rm):
+    assert isinstance(frac, fractions.Fraction)
+    assert w >= 2
+    assert p >= 2
+    assert rm == 'RTP' or rm == 'RTN' or rm == 'RTZ' or rm == 'RNE' or rm == 'RNA'
+
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+
+    below = -umax
+    above = umax
+
+    while above - below > 1:
+        between = below + ((above - below) // 2)
+        S, E, T = refloat(between, w, p)
+        guess = real_implicit(S, E, T)
+
+        if guess > frac:
+            above = between
+        elif guess < frac:
+            below = between
+        else: # exact equality, return
+            assert guess == frac
+            return S, E, T
+
+    assert above - below == 1
+
+    prec = max(28, 2 ** w, p * 2)
+    Sa, Ea, Ta = refloat(above, w, p)
+    Sb, Eb, Tb = refloat(below, w, p)
+    Ra = real_implicit(Sa, Ea, Ta)
+    Rb = real_implicit(Sb, Eb, Tb)
+    Da = dec(Ra, prec, sign=Sa)
+    Df = dec(frac, prec)
+    Db = dec(Rb, prec, sign=Sb)
+
+    # print('  above: ', above, Sa, Ea, Ta, Ra, Da)
+    # print('  frac : ', frac, Df)
+    # print('  below: ', below, Sb, Eb, Tb, Rb, Db)
+
+    if rm == 'RTP':
+        # print('RTP, final = above')
+        final = above
+    elif rm == 'RTN':
+        # print('RTN, final = below')
+        final = below
+    elif rm == 'RTZ':
+        if above > 0:
+            # print('RTZ, final = below')
+            final = below
+        else:
+            # print('RTZ, final = above')
+            final = above
+    else: # rm == 'RNE' or rm == 'RNA'
+        emax = (2 ** (w - 1)) - 1
+        fmax = (Real(2) ** emax) * (Real(2) - ((Real(2) ** (1 - p)) / Real(2)))
+
+        if frac >= fmax:
+            # print('RN, final = umax')
+            final = umax
+        elif frac <= -fmax:
+            # print('RN, final = -umax')
+            final = -umax
+        else:
+            Sa, Ea, Ta = refloat(above, w, p)
+            Sb, Eb, Tb = refloat(below, w, p)
+            guess_above = real_implicit(Sa, Ea, Ta)
+            guess_below = real_implicit(Sb, Eb, Tb)
+
+            difference_above = guess_above - frac
+            difference_below = frac - guess_below
+
+            # print('    ^', difference_above, dec(difference_above, prec))
+            # print('    v', difference_below, dec(difference_below, prec))
+
+            if difference_above < difference_below:
+                # print('RN, final = above')
+                final = above
+            elif difference_above > difference_below:
+                # print('RN, final = below')
+                final = below
+            else: # exact equality, find even or away
+                assert difference_above == difference_below
+                if rm == 'RNE':
+                    if Ta[0] == 0:
+                        # print('RNE, final = above')
+                        final = above
+                    else:
+                        assert Tb[0] == 0
+                        # print('RNE, final = below')
+                        final = below
+                else: # rm == 'RNA'
+                    if above > 0:
+                        # print('RNA, final = above')
+                        final = above
+                    else:
+                        # print('RNA, final = below')
+                        final = below
+
+    return refloat(final, w, p)
+
+def strtofloat(s, w, p, rm = 'RNE'):
+
+    # inf and nan behavior modeled on numpy
+    sl = s.strip().lower()
+    if sl == 'inf' or sl == '+inf' or sl == 'infinity' or sl == '+infinity':
+        return BV(0, 1), BV(-1, w), BV(0, p-1)
+    elif sl == '-inf' or sl == '-infinity':
+        return BV(1, 1), BV(-1, w), BV(0, p-1)
+    elif sl == 'nan' or sl == '+nan':
+        return BV(0, 1), BV(-1, w), BV(2 ** (p-2), p-1)
+    elif sl == '-nan':
+        return BV(1, 1), BV(-1, w), BV(2 ** (p-2), p-1)
+    else:
+        frac = fractions.Fraction(s)
+        # special case for -0, which doesn't exist in fractions...
+        if frac == 0 and sl.startswith('-'):
+            return BV(1, 1), BV(0, w), BV(0, p-1)
+        else:
+            return round_to_float(frac, w, p, rm)
+
+
 # Conversions for numpy 16, 32, and 64-bit floats.
 # float16 : w = 5,  p = 11
 # float32 : w = 8,  p = 24
@@ -637,7 +759,7 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
 
     print('Tested {:d} explicit, {:d} implicit, {:d} ordinals. Done.'.format(tested, len(icov), len(ocov)))
 
-def test_numpy_fp(points, ftype, dots = 50):
+def test_numpy_fp(points, ftype, verbose = False, dots = 50):
     total = len(points)
     if dots:
         dotmod = max(total // dots, 1)
@@ -645,14 +767,31 @@ def test_numpy_fp(points, ftype, dots = 50):
 
     print('{:d} points to test against {}.'.format(total, ftype))
 
+    # We could be more conservative with the printed precision, but I don't trust numpy
+    # any farther than I can throw it. Minimum precision that seems to work is in comments.
+
     if ftype == np.float16:
         width = 16
+        w = 5
+        p = 11
+        #fmt = '{:1.4e}'
+        fmt = '{:1.5e}'
     elif ftype == np.float32:
         width = 32
+        w = 8
+        p = 24
+        #fmt = '{:1.8e}'
+        fmt = '{:1.9e}'
     elif ftype == np.float64:
         width = 64
+        w = 11
+        p = 53
+        #fmt = '{:1.17e}'
+        fmt = '{:1.18e}'
     else:
         raise ValueError('unsupported floating point format {}'.format(repr(ftype)))
+
+    rm = 'RNE'
 
     for x in points:
         B = BV(x, width)
@@ -666,21 +805,39 @@ def test_numpy_fp(points, ftype, dots = 50):
         # as the supported numpy types.
         Rf = Real(float(f))
 
+        s = fmt.format(f)
+        Ss, Es, Ts = strtofloat(s, w, p, rm)
+        Rs = real_implicit(Ss, Es, Ts)
+
+        if verbose:
+            try:
+                i = ordinal(S, E, T)
+            except OrdinalError:
+                i = 'ooor'
+            print('we wanted: {}'.format(i))
+            print(S, E, T, R, s, Ss, Es, Ts, Rs)
+            print()
+
         assert B == B1
 
         if is_nan(R):
             assert is_nan(Rf)
             assert is_nan(f)
             assert is_nan(f1)
+            assert is_nan(Rs)
         else:
+            assert B == B1
             assert R == Rf
             assert f == f1
+            # This depends on the formatting, if it fails make sure
+            # you asked for enough digits and got the right string.
+            assert test_fp_identical((S, E, T,), (Ss, Es, Ts,))
 
         tested += 1
 
-        if dots and tested % dotmod == 0:
+        if (not verbose) and dots and tested % dotmod == 0:
             print('.', end='', flush=True)
-    if dots:
+    if (not verbose) and dots:
         print()
 
     print('Tested {:d} points against {}. Done.'.format(tested, ftype))
@@ -696,7 +853,7 @@ if __name__ == '__main__':
     test_explicit_implicit(5, 11, False, dots=131)
     test_explicit_implicit(11, 5, False, dots=131)
 
-    test_numpy_fp(range(2**16), np.float16, dots=65)
+    test_numpy_fp(range(2**16), np.float16, False, dots=65)
 
-    test_numpy_fp([random.randrange(2**32) for j in range(100000)], np.float32, dots=100)
-    test_numpy_fp([random.randrange(2**64) for j in range(100000)], np.float64, dots=100)
+    test_numpy_fp([random.randrange(2**32) for j in range(100000)], np.float32, False, dots=100)
+    test_numpy_fp([random.randrange(2**64) for j in range(100000)], np.float64, False, dots=100)
