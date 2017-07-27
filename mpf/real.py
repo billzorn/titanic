@@ -4,18 +4,28 @@
 # It's also not really reals, as these reals can be inf or nan, so it's more
 # like floating-point specific extended rationals. Whatever.
 
-import fractions
+# import fractions
+# Rational = fractions.Fraction
 
-inf_strs = {'inf', 'infinity'}
+import sympy
+Rational = sympy.Rational
+
+inf_strs = {'inf', 'infinity', 'oo'}
 nan_strs = {'nan'}
 preferred_inf_str = 'inf'
 preferred_nan_str = 'nan'
 
-_posinf = float('+inf')
-_neginf = float('-inf')
-_nan = float('nan')
+# _posinf = float('+inf')
+# _neginf = float('-inf')
+# _nan = float('nan')
+# def _isnan(x):
+#     return x != x
+
+_posinf = sympy.oo
+_neginf = -sympy.oo
+_nan = sympy.nan
 def _isnan(x):
-    return x != x
+    return x == _nan
 
 class Real(object):
 
@@ -35,7 +45,8 @@ class Real(object):
         elif _isnan(self.v):
             return 0
         else:
-            return self.v.numerator
+            # return self.v.numerator
+            return self.v.p
     numerator = property(_numerator)
 
     def _denominator(self):
@@ -46,21 +57,16 @@ class Real(object):
         elif _isnan(self.v):
             return 0
         else:
-            return self.v.denominator
+            # return self.v.denominator
+            return self.v.q
     denominator = property(_denominator)
 
     def __init__(self, x):
-        if isinstance(x, float):
-            if (x == _posinf) or (x == _neginf) or (_isnan(x)):
-                v = x
-            else:
-                raise ValueError('can only make reals from placeholder floats inf, -inf, and nan, got: {}'.format(repr(x)))
-
-        elif isinstance(x, fractions.Fraction):
+        if isinstance(x, Rational):
             v = x
 
         elif isinstance(x, int):
-            v = fractions.Fraction(x, 1)
+            v = Rational(x, 1)
 
         elif isinstance(x, str):
             s = x.strip().lower()
@@ -81,10 +87,13 @@ class Real(object):
             elif s in nan_strs:
                 v = _nan
             else:
-                v = fractions.Fraction(x)
+                v = Rational(x)
 
         else:
-            raise ValueError('can only make reals from ints or strings, got: {}'.format(repr(x)))
+            if (x == _posinf) or (x == _neginf) or (_isnan(x)):
+                v = x
+            else:
+                raise ValueError('can only make reals from placeholder floats inf, -inf, and nan, got: {}'.format(repr(x)))
 
         self.v = v
 

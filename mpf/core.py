@@ -420,7 +420,13 @@ def ieee_round_to_implicit(r, below, above, w, p, rm):
                     else:
                         final = above
 
-    return ordinal_to_implicit(final, w, p)
+    S, E, T = ordinal_to_implicit(final, w, p)
+
+    # round negative numbers less than 0 up to -0 instead of 0
+    if final == above and above == 0 and below < 0:
+        return BV(1, 1), E, T
+    else:
+        return S, E, T
 
 # Here, r can be nan, and we return some nan representation.
 def real_to_implicit(r, w, p, rm):

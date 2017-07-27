@@ -126,6 +126,12 @@ def describe_float(x, w, p, rm):
         else:
             print('  we rounded down.')
 
+# anecdotally, for acceptable performance we need to limit ourselves to:
+# w <= 20
+# p <= 1024
+# 1024 characters of input
+# scientific notation exponent <= 200000
+
 if __name__ == '__main__':
     import argparse
 
