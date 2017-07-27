@@ -443,12 +443,10 @@ def refloat_packed(i, w, p):
         return concat(BV(1, 1), ET)
 
 
-# Floating point rounding
-def round_to_float(frac, w, p, rm):
+def binsearch_nearest_ord(frac, w, p):
     assert isinstance(frac, fractions.Fraction)
     assert w >= 2
     assert p >= 2
-    assert rm == 'RTP' or rm == 'RTN' or rm == 'RTZ' or rm == 'RNE' or rm == 'RNA'
 
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
 
@@ -466,24 +464,38 @@ def round_to_float(frac, w, p, rm):
             below = between
         else: # exact equality, return
             assert guess == frac
-            return S, E, T
+            return between, between
 
     assert above - below == 1
+    return below, above
 
-    prec = max(28, 2 ** w, p * 2)
-    Sa, Ea, Ta = refloat(above, w, p)
-    Sb, Eb, Tb = refloat(below, w, p)
-    Ra = real_implicit(Sa, Ea, Ta)
-    Rb = real_implicit(Sb, Eb, Tb)
-    Da = dec(Ra, prec, sign=Sa)
-    Df = dec(frac, prec)
-    Db = dec(Rb, prec, sign=Sb)
+# Floating point rounding
+def round_to_float(frac, below, above, w, p, rm):
+    assert isinstance(frac, fractions.Fraction)
+    assert w >= 2
+    assert p >= 2
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+    assert -umax <= below and below <= above and above <= umax
+    assert above - below <= 1
+    assert rm == 'RTP' or rm == 'RTN' or rm == 'RTZ' or rm == 'RNE' or rm == 'RNA'
+
+    # prec = max(28, 2 ** w, p * 2)
+    # Sa, Ea, Ta = refloat(above, w, p)
+    # Sb, Eb, Tb = refloat(below, w, p)
+    # Ra = real_implicit(Sa, Ea, Ta)
+    # Rb = real_implicit(Sb, Eb, Tb)
+    # Da = dec(Ra, prec, sign=Sa)
+    # Df = dec(frac, prec)
+    # Db = dec(Rb, prec, sign=Sb)
 
     # print('  above: ', above, Sa, Ea, Ta, Ra, Da)
     # print('  frac : ', frac, Df)
     # print('  below: ', below, Sb, Eb, Tb, Rb, Db)
 
-    if rm == 'RTP':
+    # exact equality
+    if below == above:
+        final = below
+    elif rm == 'RTP':
         # print('RTP, final = above')
         final = above
     elif rm == 'RTN':
@@ -511,6 +523,8 @@ def round_to_float(frac, w, p, rm):
             Sb, Eb, Tb = refloat(below, w, p)
             guess_above = real_implicit(Sa, Ea, Ta)
             guess_below = real_implicit(Sb, Eb, Tb)
+
+            assert guess_below < frac and frac < guess_above
 
             difference_above = guess_above - frac
             difference_below = frac - guess_below
@@ -544,7 +558,7 @@ def round_to_float(frac, w, p, rm):
 
     return refloat(final, w, p)
 
-def strtofloat(s, w, p, rm = 'RNE'):
+def str_to_implicit(s, w, p, rm = 'RNE'):
 
     # inf and nan behavior modeled on numpy
     sl = s.strip().lower()
@@ -562,7 +576,8 @@ def strtofloat(s, w, p, rm = 'RNE'):
         if frac == 0 and sl.startswith('-'):
             return BV(1, 1), BV(0, w), BV(0, p-1)
         else:
-            return round_to_float(frac, w, p, rm)
+            below, above = binsearch_nearest_ord(frac, w, p)
+            return round_to_float(frac, below, above, w, p, rm)
 
 
 # Conversions for numpy 16, 32, and 64-bit floats.
@@ -806,7 +821,7 @@ def test_numpy_fp(points, ftype, verbose = False, dots = 50):
         Rf = Real(float(f))
 
         s = fmt.format(f)
-        Ss, Es, Ts = strtofloat(s, w, p, rm)
+        Ss, Es, Ts = str_to_implicit(s, w, p, rm)
         Rs = real_implicit(Ss, Es, Ts)
 
         if verbose:
