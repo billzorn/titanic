@@ -23,6 +23,7 @@ def describe_float(x, w, p, rm):
     # implicit, packed, and real
     if isinstance(x, str):
         # raw bitvector input, hacky
+        input_str = x
         s = x.strip().lower()
         if s.startswith('0x') or s.startswith('0b'):
             if s.startswith('0x'):
@@ -32,22 +33,28 @@ def describe_float(x, w, p, rm):
                 b = int(s, 2)
                 n = len(s) - 2
             assert n == w + p
+            input_is_binary = True
             B = BV(b, n)
             S, E, T = core.packed_to_implicit(B, w, p)
             R = core.implicit_to_real(S, E, T)
             r = R
         else:
+            input_is_binary = False
             r = Real(x)
             S, E, T = conv.str_to_implicit(x, w, p, rm)
             B = core.implicit_to_packed(S, E, T)
             R = core.implicit_to_real(S, E, T)
     elif isinstance(x, BV):
+        input_str = repr(x)
         assert B.n == w + p
+        input_is_binary = True
         B = x
         S, E, T = core.packed_to_implicit(B, w, p)
         R = core.implicit_to_real(S, E, T)
         r = R
     else: # isinstance(x, Real)
+        input_str = repr(x)
+        input_is_binary = False
         r = x
         S, E, T = core.real_to_implicit(x, w, p, rm)
         B = core.implicit_to_packed(S, E, T)
@@ -83,6 +90,16 @@ def describe_float(x, w, p, rm):
         guess_below = core.implicit_to_real(Sb, Eb, Tb)
         difference_above = guess_above - r
         difference_below = r - guess_below
+
+    # create a standard dictionary (for jsonification, etc.)
+
+    fdict = {
+        'w' : str(w),
+        'p' : str(p),
+        's' : str(s),
+        'uE' : str(E.uint),
+        'e' : str(e),
+    }
 
     # print a bunch of stuff, may want to make this separate
     if w == 5 and p == 11:
