@@ -204,7 +204,7 @@ def real2(s, e, C):
     return (Real(-1) ** s) * (Real(2) ** e) * (Real(uint(C)) * (Real(2) ** (1 - size(C))))
 
 # Equation 3
-def real_explicit(S, E, C):
+def explicit_to_real(S, E, C):
     assert isinstance(S, BV)
     assert size(S) == 1
     assert isinstance(E, BV)
@@ -230,7 +230,7 @@ def real_explicit(S, E, C):
         return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c) * (Real(2) ** (1 - p)))
 
 # Equation 4
-def real_implicit(S, E, T):
+def implicit_to_real(S, E, T):
     assert isinstance(S, BV)
     assert size(S) == 1
     assert isinstance(E, BV)
@@ -255,7 +255,7 @@ def real_implicit(S, E, T):
         return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c_prime) * (Real(2) ** (1 - p)))
 
 # Equation 5
-def packf(S, E, T):
+def implicit_to_packed(S, E, T):
     assert isinstance(S, BV)
     assert size(S) == 1
     assert isinstance(E, BV)
@@ -265,7 +265,7 @@ def packf(S, E, T):
     return concat(S, concat(E, T))
 
 # Equation 6
-def unpackf(B, w, p):
+def packed_to_implicit(B, w, p):
     assert isinstance(B, BV)
     assert w >= 2
     assert p >= 2
@@ -367,7 +367,7 @@ class OrdinalError(ArithmeticError):
     pass
 
 # Equation 10
-def ordinal(S, E, T):
+def implicit_to_ordinal(S, E, T):
     assert isinstance(S, BV)
     assert size(S) == 1
     assert isinstance(E, BV)
@@ -389,7 +389,7 @@ def ordinal(S, E, T):
         return ((-1) ** s) * u
 
 # Equation 11
-def refloat(i, w, p):
+def ordinal_to_implicit(i, w, p):
     assert w >= 2
     assert p >= 2
 
@@ -408,7 +408,7 @@ def refloat(i, w, p):
         return BV(1, 1), E, T
 
 # Equation 12
-def ordinal_packed(B, w, p):
+def packed_to_ordinal(B, w, p):
     assert isinstance(B, BV)
     assert w >= 2
     assert p >= 2
@@ -426,7 +426,7 @@ def ordinal_packed(B, w, p):
         return ((-1) ** s) * u
 
 # Equation 13
-def refloat_packed(i, w, p):
+def ordinal_to_packed(i, w, p):
     assert w >= 2
     assert p >= 2
 
@@ -444,7 +444,7 @@ def refloat_packed(i, w, p):
 
 
 def binsearch_nearest_ord(frac, w, p):
-    assert isinstance(frac, fractions.Fraction)
+    #assert isinstance(frac, fractions.Fraction)
     assert w >= 2
     assert p >= 2
 
@@ -455,8 +455,8 @@ def binsearch_nearest_ord(frac, w, p):
 
     while above - below > 1:
         between = below + ((above - below) // 2)
-        S, E, T = refloat(between, w, p)
-        guess = real_implicit(S, E, T)
+        S, E, T = ordinal_to_implicit(between, w, p)
+        guess = implicit_to_real(S, E, T)
 
         if guess > frac:
             above = between
@@ -471,7 +471,7 @@ def binsearch_nearest_ord(frac, w, p):
 
 # Floating point rounding
 def round_to_float(frac, below, above, w, p, rm):
-    assert isinstance(frac, fractions.Fraction)
+    #assert isinstance(frac, fractions.Fraction)
     assert w >= 2
     assert p >= 2
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
@@ -480,10 +480,10 @@ def round_to_float(frac, below, above, w, p, rm):
     assert rm == 'RTP' or rm == 'RTN' or rm == 'RTZ' or rm == 'RNE' or rm == 'RNA'
 
     # prec = max(28, 2 ** w, p * 2)
-    # Sa, Ea, Ta = refloat(above, w, p)
-    # Sb, Eb, Tb = refloat(below, w, p)
-    # Ra = real_implicit(Sa, Ea, Ta)
-    # Rb = real_implicit(Sb, Eb, Tb)
+    # Sa, Ea, Ta = ordinal_to_implicit(above, w, p)
+    # Sb, Eb, Tb = ordinal_to_implicit(below, w, p)
+    # Ra = implicit_to_real(Sa, Ea, Ta)
+    # Rb = implicit_to_real(Sb, Eb, Tb)
     # Da = dec(Ra, prec, sign=Sa)
     # Df = dec(frac, prec)
     # Db = dec(Rb, prec, sign=Sb)
@@ -519,10 +519,10 @@ def round_to_float(frac, below, above, w, p, rm):
             # print('RN, final = -umax')
             final = -umax
         else:
-            Sa, Ea, Ta = refloat(above, w, p)
-            Sb, Eb, Tb = refloat(below, w, p)
-            guess_above = real_implicit(Sa, Ea, Ta)
-            guess_below = real_implicit(Sb, Eb, Tb)
+            Sa, Ea, Ta = ordinal_to_implicit(above, w, p)
+            Sb, Eb, Tb = ordinal_to_implicit(below, w, p)
+            guess_above = implicit_to_real(Sa, Ea, Ta)
+            guess_below = implicit_to_real(Sb, Eb, Tb)
 
             assert guess_below < frac and frac < guess_above
 
@@ -556,7 +556,7 @@ def round_to_float(frac, below, above, w, p, rm):
                         # print('RNA, final = below')
                         final = below
 
-    return refloat(final, w, p)
+    return ordinal_to_implicit(final, w, p)
 
 def str_to_implicit(s, w, p, rm = 'RNE'):
 
@@ -617,7 +617,7 @@ def np_float_to_implicit(f):
         p = 53
 
     B = np_float_to_packed(f)
-    return unpackf(B, w, p)
+    return packed_to_implicit(B, w, p)
 
 def packed_to_np_float(B):
     assert size(B) == 16 or size(B) == 32 or size(B) == 64
@@ -638,7 +638,7 @@ def implicit_to_np_float(S, E, T):
     assert isinstance(T, BV)
     assert (size(E) == 5 and size(T) == 10) or (size(E) == 8 and size(T) == 23) or (size(E) == 11 and size(T) == 52)
 
-    return packed_to_np_float(packf(S, E, T))
+    return packed_to_np_float(implicit_to_packed(S, E, T))
 
 
 # Sanity tests.
@@ -690,35 +690,35 @@ def test_explicit_implicit(w, p, verbose = False, dots = 50):
                 S = BV(s, 1)
                 E = BV(e_prime, w)
                 C = BV(c, p)
-                R = real_explicit(S, E, C)
+                R = explicit_to_real(S, E, C)
 
                 Si, Ei, Ti = explicit_to_implicit(S, E, C)
-                Ri = real_implicit(Si, Ei, Ti)
+                Ri = implicit_to_real(Si, Ei, Ti)
                 try:
-                    i = ordinal(Si, Ei, Ti)
-                    So, Eo, To = refloat(i, w, p)
-                    Ro = real_implicit(So, Eo, To)
+                    i = implicit_to_ordinal(Si, Ei, Ti)
+                    So, Eo, To = ordinal_to_implicit(i, w, p)
+                    Ro = implicit_to_real(So, Eo, To)
                     inrange = True
                 except OrdinalError:
                     i = 'undefined'
                     inrange = False
 
-                B = packf(Si, Ei, Ti)
-                Sp, Ep, Tp = unpackf(B, w, p)
+                B = implicit_to_packed(Si, Ei, Ti)
+                Sp, Ep, Tp = packed_to_implicit(B, w, p)
 
                 try:
-                    ip = ordinal_packed(B, w, p)
-                    Bo = refloat_packed(ip, w, p)
+                    ip = packed_to_ordinal(B, w, p)
+                    Bo = ordinal_to_packed(ip, w, p)
                     inrange_packed = True
                 except OrdinalError:
                     ip = 'packord out of range'
                     inrange_packed = False
 
                 Sc, Ec, Cc = canonicalize(S, E, C)
-                Rc = real_explicit(Sc, Ec, Cc)
+                Rc = explicit_to_real(Sc, Ec, Cc)
 
                 S1, E1, C1 = implicit_to_explicit(Si, Ei, Ti)
-                R1 = real_explicit(S1, E1, C1)
+                R1 = explicit_to_real(S1, E1, C1)
 
                 if verbose:
                     print('  {} {} {} {}  {:10} {:20} {:20}'
@@ -812,21 +812,21 @@ def test_numpy_fp(points, ftype, verbose = False, dots = 50):
         B = BV(x, width)
         f = packed_to_np_float(B)
         S, E, T = np_float_to_implicit(f)
-        B1 = packf(S, E, T)
+        B1 = implicit_to_packed(S, E, T)
         f1 = implicit_to_np_float(S, E, T)
 
-        R = real_implicit(S, E, T)
+        R = implicit_to_real(S, E, T)
         # This only works because python's floats have at least as much precision
         # as the supported numpy types.
         Rf = Real(float(f))
 
         s = fmt.format(f)
         Ss, Es, Ts = str_to_implicit(s, w, p, rm)
-        Rs = real_implicit(Ss, Es, Ts)
+        Rs = implicit_to_real(Ss, Es, Ts)
 
         if verbose:
             try:
-                i = ordinal(S, E, T)
+                i = implicit_to_ordinal(S, E, T)
             except OrdinalError:
                 i = 'ooor'
             print('we wanted: {}'.format(i))
