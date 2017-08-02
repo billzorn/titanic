@@ -94,7 +94,79 @@ def implicit_to_float(S, E, T):
 
     return float(implicit_to_np_float(S, E, T))
 
-# Conversions to human-readable formats.
+# Pre-rounding conversion to bounded reals.
+
+def ordinal_to_bounded_real(i, w, p):
+    assert isinstance(i, int)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+    assert -umax <= i and i <= umax
+
+    below = i
+    above = i
+    S, E, T = core.ordinal_to_implicit(x, w, p)
+    R = core.implicit_to_real(S, E, T)
+    return R, below, above
+
+def bv_to_bounded_real(B, w, p):
+    assert isinstance(B, BV)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+    assert B.n == w + p
+
+    try:
+        below = core.packed_to_ordinal(x, w, p)
+    except core.OrdinalError:
+        below = None
+    above = below
+    S, E, T = core.packed_to_implicit(x, w, p)
+    R = core.implicit_to_real(S, E, T)
+    return R, below, above
+
+def real_to_bounded_real(R, w, p):
+    assert isinstance(R, FReal)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+
+    if r.isnan:
+        return R, None, None
+    else:
+        below, above = core.binsearch_nearest_ordinals(R, w, p)
+        return R, below, above
+
+# Conversions to and from human-readable formats.
+
+# custom string parser for ordinals and bitvectors
+def str_to_ord_bv_real(x):
+    assert isinstance(x, str)
+
+    s = x.strip.lower()
+    # ordinal
+    if s.startswith('0i'):
+        s = s[2:]
+        return int(s)
+    # hex bitvector
+    elif s.startswith('0x'):
+        s = s[2:]
+        b = int(s, 16)
+        n = len(s) * 4
+        return BV(b, n)
+    # binary bitvector
+    elif s.startswith('0b'):
+        s = s[2:]
+        b = int(s, 2)
+        n = len(s)
+        return BV(b, n)
+    # see if the FReal constructor can figure it out
+    else:
+        return FReal(x)
 
 def str_to_implicit(s, w, p, rm = core.RNE):
     assert isinstance(s, str)

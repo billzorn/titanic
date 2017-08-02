@@ -108,6 +108,15 @@ class FReal(object):
             return None
     rational_denominator = property(_rational_denominator)
 
+    def _symbolic_value(self):
+        if self.isinf:
+            return sympy.oo * self.sign
+        elif self.isnan:
+            return sympy.nan
+        else:
+            return self.magnitude * self.sign
+    symbolic_value = property(_symbolic_value)
+
     def _valid(self):
         assert self.negative is True or self.negative is False
         assert self.infinite is True or self.infinite is False

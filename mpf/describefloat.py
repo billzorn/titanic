@@ -1,17 +1,37 @@
 #!/usr/bin/env python
 
+import sympy
+
 from bv import BV
 from real import FReal
 import core
 import conv
 
-def describe_float(x, w, p, rm):
-    assert isinstance(x, str) or isinstance(x, FReal) or isinstance(x, BV)
+def pprint_real(R, pretty=False, exact=True, n=20):
+    pass
+
+def describe_format(w, p):
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
     assert p >= 2
-    assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
+
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+    emax = (2 ** (w - 1)) - 1
+    emin = 1 - emax
+    fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+    prec = max(28, 2 ** w, p * 2)
+
+    print(fmax)
+    
+
+def describe_float(x, w, p):
+    assert isinstance(x, int) or isinstance(x, BV) or isinstance(x, FReal) or isinstance(x, str)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+    #assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
 
     # format constants
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
@@ -20,45 +40,50 @@ def describe_float(x, w, p, rm):
     fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
     prec = max(28, 2 ** w, p * 2)
 
-    # implicit, packed, and real
+    # After the parsing logic, we have the following variables:
+    # input_repr : repr(what was passed to x)
+    #          x : the input x, parsed into an int, BV, or FReal
+    #          R : an FReal with the value of the raw input
+    #      below : the ordinal below R
+    #      above : the ordinal above R
+
+    # Note that the sign of 0 is missing when only considering above/below,
+    # but it can be recovered from R.
+
+    # Note also that all of this information can all be determined
+    # without considering a particular rounding mode.
+
+    # Finally, below and above will be None if the input is NaN.
+
+    # Invoke some custom parsing logic on strings to figure out what they are.
+    # First, generate input_repr since we might reassign here to x.
+    input_repr = repr(x)
     if isinstance(x, str):
-        # raw bitvector input, hacky
-        input_str = x
-        s = x.strip().lower()
-        if s.startswith('0x') or s.startswith('0b'):
-            if s.startswith('0x'):
-                b = int(s, 16)
-                n = (len(s) - 2) * 4
-            else: # s.startswith('0b')
-                b = int(s, 2)
-                n = len(s) - 2
-            assert n == w + p
-            input_is_binary = True
-            B = BV(b, n)
-            S, E, T = core.packed_to_implicit(B, w, p)
-            R = core.implicit_to_real(S, E, T)
-            r = R
-        else:
-            input_is_binary = False
-            r = FReal(x)
-            S, E, T = conv.str_to_implicit(x, w, p, rm)
-            B = core.implicit_to_packed(S, E, T)
-            R = core.implicit_to_real(S, E, T)
+        x = conv.str_to_ord_bv_real(x)
+
+    # integers are interpreted as ordinals (and never produce -0)
+    if isinstance(x, int):
+        R, below, above = conv.ordinal_to_bounded_real(x, w, p)
+
+    # bitvectors are interpreted as packed representations
     elif isinstance(x, BV):
-        input_str = repr(x)
-        assert B.n == w + p
-        input_is_binary = True
-        B = x
-        S, E, T = core.packed_to_implicit(B, w, p)
-        R = core.implicit_to_real(S, E, T)
-        r = R
-    else: # isinstance(x, FReal)
-        input_str = repr(x)
-        input_is_binary = False
-        r = x
-        S, E, T = core.real_to_implicit(x, w, p, rm)
-        B = core.implicit_to_packed(S, E, T)
-        R = core.implicit_to_real(S, E, T)
+        R, below, above = conv.bv_to_bounded_real(x, w, p)
+
+    # reals are just themselves
+    elif isinstance(x, FReal):
+        R, below, above = conv.real_to_bounded_real(x, w, p)
+
+    # what is this?
+    else:
+        raise ValueError('expected an int, BV, or FReal; given {}; parsed to {}'
+                         .format(input_repr, repr(x)))
+
+    # What information (in strings) is useful to describe a real number?
+
+
+
+
+
 
     # implicit bit
     Se, Ee, C = core.implicit_to_explicit(S, E, T)

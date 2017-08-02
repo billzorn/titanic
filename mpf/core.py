@@ -76,8 +76,7 @@ def explicit_to_real(S, E, C):
     c = uint(C)
 
     if e > emax and c != 0:
-        # PARAM: default payload?
-        return FReal(None)
+        return FReal(None, negative=(s == 1), payload=c)
     elif e > emax and c == 0:
         return (FReal(-1) ** s) * FReal(infinite=True)
     elif emin <= e and e <= emax:
@@ -102,8 +101,7 @@ def implicit_to_real(S, E, T):
     c_prime = uint(T)
 
     if e > emax and c_prime != 0:
-        # PARAM: default payload?
-        return FReal(None)
+        return FReal(None, negative=(s == 1), payload=c_prime)
     elif e > emax and c_prime == 0:
         return (FReal(-1) ** s) * FReal(infinite=True)
     elif emin <= e and e <= emax:
@@ -450,5 +448,5 @@ def real_to_implicit(r, w, p, rm):
         else:
             return BV(0, 1), BV(-1, w), BV(payload, p-1)
     else:
-        above, below = binsearch_nearest_ordinals(r, w, p)
-        return ieee_round_to_implicit(r, above, below, w, p, rm)
+        below, above = binsearch_nearest_ordinals(r, w, p)
+        return ieee_round_to_implicit(r, below, above, w, p, rm)
