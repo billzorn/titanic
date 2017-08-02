@@ -3,7 +3,7 @@ import numpy as np
 import decimal
 
 from bv import BV
-from real import Real
+from real import FReal
 import core
 
 # Binary conversions are relatively simple for numpy's floating point types.
@@ -104,47 +104,34 @@ def str_to_implicit(s, w, p, rm = core.RNE):
     assert p >= 2
     assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
 
-    sl = s.strip().lower()
-    if sl.startswith('-'):
-        Ss = BV(1, 1)
-    else:
-        Ss = BV(0, 1)
+    r = FReal(s)
+    return core.real_to_implicit(r, w, p, rm)
 
-    r = Real(s)
-    S, E, T = core.real_to_implicit(r, w, p, rm)
-
-    # In the case of nan or 0, override the provided sign with what we
-    # saw in the string.
-    if r.isnan or r == Real(0):
-        return Ss, E, T
-    else:
-        return S, E, T
-
-def real_to_dec(r, prec, S = BV(0, 1)):
-    assert isinstance(r, Real)
+def real_to_dec(r, prec):
+    assert isinstance(r, FReal)
     assert isinstance(prec, int)
     assert prec >= 1
-    
-    if r.isnan:
-        if S.uint == 0:
-            return decimal.Decimal('nan')
-        else:
-            return decimal.Decimal('-nan')
-    elif r.isinf:
-        if S.uint == 0:
-            return decimal.Decimal('inf')
-        else:
-            return decimal.Decimal('-inf')
-    elif r == Real(0):
-        if S.uint == 0:
-            return decimal.Decimal('0')
-        else:
-            return decimal.Decimal('-0')
-    else:
-        decimal.getcontext().prec = prec
-        d = decimal.Decimal(r.numerator) / decimal.Decimal(r.denominator)
-        return d
 
+    if r.isnan:
+        if r.sign < 0:
+            return decimal.Decimal('-nan')
+        else:
+            return decimal.Decimal('nan')
+    elif r.isinf:
+        if r.sign < 0:
+            return decimal.Decimal('-inf')
+        else:
+            return decimal.Decimal('inf')
+    elif r.iszero:
+        if r.sign < 0:
+            return decimal.Decimal('-0')
+        else:
+            return decimal.Decimal('0')
+    elif r.isrational:
+        decimal.getcontext().prec = prec
+        return decimal.Decimal(r.rational_numerator) / decimal.Decimal(r.rational_denominator)
+    else:
+        return None
 
 # This uses larger decimals than strictly necessary, but that's
 # ok, just inefficient.
@@ -155,8 +142,8 @@ def implicit_to_dec(S, E, T):
     assert E.n >= 2
     assert isinstance(T, BV)
     assert T.n >= 1
-    
+
     prec = max(28, 2 ** E.n, (T.n + 1) * 2)
-    
+
     r = core.implicit_to_real(S, E, T)
-    return real_to_dec(r, prec, S)
+    return real_to_dec(r, prec)

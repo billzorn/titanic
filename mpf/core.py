@@ -1,5 +1,5 @@
 from bv import BV
-from real import Real
+from real import FReal
 
 # bitvector operations, as written out in the paper
 
@@ -47,7 +47,7 @@ def real1(s, e, c, b, p):
     assert isinstance(p, int)
     assert p >= 1
 
-    return (Real(-1) ** s) * (Real(b) ** e) * (Real(c) * (Real(b) ** (1 - p)))
+    return (FReal(-1) ** s) * (FReal(b) ** e) * (FReal(c) * (FReal(b) ** (1 - p)))
 
 # Equation 2
 def real2(s, e, C):
@@ -56,7 +56,7 @@ def real2(s, e, C):
     assert isinstance(e, int)
     assert isinstance(C, BV)
 
-    return (Real(-1) ** s) * (Real(2) ** e) * (Real(uint(C)) * (Real(2) ** (1 - size(C))))
+    return (FReal(-1) ** s) * (FReal(2) ** e) * (FReal(uint(C)) * (FReal(2) ** (1 - size(C))))
 
 # Equation 3
 def explicit_to_real(S, E, C):
@@ -76,13 +76,14 @@ def explicit_to_real(S, E, C):
     c = uint(C)
 
     if e > emax and c != 0:
-        return Real('nan')
+        # PARAM: default payload?
+        return FReal(None)
     elif e > emax and c == 0:
-        return (Real(-1) ** s) * Real('inf')
+        return (FReal(-1) ** s) * FReal(infinite=True)
     elif emin <= e and e <= emax:
-        return (Real(-1) ** s) * (Real(2) ** e) * (Real(c) * (Real(2) ** (1 - p)))
+        return (FReal(-1) ** s) * (FReal(2) ** e) * (FReal(c) * (FReal(2) ** (1 - p)))
     else: # e < emin
-        return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c) * (Real(2) ** (1 - p)))
+        return (FReal(-1) ** s) * (FReal(2) ** emin) * (FReal(c) * (FReal(2) ** (1 - p)))
 
 # Equation 4
 def implicit_to_real(S, E, T):
@@ -101,13 +102,14 @@ def implicit_to_real(S, E, T):
     c_prime = uint(T)
 
     if e > emax and c_prime != 0:
-        return Real('nan')
+        # PARAM: default payload?
+        return FReal(None)
     elif e > emax and c_prime == 0:
-        return (Real(-1) ** s) * Real('inf')
+        return (FReal(-1) ** s) * FReal(infinite=True)
     elif emin <= e and e <= emax:
-        return (Real(-1) ** s) * (Real(2) ** e) * ((Real(c_prime) + (Real(2) ** (p - 1))) * (Real(2) ** (1 - p)))
+        return (FReal(-1) ** s) * (FReal(2) ** e) * ((FReal(c_prime) + (FReal(2) ** (p - 1))) * (FReal(2) ** (1 - p)))
     else: # e < emin
-        return (Real(-1) ** s) * (Real(2) ** emin) * (Real(c_prime) * (Real(2) ** (1 - p)))
+        return (FReal(-1) ** s) * (FReal(2) ** emin) * (FReal(c_prime) * (FReal(2) ** (1 - p)))
 
 # Equation 5
 def implicit_to_packed(S, E, T):
@@ -316,7 +318,7 @@ RNA = 'RNA' # roundTiesToAway
 # an exact equality is found, the two ordinals will be the same. The real
 # number may be infinite, but not NaN.
 def binsearch_nearest_ordinals(r, w, p):
-    assert isinstance(r, Real)
+    assert isinstance(r, FReal)
     assert not r.isnan
     assert isinstance(w, int)
     assert w >= 2
@@ -355,7 +357,7 @@ def binsearch_nearest_ordinals(r, w, p):
 
 # Correct IEEE 754 rounding, given the two nearest ordinals.
 def ieee_round_to_implicit(r, below, above, w, p, rm):
-    assert isinstance(r, Real)
+    assert isinstance(r, FReal)
     assert not r.isnan
     assert isinstance(below, int)
     assert isinstance(above, int)
@@ -385,7 +387,7 @@ def ieee_round_to_implicit(r, below, above, w, p, rm):
 
     else: # rm == RNE or rm == RNA
         emax = (2 ** (w - 1)) - 1
-        fmax = (Real(2) ** emax) * (Real(2) - ((Real(2) ** (1 - p)) / Real(2)))
+        fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
 
         if r <= -fmax:
             final = -umax
@@ -422,15 +424,18 @@ def ieee_round_to_implicit(r, below, above, w, p, rm):
 
     S, E, T = ordinal_to_implicit(final, w, p)
 
+    # recover the correct sign for exact -0
+    if final == 0 and above == below and r.sign < 0:
+        return BV(1, 1), E, T
     # round negative numbers less than 0 up to -0 instead of 0
-    if final == above and above == 0 and below < 0:
+    elif final == 0 and below < 0:
         return BV(1, 1), E, T
     else:
         return S, E, T
 
 # Here, r can be nan, and we return some nan representation.
 def real_to_implicit(r, w, p, rm):
-    assert isinstance(r, Real)
+    assert isinstance(r, FReal)
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
@@ -438,7 +443,12 @@ def real_to_implicit(r, w, p, rm):
     assert rm == RTN or rm == RTP or rm == RTZ or rm == RNE or rm == RNA
 
     if r.isnan:
-        return BV(0, 1), BV(-1, w), BV(1, p-1)
+        payload = r.nan_payload
+        assert isinstance(payload, int) and payload != 0
+        if r.sign < 0:
+            return BV(1, 1), BV(-1, w), BV(payload, p-1)
+        else:
+            return BV(0, 1), BV(-1, w), BV(payload, p-1)
     else:
         above, below = binsearch_nearest_ordinals(r, w, p)
         return ieee_round_to_implicit(r, above, below, w, p, rm)

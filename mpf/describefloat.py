@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
 from bv import BV
-from real import Real
+from real import FReal
 import core
 import conv
 
 def describe_float(x, w, p, rm):
-    assert isinstance(x, str) or isinstance(x, Real) or isinstance(x, BV)
+    assert isinstance(x, str) or isinstance(x, FReal) or isinstance(x, BV)
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
@@ -17,7 +17,7 @@ def describe_float(x, w, p, rm):
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
-    fmax = (Real(2) ** emax) * (Real(2) - ((Real(2) ** (1 - p)) / Real(2)))
+    fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
     prec = max(28, 2 ** w, p * 2)
 
     # implicit, packed, and real
@@ -40,7 +40,7 @@ def describe_float(x, w, p, rm):
             r = R
         else:
             input_is_binary = False
-            r = Real(x)
+            r = FReal(x)
             S, E, T = conv.str_to_implicit(x, w, p, rm)
             B = core.implicit_to_packed(S, E, T)
             R = core.implicit_to_real(S, E, T)
@@ -52,7 +52,7 @@ def describe_float(x, w, p, rm):
         S, E, T = core.packed_to_implicit(B, w, p)
         R = core.implicit_to_real(S, E, T)
         r = R
-    else: # isinstance(x, Real)
+    else: # isinstance(x, FReal)
         input_str = repr(x)
         input_is_binary = False
         r = x
@@ -122,8 +122,8 @@ def describe_float(x, w, p, rm):
           .format(str(S)[2:], str(E)[2:], str(C[p-1]), str(T)[2:]))
     print('  approx  : ~{:1.8e}'.format(D))
     print('  decimal : {}'.format(D))
-    print('  rational: {} /'.format(R.numerator))
-    print('            {}'.format(R.denominator))
+    print('  rational: {} /'.format(R.rational_numerator))
+    print('            {}'.format(R.rational_denominator))
     print('  ordinal : {}'.format(i))
 
     if exact:
