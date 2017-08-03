@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 
-import sympy
-
 from bv import BV
 from real import FReal
 import core
 import conv
-
-def pprint_real(R, pretty=False, exact=True, n=20):
-    pass
 
 def describe_format(w, p):
     assert isinstance(w, int)
@@ -19,13 +14,94 @@ def describe_format(w, p):
     umax = ((2 ** w) - 1) * (2 ** (p - 1))
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
-    fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+    fmax_scale = FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2))
+    fmax = (FReal(2) ** emax) * fmax_scale
     prec = max(28, 2 ** w, p * 2)
 
-    print(fmax)
-    
+    return {
+        'w'    : str(w),
+        'p'    : str(p),
+        'emax' : str(emax),
+        'emin' : str(emin),
+        'fmax' : '(2**{})*({})'.format(str(emax), str(fmax_scale)),
+        'prec' : str(prec),
+    }
 
-def describe_float(x, w, p):
+def describe_float(S, E, T):
+    assert isinstance(S, BV)
+    assert size(S) == 1
+    assert isinstance(E, BV)
+    assert size(E) >= 2
+    assert isinstance(T, BV)
+
+    w = E.n
+    p = T.n + 1
+    fmt_descr = describe_format(w, p)
+
+    _, _, C = core.implicit_to_explicit(S, E, T)
+    B = core.implicit_to_packed(S, E, T)
+
+    s = S.uint
+    emax = (2 ** (w - 1)) - 1
+    e = E.uint - emax
+    c = C.uint
+    implicit_bit = C[p-1]
+    c_prime = T.uint
+
+    R = core.implicit_to_real(S, E, T)
+
+    if R.isnan:
+        ieee_class = 'nan'
+        i = None
+        i_prev = None
+        R_prev = None
+        i_next = None
+        R_next = None
+    else:
+        if R.isinf:
+            ieee_class = 'inf'
+        elif R.iszero:
+            ieee_class = 'zero'
+        elif E.uint == 0:
+            ieee_class = 'subnormal'
+        else:
+            ieee_class = 'normal'
+            
+        umax = ((2 ** w) - 1) * (2 ** (p - 1))
+        i = core.implicit_to_ordinal(S, E, T)
+
+        i_prev = max(i-1, -umax)
+        R_prev = core.implicit_to_real(core.ordinal_to_implicit(i_prev))
+
+        i_next = min(i+1, umax)
+        R_next = core.implicit_to_real(core.ordinal_to_implicit(i_next))
+
+        # -0 compliant nextafter behavior
+        if R_next.iszero:
+            R_next = -R_next
+
+    return {
+        'fmt' : fmt,
+        'S' : str(S),
+        'E' : str(E),
+        'T' : str(T),
+        'C' : str(C),
+        'B' : str(B),
+        's' : str(s),
+        'e' : str(e),
+        'c' : str(c),
+        'implicit_bit' : str(implicit_bit)
+        'c_prime' : str(c_prime),
+        'R' : str(R),
+        'ieee_class' : str(ieee_class),
+        'i' : str(i),
+        'i_prev' : str(i_prev),
+        'R_prev' : str(R_prev),
+        'i_next' : str(i_next),
+        'R_next' : str(R_next),
+    }
+
+def describe_real(x, w, p):
     assert isinstance(x, int) or isinstance(x, BV) or isinstance(x, FReal) or isinstance(x, str)
     assert isinstance(w, int)
     assert w >= 2

@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 import decimal
+import sympy
 
 from bv import BV
 from real import FReal
@@ -147,7 +148,7 @@ def real_to_bounded_real(R, w, p):
 def str_to_ord_bv_real(x):
     assert isinstance(x, str)
 
-    s = x.strip.lower()
+    s = x.strip().lower()
     # ordinal
     if s.startswith('0i'):
         s = s[2:]
@@ -219,3 +220,14 @@ def implicit_to_dec(S, E, T):
 
     r = core.implicit_to_real(S, E, T)
     return real_to_dec(r, prec)
+
+# If exact is true, then the precise value should be recoverable from the
+# output. If not, we will try to respect the character limit n, and prefix
+# the string with a unicode u"\u2248"
+def real_to_string(R, exact = True, n = 12):
+    pass
+
+# Produce a unicode rendering with sympy.pretty. This is probably
+# not able to be parsed back in.
+def real_to_pretty_string(R):
+    assert isinstance(R, FReal)
