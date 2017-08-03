@@ -426,26 +426,45 @@ class FReal(object):
                 # as required by the IEEE 754 standard.
                 m_negative = self.negative
             else:
-                # different signs: subtract according to which is which
-                if self.sign < 0:
-                    neg_m = self.magnitude
-                    pos_m = x.magnitude
-                else:
-                    neg_m = x.magnitude
-                    pos_m = self.magnitude
 
-                if neg_m <= pos_m:
-                    m = pos_m - neg_m
-                    # If subtraction due to different signs produces 0, I believe
-                    # the result should always be positive.
+                ### This is broken due to a bug in sympy (issue #13081) ###
+                ### Instead, subtract and use is_positive #################
+
+                # # different signs: subtract according to which is which
+                # if self.sign < 0:
+                #     neg_m = self.magnitude
+                #     pos_m = x.magnitude
+                # else:
+                #     neg_m = x.magnitude
+                #     pos_m = self.magnitude
+
+                # if neg_m <= pos_m:
+                #     m = pos_m - neg_m
+                #     # If subtraction due to different signs produces 0, I believe
+                #     # the result should always be positive.
+                #     m_negative = False
+                # elif pos_m < neg_m:
+                #     m = neg_m - pos_m
+                #     m_negative = True
+                # else:
+                #     print(repr(pos_m), repr(neg_m), repr(neg_m <= pos_m), repr(pos_m < neg_m), repr(pos_m == neg_m))
+                #     assert False, 'reaching here is a bug'
+                # # TODO: in RTN rounding, this sould produce -0 instead of 0.
+
+                # non-comparing hack
+                difference = (self.magnitude * self.sign) + (x.magnitude * x.sign)
+                if difference.is_positive:
+                    m = difference
                     m_negative = False
-                elif pos_m < neg_m:
-                    m = neg_m - pos_m
+                elif difference.is_negative:
+                    m = -difference
                     m_negative = True
                 else:
-                    print(repr(pos_m), repr(neg_m), repr(neg_m <= pos_m), repr(pos_m < neg_m), repr(pos_m == neg_m))
-                    assert False, 'reaching here is a bug'
-                # TODO: in RTN rounding, this sould produce -0 instead of 0.
+                    assert difference.is_zero
+                    m = 0
+                    m_negative = False
+                    # TODO: still wrong for RTN
+
             return FReal(m, negative=m_negative)
 
     def __radd__(self, y):
@@ -618,12 +637,30 @@ class FReal(object):
                 else:
                     return -1
             else:
-                if x.magnitude < self.magnitude:
+                ### These comaprisons may be broken due to issue #13081 ###
+                ### Subtract and use is_positive instead ##################
+
+                # if x.magnitude < self.magnitude:
+                #     return -1
+                # elif self.magnitude < x.magnitude:
+                #     return 1
+                # else: # self.magnitude == x.magnitude
+                #     return 0
+
+                # non-comparing hack
+                difference = self.magnitude - x.magnitude
+                if difference.is_positive:
                     return -1
-                elif self.magnitude < x.magnitude:
+                elif difference.is_negative:
                     return 1
-                else: # self.magnitude == x.magnitude
+                else:
+                    if not difference.is_zero:
+                        print(repr(self.magnitude))
+                        print(repr(x.magnitude))
+                        print(repr(difference))
+                        assert False, 'unreachable'
                     return 0
+
         else: # self.sign == 1 and x.sign == 1
             if self.isinf:
                 if x.isinf:
@@ -631,11 +668,26 @@ class FReal(object):
                 else:
                     return 1
             else:
-                if self.magnitude < x.magnitude:
+
+                # if self.magnitude < x.magnitude:
+                #     return -1
+                # elif x.magnitude < self.magnitude:
+                #     return 1
+                # else: # self.magnitude == x.magnitude
+                #     return 0
+
+                # non-comparing hack
+                difference = self.magnitude - x.magnitude
+                if difference.is_negative:
                     return -1
-                elif x.magnitude < self.magnitude:
+                elif difference.is_positive:
                     return 1
-                else: # self.magnitude == x.magnitude
+                else:
+                    if not difference.is_zero:
+                        print(repr(self.magnitude))
+                        print(repr(x.magnitude))
+                        print(repr(difference))
+                        assert False, 'unreachable'
                     return 0
 
     # These are effectively unordered-quiet predicates, except
@@ -663,4 +715,4 @@ class FReal(object):
 
     def __gt__(self, x):
         comp = self.compare(x)
-        return comp is not None and comp < 0
+        return comp is not None and 0 < comp
