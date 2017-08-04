@@ -393,7 +393,7 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
                 elif eprec <= prec:
                     return pow10_to_e_str(c, e)
                 else:
-                    return str((R.magnitude * R.sign).evalf(prec))
+                    return approx_str + str((R.magnitude * R.sign).evalf(prec))
 
 # Produce a unicode rendering with sympy.pretty. This is probably
 # not able to be parsed back in.
