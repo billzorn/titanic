@@ -14,6 +14,28 @@
 import sympy
 Rational = sympy.Rational
 
+default_maxn = 1000000
+default_n = 10
+default_n_scale = 10
+def default_simplify(x):
+    return sympy.simplify(x)
+
+class ConjectureEqualityException(Exception):
+    def __init__(self, a, b, n):
+        self.a = a
+        self.b = b
+        self.n = n
+
+    def __str__(self):
+        return ('conjecture: {} == {} (tested to {:d} decimal places)'
+                .format(str(self.a), str(self.b), self.n))
+
+    def __repr__(self):
+        return ('{}({}, {}, {:d})'
+                .format(type(self).__name__, repr(self.a), repr(self.b), self.n))
+
+# still need a correct sympy real comparison function (and need to use it)
+
 # for parsing
 import re
 
@@ -108,6 +130,7 @@ class FReal(object):
             return None
     rational_denominator = property(_rational_denominator)
 
+    # this will destroy the sign of zero
     def _symbolic_value(self):
         if self.isinf:
             return sympy.oo * self.sign
@@ -116,6 +139,22 @@ class FReal(object):
         else:
             return self.magnitude * self.sign
     symbolic_value = property(_symbolic_value)
+
+    def evaluate(self, prec, maxn=default_maxn, abort_incomparables=True):
+        if self.isinf or self.isnan:
+            return None
+        v = default_simplify(self.symbolic_value)
+        n = default_n
+        while n < maxn:
+            n = n * default_n_scale
+            f = v.evalf(prec, maxn=n)
+            if f.is_comparable:
+                return f
+        if abort_incomparables:
+            raise ConjectureEqualityException(v, sympy.sympify(0), n)
+        else:
+            return f
+
 
     def _valid(self):
         assert self.negative is True or self.negative is False
@@ -278,6 +317,7 @@ class FReal(object):
                     # be passed separately, if the expression is a positive magnitude.
                     except Exception:
                         r = sympy.sympify(x)
+                        r = default_simplify(r)
                         assert r.is_real or r == sympy.nan
                         if r == sympy.nan:
                             str_negative = False

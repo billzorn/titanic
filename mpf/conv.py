@@ -360,12 +360,9 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
         # no exact decimal representation
         if c is None or e is None:
             if exact:
-                return str(R.magnitude * R.sign)
+                return str(R.symbolic_value)
             else:
-                # This evalf appears to be correct and correctly rounded
-                # to the specified precision, like a result from a constructive
-                # real implementation.
-                return approx_str + str((R.magnitude * R.sign).evalf(prec))
+                return approx_str + str(R.evaluate(prec, abort_incomparables=False))
         # there is an exact decimal representation
         else:
             # Exact representation: choose based on exp first, or
@@ -393,7 +390,7 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
                 elif eprec <= prec:
                     return pow10_to_e_str(c, e)
                 else:
-                    return approx_str + str((R.magnitude * R.sign).evalf(prec))
+                    return approx_str + str(R.evaluate(prec, abort_incomparables=False))
 
 # Produce a unicode rendering with sympy.pretty. This is probably
 # not able to be parsed back in.
@@ -409,7 +406,7 @@ def real_to_pretty_string(R):
     else:
         c, e = real_to_pow10(R)
         if c is None or e is None:
-            return sympy.pretty(R.magnitude * R.sign)
+            return sympy.pretty(R.symbolic_value)
         else:
             # abuse precision as a heuristic for determining the "most readable" form
             sprec = prec_of(c, e)
@@ -419,4 +416,4 @@ def real_to_pretty_string(R):
             elif eprec <= default_prec:
                 return pow10_to_e_str(c, e)
             else:
-                return sympy.pretty(R.magnitude * R.sign)
+                return sympy.pretty(R.symbolic_value)
