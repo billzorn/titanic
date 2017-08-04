@@ -1,11 +1,12 @@
 import sys
 import numpy as np
-import decimal
 import sympy
 
 from bv import BV
-from real import FReal
+import real
+FReal = real.FReal
 import core
+import re
 
 # Binary conversions are relatively simple for numpy's floating point types.
 # float16 : w = 5,  p = 11
@@ -136,7 +137,7 @@ def real_to_bounded_real(R, w, p):
     assert isinstance(p, int)
     assert p >= 2
 
-    if r.isnan:
+    if R.isnan:
         return R, None, None
     else:
         below, above = core.binsearch_nearest_ordinals(R, w, p)
@@ -181,15 +182,16 @@ def str_to_implicit(s, w, p, rm = core.RNE):
     r = FReal(s)
     return core.real_to_implicit(r, w, p, rm)
 
-# Returns integers c an e such that c * (10**e) == r.
+# Returns integers c an e such that c * (10**e) == R.
 # Note that the sign of zero is destroyed.
-def real_to_pow10(r):
-    assert isinstance(r, FReal)
-    if not r.isrational:
+# If no such c and e exist, then returns (None, None)
+def real_to_pow10(R):
+    assert isinstance(R, FReal)
+    if not R.isrational:
         return None, None
 
-    p = r.rational_numerator
-    q = r.rational_denominator
+    p = R.rational_numerator
+    q = R.rational_denominator
 
     q_factors = sympy.factorint(q, limit=5)
     if not all(k == 2 or k == 5 for k in q_factors):
@@ -244,12 +246,18 @@ def real_to_pow10(r):
         assert e >= 0
         c = int(p_scaled // (10 ** e))
 
-    assert r == FReal(c) * (FReal(10) ** e)
+    assert R == FReal(c) * (FReal(10) ** e)
     return c, e
 
 def pow10_to_f_str(c, e):
     assert isinstance(c, int)
     assert isinstance(e, int)
+
+    if c < 0:
+        sign_str = '-'
+        c = -c
+    else:
+        sign_str = ''
 
     if e < 0:
         s = str(c)
@@ -259,71 +267,156 @@ def pow10_to_f_str(c, e):
         right = s[e:]
         if len(right) < (-e):
             right = ((-len(right) - e) * '0') + right
-        return left + '.' + right
+        return sign_str + left + '.' + right
     elif e == 0:
-        return str(c)
+        return sign_str + str(c)
     else:
-        return str(c) + ('0' * e)
+        return sign_str + str(c) + ('0' * e)
 
 def pow10_to_e_str(c, e):
     assert isinstance(c, int)
     assert isinstance(e, int)
 
+    if c < 0:
+        sign_str = '-'
+        c = -c
+    else:
+        sign_str = ''
+
     s = str(c)
     e2 = len(s) - 1
     if e2 <= 0:
-        return s + 'e' + str(e)
+        if e < 0:
+            esign_str = ''
+        else:
+            esign_str = '+'
+        return sign_str + s + 'e' + esign_str + str(e)
     else:
-        return s[:1] + '.' + s[1:] + 'e' + str(e + e2)
+        e3 = e + e2
+        if e3 < 0:
+            esign_str = ''
+        else:
+            esign_str = '+'
+        return sign_str + s[:1] + '.' + s[1:] + 'e' + esign_str + str(e3)
 
-def real_to_dec(r, prec):
-    assert isinstance(r, FReal)
-    assert isinstance(prec, int)
-    assert prec >= 1
+default_prec = 12
+approx_str = u'\u2248'
+dec_re = re.compile(r'[-+]?([0-9]+)\.?([0-9]*)([eE][-+]?[0-9]+)?')
 
-    if r.isnan:
-        if r.sign < 0:
-            return decimal.Decimal('-nan')
-        else:
-            return decimal.Decimal('nan')
-    elif r.isinf:
-        if r.sign < 0:
-            return decimal.Decimal('-inf')
-        else:
-            return decimal.Decimal('inf')
-    elif r.iszero:
-        if r.sign < 0:
-            return decimal.Decimal('-0')
-        else:
-            return decimal.Decimal('0')
-    elif r.isrational:
-        decimal.getcontext().prec = prec
-        return decimal.Decimal(r.rational_numerator) / decimal.Decimal(r.rational_denominator)
+# "Character precision" of a decimal string in standard of scientific format.
+# There MUST be something (such as 0) before the decimal point. Returns 0 if the
+# format is not recognized.
+def sprec_of(s):
+    assert isinstance(s, str)
+    m = dec_re.fullmatch(s)
+    if m:
+        return(len(m.group(1) + m.group(2)))
     else:
-        return None
+        return 0
 
-# This uses larger decimals than strictly necessary, but that's
-# ok, just inefficient.
-def implicit_to_dec(S, E, T):
-    assert isinstance(S, BV)
-    assert S.n == 1
-    assert isinstance(E, BV)
-    assert E.n >= 2
-    assert isinstance(T, BV)
-    assert T.n >= 1
+# "Decimal precision" of a number c * (10**e). If e is not given,
+# this counts the number of digits in c. If e is given, this gives
+# the "character precision" of the standard (non-scientific) representation.
+# c must not be divisible by 10. 0 always has precision 1.
+def prec_of(c, e = None):
+    assert isinstance(c, int)
+    assert c % 10 != 0
+    assert isinstance(e, int) or e is None
 
-    prec = max(28, 2 ** E.n, (T.n + 1) * 2)
+    if c == 0:
+        return 1
+    c = abs(c)
+    prec = sympy.floor(sympy.log(c, 10)) + 1
 
-    r = core.implicit_to_real(S, E, T)
-    return real_to_dec(r, prec)
+    if e is None:
+        return prec
+    else:
+        if e > 0:
+            return prec + e
+        else:
+            return max(prec, 1 - e)
 
 # If exact is true, then the precise value should be recoverable from the
 # output. If not, we will try to respect the character limit n, and prefix
 # the string with a unicode u"\u2248"
-def real_to_string(R, exact = True, n = 12):
-    pass
+def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payload = False):
+    assert isinstance(R, FReal)
+    assert isinstance(prec, int)
+    assert prec >= 0
+    assert exact is True or exact is False
+    assert exp is True or exp is False or exp is None
+    assert show_payload is True or show_payload is False
+
+    if R.isnan:
+        if show_payload:
+            return real.preferred_nan_str + str(R.nan_payload)
+        else:
+            return real.preferred_nan_str
+    elif R.isinf or R.iszero:
+        return str(R)
+    else:
+        c, e = real_to_pow10(R)
+
+        # no exact decimal representation
+        if c is None or e is None:
+            if exact:
+                return str(R.magnitude * R.sign)
+            else:
+                # This evalf appears to be correct and correctly rounded
+                # to the specified precision, like a result from a constructive
+                # real implementation.
+                return approx_str + str((R.magnitude * R.sign).evalf(prec))
+        # there is an exact decimal representation
+        else:
+            # Exact representation: choose based on exp first, or
+            # heuristically better if exp is None.
+            if exact:
+                if exp is True:
+                    return pow10_to_e_str(c, e)
+                elif exp is False:
+                    return pow10_to_f_str(c, e)
+                else: # exp is None
+                    sprec = prec_of(c, e)
+                    eprec = prec_of(c)
+                    if sprec <= prec or sprec <= eprec + 3:
+                        return pow10_to_f_str(c, e)
+                    else:
+                        return pow10_to_e_str(c, e)
+            else:
+                # We're giving an approximate representation;
+                # first see if there is a short exact one, otherwise
+                # truncate with evalf.
+                sprec = prec_of(c, e)
+                eprec = prec_of(c)
+                if sprec <= prec:
+                    return pow10_to_f_str(c, e)
+                elif eprec <= prec:
+                    return pow10_to_e_str(c, e)
+                else:
+                    return str((R.magnitude * R.sign).evalf(prec))
 
 # Produce a unicode rendering with sympy.pretty. This is probably
 # not able to be parsed back in.
 def real_to_pretty_string(R):
     assert isinstance(R, FReal)
+
+    if R.isnan:
+        return 'NaN'
+    elif R.isinf:
+        return sympy.pretty(sympy.oo * R.sign)
+    elif R.iszero:
+        return str(R)
+    else:
+        c, e = real_to_pow10(R)
+        if c is None or e is None:
+            return sympy.pretty(R.magnitude * R.sign)
+        else:
+            # abuse precision as a heuristic for determining the "most readable" form
+            sprec = prec_of(c, e)
+            eprec = prec_of(c)
+            if sprec <= default_prec:
+                return pow10_to_f_str(c, e)
+            elif eprec <= default_prec:
+                return pow10_to_e_str(c, e)
+            else:
+                return sympy.pretty(R.magnitude * R.sign)
