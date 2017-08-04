@@ -169,6 +169,7 @@ def str_to_ord_bv_real(x):
     else:
         return FReal(x)
 
+# convenient; mostly equivalent to float(s) but it returns an implicit triple
 def str_to_implicit(s, w, p, rm = core.RNE):
     assert isinstance(s, str)
     assert isinstance(w, int)
@@ -179,6 +180,101 @@ def str_to_implicit(s, w, p, rm = core.RNE):
 
     r = FReal(s)
     return core.real_to_implicit(r, w, p, rm)
+
+# Returns integers c an e such that c * (10**e) == r.
+# Note that the sign of zero is destroyed.
+def real_to_pow10(r):
+    assert isinstance(r, FReal)
+    if not r.isrational:
+        return None, None
+
+    p = r.rational_numerator
+    q = r.rational_denominator
+
+    q_factors = sympy.factorint(q, limit=5)
+    if not all(k == 2 or k == 5 for k in q_factors):
+        return None, None
+
+    # factor
+    q_2 = q_factors.get(2, 0)
+    q_5 = q_factors.get(5, 0)
+    p_factors = sympy.factorint(p, limit=5)
+    p_2 = p_factors.get(2, 0)
+    p_5 = p_factors.get(5, 0)
+
+    # reduce
+    reduce_2 = min(q_2, p_2)
+    reduce_5 = min(q_5, p_5)
+    if reduce_2 > 0 or reduce_5 > 0:
+        reduce_10 = (2 ** reduce_2) * (5 ** reduce_5)
+        p_new = p // reduce_10
+        q_new = q // reduce_10
+        assert p_new * reduce_10 == p
+        assert q_new * reduce_10 == q
+        p = p_new
+        q = q_new
+        q_2 = q_2 - reduce_2
+        q_5 = q_5 - reduce_5
+        p_2 = p_2 - reduce_2
+        p_5 = p_5 - reduce_5
+
+    # scale so the denominator is divisible by 10
+    skew = q_2 - q_5
+    if skew <= 0:
+        scale = 2 ** (-skew)
+        p_2 = p_2 - skew
+    else:
+        scale = 5 ** skew
+        p_5 = p_5 + skew
+        # q_2 and q_5 aren'd used again
+
+    p_scaled = p * scale
+    q_scaled = q * scale
+
+    # negative powers of 10
+    pow_10 = sympy.log(q_scaled, 10)
+    assert pow_10.is_integer
+
+    if pow_10 > 0:
+        c = int(p_scaled)
+        e = -int(pow_10)
+    else:
+        # positive powers of 10
+        e = int(min(p_2, p_5))
+        assert e >= 0
+        c = int(p_scaled // (10 ** e))
+
+    assert r == FReal(c) * (FReal(10) ** e)
+    return c, e
+
+def pow10_to_f_str(c, e):
+    assert isinstance(c, int)
+    assert isinstance(e, int)
+
+    if e < 0:
+        s = str(c)
+        left = s[:e]
+        if len(left) == 0:
+            left = '0'
+        right = s[e:]
+        if len(right) < (-e):
+            right = ((-len(right) - e) * '0') + right
+        return left + '.' + right
+    elif e == 0:
+        return str(c)
+    else:
+        return str(c) + ('0' * e)
+
+def pow10_to_e_str(c, e):
+    assert isinstance(c, int)
+    assert isinstance(e, int)
+
+    s = str(c)
+    e2 = len(s) - 1
+    if e2 <= 0:
+        return s + 'e' + str(e)
+    else:
+        return s[:1] + '.' + s[1:] + 'e' + str(e + e2)
 
 def real_to_dec(r, prec):
     assert isinstance(r, FReal)
