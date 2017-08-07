@@ -303,7 +303,7 @@ default_prec = 12
 approx_str = u'\u2248'
 dec_re = re.compile(r'[-+]?([0-9]+)\.?([0-9]*)([eE][-+]?[0-9]+)?')
 
-# "Character precision" of a decimal string in standard of scientific format.
+# "Character precision" of a decimal string in standard or scientific format.
 # There MUST be something (such as 0) before the decimal point. Returns 0 if the
 # format is not recognized.
 def sprec_of(s):

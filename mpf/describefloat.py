@@ -16,15 +16,17 @@ def describe_format(w, p):
     emin = 1 - emax
     fmax_scale = FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2))
     fmax = (FReal(2) ** emax) * fmax_scale
-    prec = max(28, 2 ** w, p * 2)
+    # prec = max(28, 2 ** w, p * 2) # should compute the real number
 
     return {
-        'w'    : str(w),
-        'p'    : str(p),
-        'emax' : str(emax),
-        'emin' : str(emin),
-        'fmax' : '(2**{})*({})'.format(str(emax), str(fmax_scale)),
-        'prec' : str(prec),
+        'w'          : w,
+        'p'          : p,
+        'emax'       : emax,
+        'emin'       : emin,
+        'fmax_scale' : fmax_scale,
+        'fmax'       : fmax,
+        # 'fmax' : '(2**{})*({})'.format(str(emax), str(fmax_scale)),
+        # 'prec' : prec,
     }
 
 def describe_float(S, E, T):
@@ -57,6 +59,8 @@ def describe_float(S, E, T):
         R_prev = None
         i_next = None
         R_next = None
+        lower = None
+        upper = None
     else:
         if R.isinf:
             ieee_class = 'inf'
@@ -66,7 +70,7 @@ def describe_float(S, E, T):
             ieee_class = 'subnormal'
         else:
             ieee_class = 'normal'
-            
+
         umax = ((2 ** w) - 1) * (2 ** (p - 1))
         i = core.implicit_to_ordinal(S, E, T)
 
@@ -80,25 +84,30 @@ def describe_float(S, E, T):
         if R_next.iszero:
             R_next = -R_next
 
+        lower = R_prev + ((R - R_prev) / 2)
+        upper = R + ((R_next - R) / 2)
+
     return {
         'fmt' : fmt,
-        'S' : str(S),
-        'E' : str(E),
-        'T' : str(T),
-        'C' : str(C),
-        'B' : str(B),
-        's' : str(s),
-        'e' : str(e),
-        'c' : str(c),
-        'implicit_bit' : str(implicit_bit)
-        'c_prime' : str(c_prime),
-        'R' : str(R),
-        'ieee_class' : str(ieee_class),
-        'i' : str(i),
-        'i_prev' : str(i_prev),
-        'R_prev' : str(R_prev),
-        'i_next' : str(i_next),
-        'R_next' : str(R_next),
+        'S' : S,
+        'E' : E,
+        'T' : T,
+        'C' : C,
+        'B' : B,
+        's' : s,
+        'e' : e,
+        'c' : c,
+        'implicit_bit' : implicit_bit,
+        'c_prime' : c_prime,
+        'R' : R,
+        'ieee_class' : ieee_class,
+        'i' : i,
+        'i_prev' : i_prev,
+        'R_prev' : R_prev,
+        'i_next' : i_next,
+        'R_next' : R_next,
+        'lower' : lower,
+        'upper' : upper,
     }
 
 def describe_real(x, w, p):

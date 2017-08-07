@@ -13,6 +13,7 @@
 
 import sympy
 Rational = sympy.Rational
+symbolic_zero = sympy.sympify(0)
 
 # It turns out comparing numbers is rather hard.
 
@@ -57,7 +58,7 @@ def eval_until_at_least(x, prec,
             if f.is_comparable:
                 return f
         if abort_incomparables:
-            raise ConjectureEqualityException(x, sympy.sympify(0), n)
+            raise ConjectureEqualityException(x, symbolic_zero, n)
         else:
             return f
 
@@ -78,7 +79,6 @@ def decide_order(x, y):
     else:
         raise ValueError('unable to decide order of {} and {}'
                          .format(repr(x), repr(y)))
-
 
 # Input and parsing.
 
@@ -118,7 +118,7 @@ math_strs_re = re.compile(r'|'.join(re.escape(k) for k in math_constants))
 class FReal(object):
 
     def _sign(self):
-        if self.negative:
+        if self.negative is True:
             return -1
         else:
             return 1
@@ -132,16 +132,22 @@ class FReal(object):
         return self.infinite is False and self.magnitude is None
     isnan = property(_isnan)
 
-    def _iszero(self):
-        return self.infinite is False and self.magnitude is not None and self.magnitude == 0
-    iszero = property(_iszero)
-
     def _isrational(self):
         if self.infinite is True or self.magnitude is None:
             return False
         else:
             return bool(self.magnitude.is_rational)
     isrational = property(_isrational)
+
+    def _iszero(self):
+        if self.infinite is True or self.magnitude is None:
+            return False
+        elif self.isrational:
+            return self.magnitude == 0
+        else:
+            return decide_order(self.magnitude, symbolic_zero) == 0
+    iszero = property(_iszero)
+
 
     def _isinteger(self):
         if self.infinite is True or self.magnitude is None:
@@ -217,7 +223,7 @@ class FReal(object):
                 if self.magnitude.is_rational:
                     assert self.magnitude >= 0
                 else:
-                    assert decide_order(self.magnitude, sympy.sympify(0)) >= 0
+                    assert decide_order(self.magnitude, symbolic_zero) >= 0
                 assert self.payload == 0
 
     _kw_negative = 'negative'
@@ -376,7 +382,7 @@ class FReal(object):
                             str_negative = False
                         else:
                             # x might be some weird real number, so we have to be careful when comparing it
-                            str_negative = decide_order(r, sympy.sympify(0)) < 0
+                            str_negative = decide_order(r, symbolic_zero) < 0
 
                         if negative is None:
                             self.negative = str_negative
@@ -405,7 +411,7 @@ class FReal(object):
                     x_negative = False
                 else:
                     # x might be some weird real number, so we have to be careful when comparing it
-                    x_negative = decide_order(x, sympy.sympify(0)) < 0
+                    x_negative = decide_order(x, symbolic_zero) < 0
 
                 if negative is None:
                     self.negative = x_negative
