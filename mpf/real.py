@@ -14,8 +14,10 @@
 import sympy
 Rational = sympy.Rational
 
+# It turns out comparing numbers is rather hard.
+
 default_maxn = 1000000
-default_n = 10
+default_n = 100
 default_n_scale = 10
 def default_simplify(x):
     return sympy.simplify(x)
@@ -34,9 +36,52 @@ class ConjectureEqualityException(Exception):
         return ('{}({}, {}, {:d})'
                 .format(type(self).__name__, repr(self.a), repr(self.b), self.n))
 
-# still need a correct sympy real comparison function (and need to use it)
+def eval_until_at_least(x, prec,
+                        n = default_n, maxn = default_maxn, scale = default_n_scale,
+                        abort_incomparables = True):
+    assert x.is_real and x.is_finite
+    assert isinstance(n, int)
+    assert isinstance(maxn, int)
+    assert 0 < n and n < maxn
+    assert isinstance(scale, int)
+    assert scale >= 2
+    assert abort_incomparables is True or abort_incomparables is False
 
-# for parsing
+    f = x.evalf(prec, maxn=n)
+    if f.is_comparable:
+        return f
+    else:
+        while n < maxn:
+            n = n * default_n_scale
+            f = x.evalf(prec, maxn=n)
+            if f.is_comparable:
+                return f
+        if abort_incomparables:
+            raise ConjectureEqualityException(x, sympy.sympify(0), n)
+        else:
+            return f
+
+def decide_order(x, y):
+    assert x.is_real and x.is_finite
+    assert y.is_real and y.is_finite
+
+    z = default_simplify(x - y)
+    comp = eval_until_at_least(z, 2)
+    assert comp.is_comparable
+
+    if comp.is_zero:
+        return 0
+    elif comp.is_positive:
+        return 1
+    elif comp.is_negative:
+        return -1
+    else:
+        raise ValueError('unable to decide order of {} and {}'
+                         .format(repr(x), repr(y)))
+
+
+# Input and parsing.
+
 import re
 
 inf_strs_re = re.compile(r'inf|infinity|oo')
@@ -67,6 +112,8 @@ math_constants = {
     'sqrt1_2'  : 1 / sympy.sqrt(2),
 }
 math_strs_re = re.compile(r'|'.join(re.escape(k) for k in math_constants))
+
+# Affinely extended real numbers with signed zero and labeled NaN.
 
 class FReal(object):
 
@@ -140,21 +187,13 @@ class FReal(object):
             return self.magnitude * self.sign
     symbolic_value = property(_symbolic_value)
 
-    def evaluate(self, prec, maxn=default_maxn, abort_incomparables=True):
+    # so will this
+    def numeric_value(self, prec, maxn = default_maxn, abort_incomparables = True):
         if self.isinf or self.isnan:
-            return None
-        v = default_simplify(self.symbolic_value)
-        n = default_n
-        while n < maxn:
-            n = n * default_n_scale
-            f = v.evalf(prec, maxn=n)
-            if f.is_comparable:
-                return f
-        if abort_incomparables:
-            raise ConjectureEqualityException(v, sympy.sympify(0), n)
+            return self.symbolic_value.evalf()
         else:
-            return f
-
+            return eval_until_at_least(default_simplify(self.symbolic_value), prec,
+                                       maxn=maxn, abort_incomparables=abort_incomparables)
 
     def _valid(self):
         assert self.negative is True or self.negative is False
@@ -175,7 +214,10 @@ class FReal(object):
                 # Some classes, like sympy.erf, seem to not support this.
                 # This is a good test for sin(oo), but problematic for say erf(1).
                 assert self.magnitude.is_finite
-                assert self.magnitude >= 0
+                if self.magnitude.is_rational:
+                    assert self.magnitude >= 0
+                else:
+                    assert decide_order(self.magnitude, sympy.sympify(0)) >= 0
                 assert self.payload == 0
 
     _kw_negative = 'negative'
@@ -214,8 +256,12 @@ class FReal(object):
             # an integer, with optional sign
             elif isinstance(x, int):
                 if negative is None:
-                    self.magnitude = Rational(abs(x), 1)
+                    # it is ok to compare ints and rationals directly to zero
                     self.negative = bool(x < 0)
+                    if self.negative:
+                        self.magnitude = Rational(-x, 1)
+                    else:
+                        self.magnitude = Rational(x, 1)
                 else:
                     assert x >= 0
                     self.magnitude = Rational(x, 1)
@@ -224,8 +270,11 @@ class FReal(object):
             # a rational number, with optional sign
             elif isinstance(x, Rational):
                 if negative is None:
-                    self.magnitude = abs(x)
                     self.negative = bool(x < 0)
+                    if self.negative:
+                        self.magnitude = -x
+                    else:
+                        self.magnitude = x
                 else:
                     assert x >= 0
                     self.magnitude = x
@@ -307,10 +356,14 @@ class FReal(object):
 
                         if negative is None:
                             self.negative = str_negative
+                            if self.negative:
+                                self.magnitude = -r
+                            else:
+                                self.magnitude = r
                         else:
                             assert str_negative is False
                             self.negative = negative
-                        self.magnitude = abs(r)
+                            self.magnitude = r
 
                     # If parsing as a rational fails, try again with original string.
                     # Note that sympification will always destroy the sign of 0; it can still
@@ -322,7 +375,8 @@ class FReal(object):
                         if r == sympy.nan:
                             str_negative = False
                         else:
-                            str_negative = bool(r < 0)
+                            # x might be some weird real number, so we have to be careful when comparing it
+                            str_negative = decide_order(r, sympy.sympify(0)) < 0
 
                         if negative is None:
                             self.negative = str_negative
@@ -338,15 +392,20 @@ class FReal(object):
                             self.payload = payload
                             assert self.payload != 0
                         else:
-                            self.magnitude = abs(r)
+                            if str_negative:
+                                self.magnitude = -r
+                            else:
+                                self.magnitude = r
 
             # otherwise, it must be some sympy object representing a real number or nan
             else:
+                x = default_simplify(x)
                 assert x.is_real or x == sympy.nan
                 if x == sympy.nan:
                     x_negative = False
                 else:
-                    x_negative = bool(x < 0)
+                    # x might be some weird real number, so we have to be careful when comparing it
+                    x_negative = decide_order(x, sympy.sympify(0)) < 0
 
                 if negative is None:
                     self.negative = x_negative
@@ -362,7 +421,10 @@ class FReal(object):
                     self.payload = payload
                     assert self.payload != 0
                 else:
-                    self.magnitude = abs(x)
+                    if x_negative:
+                        self.magnitude = -x
+                    else:
+                        self.magnitude = x
 
         self._valid()
 
@@ -466,44 +528,26 @@ class FReal(object):
                 # as required by the IEEE 754 standard.
                 m_negative = self.negative
             else:
-
-                ### This is broken due to a bug in sympy (issue #13081) ###
-                ### Instead, subtract and use is_positive #################
-
-                # # different signs: subtract according to which is which
-                # if self.sign < 0:
-                #     neg_m = self.magnitude
-                #     pos_m = x.magnitude
-                # else:
-                #     neg_m = x.magnitude
-                #     pos_m = self.magnitude
-
-                # if neg_m <= pos_m:
-                #     m = pos_m - neg_m
-                #     # If subtraction due to different signs produces 0, I believe
-                #     # the result should always be positive.
-                #     m_negative = False
-                # elif pos_m < neg_m:
-                #     m = neg_m - pos_m
-                #     m_negative = True
-                # else:
-                #     print(repr(pos_m), repr(neg_m), repr(neg_m <= pos_m), repr(pos_m < neg_m), repr(pos_m == neg_m))
-                #     assert False, 'reaching here is a bug'
-                # # TODO: in RTN rounding, this sould produce -0 instead of 0.
-
-                # non-comparing hack
-                difference = (self.magnitude * self.sign) + (x.magnitude * x.sign)
-                if difference.is_positive:
-                    m = difference
-                    m_negative = False
-                elif difference.is_negative:
-                    m = -difference
-                    m_negative = True
+                # different signs: subtract according to which is which
+                if self.sign < 0:
+                    neg_m = self.magnitude
+                    pos_m = x.magnitude
                 else:
-                    assert difference.is_zero
-                    m = 0
+                    neg_m = x.magnitude
+                    pos_m = self.magnitude
+
+                comp = decide_order(neg_m, pos_m)
+
+                if comp == -1:
+                    m = pos_m - neg_m
                     m_negative = False
-                    # TODO: still wrong for RTN
+                elif comp == 0:
+                    m = 0
+                    # TODO: in RTN rounding, this sould produce -0 instead of 0.
+                    m_negative = False
+                else:
+                    m = neg_m - pos_m
+                    m_negative = True
 
             return FReal(m, negative=m_negative)
 
@@ -649,12 +693,12 @@ class FReal(object):
     # comparison
 
     # General comparison, according to IEEE guidelines.
-    # For a.compare(b), we will return:
+    # For a.compareto(b), we will return:
     #    -1 iff a < b
     #     0 iff a = b
     #     1 iff a > b
     #  None iff a and b are unordered (i.e. at least one is NaN)
-    def compare(self, x):
+    def compareto(self, x):
         if not isinstance(x, FReal):
             x = FReal(x)
 
@@ -677,30 +721,7 @@ class FReal(object):
                 else:
                     return -1
             else:
-                ### These comaprisons may be broken due to issue #13081 ###
-                ### Subtract and use is_positive instead ##################
-
-                # if x.magnitude < self.magnitude:
-                #     return -1
-                # elif self.magnitude < x.magnitude:
-                #     return 1
-                # else: # self.magnitude == x.magnitude
-                #     return 0
-
-                # non-comparing hack
-                difference = self.magnitude - x.magnitude
-                if difference.is_positive:
-                    return -1
-                elif difference.is_negative:
-                    return 1
-                else:
-                    if not difference.is_zero:
-                        print(repr(self.magnitude))
-                        print(repr(x.magnitude))
-                        print(repr(difference))
-                        assert False, 'unreachable'
-                    return 0
-
+                return decide_order(x.magnitude, self.magnitude)
         else: # self.sign == 1 and x.sign == 1
             if self.isinf:
                 if x.isinf:
@@ -708,51 +729,31 @@ class FReal(object):
                 else:
                     return 1
             else:
-
-                # if self.magnitude < x.magnitude:
-                #     return -1
-                # elif x.magnitude < self.magnitude:
-                #     return 1
-                # else: # self.magnitude == x.magnitude
-                #     return 0
-
-                # non-comparing hack
-                difference = self.magnitude - x.magnitude
-                if difference.is_negative:
-                    return -1
-                elif difference.is_positive:
-                    return 1
-                else:
-                    if not difference.is_zero:
-                        print(repr(self.magnitude))
-                        print(repr(x.magnitude))
-                        print(repr(difference))
-                        assert False, 'unreachable'
-                    return 0
+                return decide_order(self.magnitude, x.magnitude)
 
     # These are effectively unordered-quiet predicates, except
     # __ne__ is an unordered-quiet negation.
 
     def __lt__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp is not None and comp < 0
 
     def __le__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp is not None and comp <= 0
 
     def __eq__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp == 0
 
     def __ne__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp != 0
 
     def __ge__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp is not None and 0 <= comp
 
     def __gt__(self, x):
-        comp = self.compare(x)
+        comp = self.compareto(x)
         return comp is not None and 0 < comp
