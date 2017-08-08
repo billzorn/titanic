@@ -303,6 +303,14 @@ default_prec = 12
 approx_str = u'\u2248'
 dec_re = re.compile(r'[-+]?([0-9]+)\.?([0-9]*)([eE][-+]?[0-9]+)?')
 
+# Number of decimal digits in an integer.
+def ndig(c):
+    assert isinstance(c, int)
+    if c == 0:
+        return 0
+    else:
+        return int(sympy.floor(sympy.log(abs(c), 10))) + 1
+
 # "Character precision" of a decimal string in standard or scientific format.
 # There MUST be something (such as 0) before the decimal point. Returns 0 if the
 # format is not recognized.
@@ -325,8 +333,7 @@ def prec_of(c, e = None):
 
     if c == 0:
         return 1
-    c = abs(c)
-    prec = sympy.floor(sympy.log(c, 10)) + 1
+    prec = ndig(c)
 
     if e is None:
         return prec
@@ -417,3 +424,234 @@ def real_to_pretty_string(R):
                 return pow10_to_e_str(c, e)
             else:
                 return sympy.pretty(R.symbolic_value)
+
+# Chop c down to at most n decimal places:
+# return c_lo, c_mid, c_hi, e_prime, s.t.
+# c_lo*(10**e_prime) <= c*(10**e) <= c_hi*(10**e_prime)
+# c_lo*(10**e_prime) <= c_mid*(10**e_prime) <= c_hi*(10**e_prime)
+# c_hi - c_lo <= 1
+# and c_mid is correctly rounded, or None if exactly between
+def shorten_dec(c, e, n):
+    assert isinstance(c, int)
+    assert isinstance(e, int)
+    assert isinstance(n, int)
+    assert n >= 1
+
+    prec = ndig(c)
+    if prec <= n:
+        return c, c, c, e
+    else:
+        scale_e = prec - n
+        scale = 10 ** scale_e
+
+        e_prime = e + scale_e
+
+        c_floor = c // scale
+        c_rem = c % scale
+
+        if c_rem == 0:
+            return c_floor, c_floor, c_floor, e_prime
+
+        round_comp = c_rem - (scale // 2)
+
+        # round down
+        if round_comp < 0:
+            return c_floor, c_floor, c_floor + 1, e_prime
+        # exactly between
+        elif round_comp == 0:
+            return c_floor, None, c_floor + 1, e_prime
+        # round up
+        else:
+            return c_floor, c_floor + 1, c_floor + 1, e_prime
+
+# Ensure that one of c_lo*(10**e) or c_hi*(10**e) rounds to F = (S, E, T)
+# using each of the 5 IEEE rounding modes.
+def check_all_rounding_modes(c_lo, c_hi, e, S, E, T):
+    assert isinstance(c_lo, int)
+    assert isinstance(c_hi, int)
+    assert c_lo <= c_hi and c_hi - c_lo <= 1
+    assert isinstance(e, int)
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+
+    w = E.n
+    p = T.n + 1
+
+    R_lo = FReal(c_lo) * (FReal(10) ** e)
+    R_hi = FReal(c_hi) * (FReal(10) ** e)
+
+    for rm in (core.RTN, core.RTP, core.RTZ, core.RNE, core.RNA):
+        S_lo, E_lo, T_lo = core.real_to_implicit(R_lo, w, p, rm)
+        S_hi, E_hi, T_hi = core.real_to_implicit(R_hi, w, p, rm)
+
+        # disregard sign of zero
+        if not ((S_lo, E_lo, T_lo,) == (S, E, T,) or
+                (E_lo.uint == 0 and T_lo.uint == 0 and E.uint == 0 and T.uint == 0) or
+                (S_hi, E_hi, T_hi,) == (S, E, T,) or
+                (E_hi.uint == 0 and T_hi.uint == 0 and E.uint == 0 and T.uint == 0)):
+            return False
+
+    return True
+
+# Find the precision of the shortest decimal numerator that will reproduce
+# F = (S, E, T), under all rounding modes. NaN has a precision of 0, zero has
+# a precision of 1, and infinities may have varying precision depending on c and e.
+# We don't necessarily require that F = (S, E, T) = c*(10**2), though if no precision
+# is sufficient to reproduce F we return -1.
+def find_least_prec(c, e, S, E, T):
+    assert isinstance(c, int)
+    assert isinstance(e, int)
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+
+    R = core.implicit_to_real(S, E, T)
+
+    if R.isnan:
+        return 0, None, None, None, None
+    else:
+        w = E.n
+        p = T.n + 1
+        umax = ((2 ** w) - 1) * (2 ** (p - 1))
+
+        i = core.implicit_to_ordinal(S, E, T)
+        i_prev = max(i-1, -umax)
+        R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
+        i_next = min(i+1, umax)
+        R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
+
+        emax = (2 ** (w - 1)) - 1
+        fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+        # I think all this is right...
+        if i == -(umax - 1):
+            lower = -fmax
+        elif i == umax:
+            lower = fmax
+        else:
+            lower = R_prev + ((R - R_prev) / 2)
+
+        if i == -umax:
+            upper = -fmax
+        elif i == umax - 1:
+            upper = fmax
+        else:
+            upper = R + ((R_next - R) / 2)
+
+        below = 1
+        above = ndig(c)
+
+        # already enough digits
+        if above <= below:
+            return above, c, c, c, e
+
+        # there will never be enough digits
+        c_lo, c_mid, c_hi, e_prime = shorten_dec(c, e, above)
+        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+        if (not (lower < R_lo and R_lo < upper)) and (not (lower < R_hi and R_hi < upper)):
+            return -1, None, None, None, None
+
+        # binary search!
+        while below < above:
+            between = below + ((above - below) // 2)
+            c_lo, c_mid, c_hi, e_prime = shorten_dec(c, e, between)
+
+            # check if either rounding direction is in the envelope
+            R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+            R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+            if (lower < R_lo and R_lo < upper) or (lower < R_hi and R_hi < upper):
+                # representation is ok: search for a shorter one
+                above = between
+            else:
+                # representation is not ok, exclude it
+                below = between + 1
+
+        # we have the basic precision, now we need to do some linear search
+        prec = between
+
+        search_down = True
+        search_up = True
+        c_lo_final = None
+        c_mid_final = None
+        c_hi_final = None
+        e_prime_final = None
+        while search_down:
+            new_prec = prec - 1
+            c_lo, c_mid, c_hi, e_prime = shorten_dec(c, e, prec)
+            if check_all_rounding_modes(c_lo, c_hi, e_prime, S, E, T):
+                prec = new_prec
+                c_lo_final = c_lo
+                c_mid_final = c_mid
+                c_hi_final = c_hi
+                e_prime_final = e_prime
+                search_up = False
+            else:
+                search_down = False
+
+        while search_up:
+            c_lo, c_mid, c_hi, e_prime = shorten_dec(c, e, prec)
+            if check_all_rounding_modes(c_lo, c_hi, e_prime, S, E, T):
+                c_lo_final = c_lo
+                c_mid_final = c_mid
+                c_hi_final = c_hi
+                e_prime_final = e_prime
+                search_up = False
+            else:
+                prec = prec + 1
+
+        return prec, c_lo_final, c_mid_final, c_hi_final, e_prime_final
+
+# Find the shortest decimal numerator that can be used to recover F = (S, E, T).
+# There might be multiple such numerators; if so report all of them.
+# Specifically, we return (prec, lowest, midlo, midhi, highest, e) where:
+#  prec    : int is the minimal precision needed to recover E and T under all rounding modes.
+#  lowest  : int is the smallest decimal numerator of that precision that ever rounds to F.
+#  midlo   : int is the smaller decimal numerator that is as close to the real value of F as possible.
+#  midhi   : int is as midlo, but the larger one. The same as midlo if one numerator is closest.
+#  highest : int is the largest decimal numerator of that precision that ever rounds to F.
+#  e       : int is the exponent, such that F = round({lowest,midlo,midhi,highest} * (10**e))
+# If F is nan, then return a precision of 0 and a bunch of Nones.
+# If F is zero, then return a precision of 1, and the largest (i.e. least negative) e that will
+# ever round to zero. lowest will indicate the smallest (i.e. most negative) number that rounds
+# up to negative zero, and higest will indicate the largest number that rounds down to positive
+# zero.
+# If F is inf, then return the smallest e that will ever round to inf, and the shortest numerator
+# at that precision. Either lowest or highest will record the more-forgiving behavior of RTN or RTP
+# giving infinity, while the other three numerators will generally be the same and reflect the
+# boundary defined for RNE and RNA.
+def implicit_to_shortest_dec(S, E, T):
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+
+    R = core.implicit_to_real(S, E, T)
+
+    if R.isnan:
+        prec = 0
+        lowest = None
+        midlo = None
+        midhi = None
+        highest = None
+        e = None
+    else:
+        w = E.n
+        p = T.n + 1
+        umax = ((2 ** w) - 1) * (2 ** (p - 1))
+
+        i = core.implicit_to_ordinal(S, E, T)
+        i_prev = max(i-1, -umax)
+        R_prev = core.implicit_to_real(core.ordinal_to_implicit(i_prev))
+        i_next = min(i+1, umax)
+        R_next = core.implicit_to_real(core.ordinal_to_implicit(i_next))
+
+        lower = R_prev + ((R - R_prev) / 2)
+        upper = R + ((R_next - R) / 2)
+
+        # hmmm....

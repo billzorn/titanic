@@ -75,10 +75,10 @@ def describe_float(S, E, T):
         i = core.implicit_to_ordinal(S, E, T)
 
         i_prev = max(i-1, -umax)
-        R_prev = core.implicit_to_real(core.ordinal_to_implicit(i_prev))
+        R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
 
         i_next = min(i+1, umax)
-        R_next = core.implicit_to_real(core.ordinal_to_implicit(i_next))
+        R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
 
         # -0 compliant nextafter behavior
         if R_next.iszero:
