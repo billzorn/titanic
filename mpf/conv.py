@@ -717,7 +717,6 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
         R_lo = FReal(c_lo)*(FReal(10)**e_prime)
         R_hi = FReal(c_hi)*(FReal(10)**e_prime)
 
-
         lo_ok = False
         hi_ok = False
 
@@ -726,10 +725,8 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
             (upper_inclusive and R_lo == upper)):
             lo_ok = True
 
-            c_lowest = c_lo
             c_midlo = c_lo
             c_midhi = c_lo
-            c_highest = c_lo
             e_final = e_prime
 
         if ((lower < R_hi and R_hi < upper) or
@@ -738,10 +735,8 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
             hi_ok = True
 
             if not lo_ok:
-                c_lowest = c_hi
                 c_midlo = c_hi
                 c_midhi = c_hi
-                c_highest = c_hi
                 e_final = e_prime
             else:
                 if c_mid is None:
@@ -749,7 +744,6 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
                 else:
                     c_midlo = c_mid
                     c_midhi = c_mid
-                c_highest = c_hi
 
         if lo_ok or hi_ok:
             above = between
@@ -759,29 +753,28 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
     assert above <= below
     prec = above
 
-    # linear search for true lowest and highest
-    search_down = True
-    search_up = True
-
-    while search_down:
-        c_lowest_down = c_lowest - 1
-        R_lowest = FReal(c_lowest_down)*(FReal(10)**e_final)
-        if ((lower < R_lowest and R_lowest < upper) or
-            (lower_inclusive and lower == R_lowest) or
-            (upper_inclusive and R_lowest == upper)):
-            c_lowest = c_lowest_down
+    # look for lowest and highest
+    c_lower, e_lower = real_to_pow10(lower)
+    if c_lower is None or e_lower is None:
+        c_lowest = None
+    else:
+        c_lo, c_mid, c_hi, e_prime = quantize_dec(c_lower, e_lower, prec)
+        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+        if lower < R_hi or (lower_inclusive and lower == R_hi):
+            c_lowest = c_hi
         else:
-            search_down = False
+            c_lowest = c_hi + 1
 
-    while search_up:
-        c_highest_up = c_highest + 1
-        R_highest = FReal(c_highest_up)*(FReal(10)**e_final)
-        if ((lower < R_highest and R_highest < upper) or
-            (lower_inclusive and lower == R_highest) or
-            (upper_inclusive and R_highest == upper)):
-            c_highest = c_highest_up
+    c_upper, e_upper = real_to_pow10(upper)
+    if c_upper is None or e_upper is None:
+        c_highest = None
+    else:
+        c_lo, c_mid, c_hi, e_prime = quantize_dec(c_upper, e_upper, prec)
+        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+        if R_lo < upper or (upper_inclusive and R_lo == upper):
+            c_highest = c_lo
         else:
-            search_up = False
+            c_highest = c_lo - 1
 
     return prec, c_lowest, c_midlo, c_midhi, c_highest, e_final
 
@@ -801,13 +794,21 @@ def implicit_to_shortest_dec(S, E, T, rm):
     if R.isnan:
         return 0, None, None, None, None, None
     else:
-        c, e = real_to_pow10(R)
-        assert c is not None and e is not None
-
         lower, lower_inclusive, upper, upper_inclusive = implicit_to_rounding_envelope(S, E, T, rm)
 
-        return binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
+        if R.isinf:
+            if lower.isinf and upper.isinf:
+                return 0, None, None, None, None, None
+            else:
+                pass
 
+        elif R.iszero:
+            pass
+
+        else:
+            c, e = real_to_pow10(R)
+            assert c is not None and e is not None
+            return binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
 
 
 # Find the shortest decimal numerator that can be used to recover F = (S, E, T).
