@@ -643,6 +643,13 @@ def quantize_dec(c, e, n, intrem = 0):
         else:
             return c_floor, c_floor + 1, c_floor + 1, e_prime
 
+# Find the shortest prefix of (c*(10**e)) + (epsilon<<1)*intrem) that fits in
+# the envelope defined by lower, lower_inclusive, upper, upper_inclusive.
+# If round_correctly is True, then ensure this prefix is correctly rounded,
+# i.e. 1.27 can only be rounded to 1.3, never 1.2.
+# return a bunch of numbers describing the precision and the decimals of that
+# precision that fall inside the envelope:
+#   prec, c_lowest, c_midlo, c_midhi, c_highest, e
 def binsearch_shortest_dec(c, e, intrem,
                            lower, lower_inclusive, upper, upper_inclusive,
                            round_correctly = False):
@@ -673,70 +680,123 @@ def binsearch_shortest_dec(c, e, intrem,
     # Question: is this procedure actually stable?
     # or can we find some n, such that quantize(c, e, n) is not in the envelope,
     # and yet there exists n' < n such that quantize(c, e, n') is.
+
+    # I think it is stable, if you allow incorrect rounding here.
+
+    # Say we quantize to n, and neither c_lo or c_hi puts us in the envelope,
+    # but there is some n' < n we could round to that puts us back in the envelope.
+    # Quantizing to a smaller n' will produce c_lo' <= c_lo and c_hi' >= c_hi. So
+    # we have a contradiction: c_lo or c_hi had to be in the envelope as well. They
+    # are the two closest numbers to the original number at precision n *or any lower
+    # precision*. Note that this proof fails if we are forced to quantize to c_mid, as
+    # our target point could be off center in the envelope, and the "wrong" rounding
+    # direction could be the only one that stays in.
     while below < above:
         between = below + ((above - below) // 2)
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between, intrem=intrem)
 
-        mid_ok = False
         lo_ok = False
         hi_ok = False
 
-        if round_correctly and c_mid is not None:
-            # To enforce correct rounding, we have to use c_mid when it's not None.
+        # This procedure can round INCORRECTLY, if that's what it takes to stay in the envelope.
+        # This means we'll always find the shortest string (proof?????) but it might not
+        # be quite the one you thought you were going to get.
 
-            R_mid = FReal(c_mid)*(FReal(10)**e_prime)
+        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
 
-            if ((lower < R_mid and R_mid < upper) or
-                (lower_inclusive and lower == R_mid) or
-                (upper_inclusive and R_mid == upper)):
-                mid_ok = True
+        if ((lower < R_lo and R_lo < upper) or
+            (lower_inclusive and lower == R_lo) or
+            (upper_inclusive and R_lo == upper)):
+            lo_ok = True
 
-                c_midlo = c_mid
-                c_midhi = c_mid
+            c_midlo = c_lo
+            c_midhi = c_lo
+            e_final = e_prime
+
+        if ((lower < R_hi and R_hi < upper) or
+            (lower_inclusive and lower == R_hi) or
+            (upper_inclusive and R_hi == upper)):
+            hi_ok = True
+
+            if not lo_ok:
+                c_midlo = c_hi
+                c_midhi = c_hi
                 e_final = e_prime
-
-        else:
-            # This procedure can round INCORRECTLY, if that's what it takes to stay in the envelope.
-            # This means we'll always return a damn short string (proof?????) but it might not
-            # be quite the one you thought you were going to get.
-            # If c_mid is None, then there wasn't a correct way to round (exactly even) so
-            # we can do whatever we want.
-
-            R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-            R_hi = FReal(c_hi)*(FReal(10)**e_prime)
-
-            if ((lower < R_lo and R_lo < upper) or
-                (lower_inclusive and lower == R_lo) or
-                (upper_inclusive and R_lo == upper)):
-                lo_ok = True
-
-                c_midlo = c_lo
-                c_midhi = c_lo
-                e_final = e_prime
-
-            if ((lower < R_hi and R_hi < upper) or
-                (lower_inclusive and lower == R_hi) or
-                (upper_inclusive and R_hi == upper)):
-                hi_ok = True
-
-                if not lo_ok:
-                    c_midlo = c_hi
+            else:
+                if c_mid is None:
                     c_midhi = c_hi
-                    e_final = e_prime
                 else:
-                    if c_mid is None:
-                        c_midhi = c_hi
-                    else:
-                        c_midlo = c_mid
-                        c_midhi = c_mid
+                    c_midlo = c_mid
+                    c_midhi = c_mid
 
-        if mid_ok or lo_ok or hi_ok:
+        if lo_ok or hi_ok:
             above = between
         else:
             below = between + 1
 
     assert above <= below
     prec = above
+
+    # We may have rounded incorrectly. Linearly scan up to find the shortest (maybe longer)
+    # prefix that is correctly rounded and still fits in the envelope. Usually this shouldn't
+    # take too long, but I have absolutely no proof of that.
+    if round_correctly:
+        scan_shortest_correct = True
+
+        while scan_shortest_correct:
+            c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, prec, intrem=intrem)
+
+            mid_ok = False
+            lo_ok = False
+            hi_ok = False
+
+            # To enforce correct rounding, we have to use c_mid when it's not None.
+            if c_mid is not None:
+                R_mid = FReal(c_mid)*(FReal(10)**e_prime)
+
+                if ((lower < R_mid and R_mid < upper) or
+                    (lower_inclusive and lower == R_mid) or
+                    (upper_inclusive and R_mid == upper)):
+                    mid_ok = True
+
+                    c_midlo = c_mid
+                    c_midhi = c_mid
+                    e_final = e_prime
+
+            else:
+                R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+                R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+
+                if ((lower < R_lo and R_lo < upper) or
+                    (lower_inclusive and lower == R_lo) or
+                    (upper_inclusive and R_lo == upper)):
+                    lo_ok = True
+
+                    c_midlo = c_lo
+                    c_midhi = c_lo
+                    e_final = e_prime
+
+                if ((lower < R_hi and R_hi < upper) or
+                    (lower_inclusive and lower == R_hi) or
+                    (upper_inclusive and R_hi == upper)):
+                    hi_ok = True
+
+                    if not lo_ok:
+                        c_midlo = c_hi
+                        c_midhi = c_hi
+                        e_final = e_prime
+                    else:
+                        if c_mid is None:
+                            c_midhi = c_hi
+                        else:
+                            c_midlo = c_mid
+                            c_midhi = c_mid
+
+            if mid_ok or lo_ok or hi_ok:
+                scan_shortest_correct = False
+            else:
+                prec = prec + 1
 
     # look for lowest and highest
     c_lower, e_lower = real_to_pow10(lower)
@@ -749,6 +809,7 @@ def binsearch_shortest_dec(c, e, intrem,
             c_lowest = c_hi
         else:
             c_lowest = c_hi + 1
+            # proof that this is ok?
 
     c_upper, e_upper = real_to_pow10(upper)
     if c_upper is None or e_upper is None:
@@ -760,12 +821,21 @@ def binsearch_shortest_dec(c, e, intrem,
             c_highest = c_lo
         else:
             c_highest = c_lo - 1
+            # proof that this is ok?
 
     return prec, c_lowest, c_midlo, c_midhi, c_highest, e_final
 
-# Find the shortest decimal numerator that can be used to recover F = (S, E, T).
+# Find the shortest decimal numerator that can be used to recover R = (S, E, T) under rm.
 # There might be multiple such numerators; if so report all of them.
-# Return prec, lowest, midlo, midhi, highest, e.
+# Specifically, we return (prec, lowest, midlo, midhi, highest, e) where:
+#  prec    : int is the minimal precision needed to recover E and T under rm.
+#  lowest  : int is the smallest decimal numerator of that precision that ever rounds to F.
+#  midlo   : int is the smaller decimal numerator that is as close to the real value of F as possible.
+#  midhi   : int is as midlo, but the larger one. The same as midlo if one numerator is closest.
+#  highest : int is the largest decimal numerator of that precision that ever rounds to F.
+#  e       : int is the exponent, such that F = round({lowest,midlo,midhi,highest} * (10**e))
+# If F is nan, then return a precision of 0 and a bunch of Nones.
+# if F is zero or inf, then do something special.
 def shortest_dec(R, S, E, T, rm, round_correctly = False):
     assert isinstance(R, FReal)
     assert isinstance(S, BV)
@@ -844,54 +914,3 @@ def real_to_shortest_dec(R, w, p, rm, round_correctly = True):
     S, E, T = core.real_to_implicit(R, w, p, rm)
 
     return shortest_dec(R, S, E, T, rm, round_correctly=round_correctly)
-
-
-# Find the shortest decimal numerator that can be used to recover F = (S, E, T).
-# There might be multiple such numerators; if so report all of them.
-# Specifically, we return (prec, lowest, midlo, midhi, highest, e) where:
-#  prec    : int is the minimal precision needed to recover E and T under all rounding modes.
-#  lowest  : int is the smallest decimal numerator of that precision that ever rounds to F.
-#  midlo   : int is the smaller decimal numerator that is as close to the real value of F as possible.
-#  midhi   : int is as midlo, but the larger one. The same as midlo if one numerator is closest.
-#  highest : int is the largest decimal numerator of that precision that ever rounds to F.
-#  e       : int is the exponent, such that F = round({lowest,midlo,midhi,highest} * (10**e))
-# If F is nan, then return a precision of 0 and a bunch of Nones.
-# If F is zero, then return a precision of 1, and the largest (i.e. least negative) e that will
-# ever round to zero. lowest will indicate the smallest (i.e. most negative) number that rounds
-# up to negative zero, and higest will indicate the largest number that rounds down to positive
-# zero.
-# If F is inf, then return the smallest e that will ever round to inf, and the shortest numerator
-# at that precision. Either lowest or highest will record the more-forgiving behavior of RTN or RTP
-# giving infinity, while the other three numerators will generally be the same and reflect the
-# boundary defined for RNE and RNA.
-# def implicit_to_shortest_dec(S, E, T):
-#     assert isinstance(S, BV)
-#     assert S.n == 1
-#     assert isinstance(E, BV)
-#     assert E.n >= 2
-#     assert isinstance(T, BV)
-
-#     R = core.implicit_to_real(S, E, T)
-
-#     if R.isnan:
-#         prec = 0
-#         lowest = None
-#         midlo = None
-#         midhi = None
-#         highest = None
-#         e = None
-#     else:
-#         w = E.n
-#         p = T.n + 1
-#         umax = ((2 ** w) - 1) * (2 ** (p - 1))
-
-#         i = core.implicit_to_ordinal(S, E, T)
-#         i_prev = max(i-1, -umax)
-#         R_prev = core.implicit_to_real(core.ordinal_to_implicit(i_prev))
-#         i_next = min(i+1, umax)
-#         R_next = core.implicit_to_real(core.ordinal_to_implicit(i_next))
-
-#         lower = R_prev + ((R - R_prev) / 2)
-#         upper = R + ((R_next - R) / 2)
-
-#         # hmmm....
