@@ -48,20 +48,30 @@ def eval_until_at_least(x, prec,
     assert scale >= 2
     assert abort_incomparables is True or abort_incomparables is False
 
-    f = x.evalf(prec, maxn=n)
+    # f = x.evalf(prec, maxn=n)
+    # if f.is_comparable:
+    #     return f
+    # # is it better to just throw in maxn instead of a loop? or does that waste resources?
+    # else:
+    #     while n < maxn:
+    #         n = n * default_n_scale
+    #         f = x.evalf(prec, maxn=n)
+    #         if f.is_comparable:
+    #             return f
+    #     if abort_incomparables:
+    #         raise ConjectureEqualityException(x, symbolic_zero, n)
+    #     else:
+    #         return f
+
+    # let's try without the loop
+    f = x.evalf(prec, maxn=maxn)
     if f.is_comparable:
         return f
-    # is it better to just throw in maxn instead of a loop? or does that waste resources?
+    if abort_incomparables:
+        raise ConjectureEqualityException(x, symbolic_zero, n)
     else:
-        while n < maxn:
-            n = n * default_n_scale
-            f = x.evalf(prec, maxn=n)
-            if f.is_comparable:
-                return f
-        if abort_incomparables:
-            raise ConjectureEqualityException(x, symbolic_zero, n)
-        else:
-            return f
+        return f
+
 
 def decide_order(x, y):
     assert x.is_real and x.is_finite
