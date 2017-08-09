@@ -8,6 +8,30 @@ FReal = real.FReal
 import core
 import re
 
+# work around sympy floor bug:
+def floor_log10(r, maxn = real.default_maxn):
+    assert r.is_real
+    assert isinstance(maxn, int)
+    assert maxn > 0
+
+    sign = r.evalf(2, maxn=maxn)
+    if not sign.is_comparable:
+        raise ValueError('floor_log10: unable to determine sign of {}, maxn={}'
+                         .format(repr(r), repr(maxn)))
+    elif sign == 0:
+        raise ValueError('floor_log10: log of zero {}, maxn={}'
+                         .format(repr(r), repr(maxn)))
+    elif sign < 0:
+        r = -r
+
+    log10f = sympy.log(r, 10).evalf(20, maxn=maxn)
+
+    if log10f > sympy.Float(1e19, 20):
+        raise ValueError('floor_log10: log overflow for {}, maxn={}'
+                         .format(repr(r), repr(maxn)))
+    else:
+        return int(sympy.floor(log10f))
+
 # Binary conversions are relatively simple for numpy's floating point types.
 # float16 : w = 5,  p = 11
 # float32 : w = 8,  p = 24
@@ -249,6 +273,58 @@ def real_to_pow10(R):
     assert R == FReal(c) * (FReal(10) ** e)
     return c, e
 
+# Returns an approximate c and e, and remainder rem, such that c*(10**e) + rem == R.
+# c will have exactly n digits.
+# If c and e are exact, then rem will be none.
+def real_to_pow10_rem(R, n):
+    assert isinstance(R, FReal)
+    assert isinstance(n, int)
+    assert n >= 1
+
+    if R.isnan or R.isinf:
+        return None, None, R
+    elif R.iszero:
+        return 0, 0, None
+    else:
+        f = R.numeric_value(n)
+        e_f = floor_log10(f)
+
+        # get f to be an integer, adjust e
+        e_scale = n - (e_f + 1)
+        scale = 10 ** abs(e_scale)
+        if e_scale > 0:
+            c = int(f * scale)
+        else:
+            c = int(f / scale)
+        e = e_f - n + 1
+
+        # it's possible we didn't round correctly, so do that
+        # (though this is very, very slow)
+        c_lo = c - 1
+        R_lo_approx = FReal(c_lo) * (FReal(10) ** e)
+        R_approx = FReal(c) * (FReal(10) ** e)
+        c_hi = c + 1
+        R_hi_approx = FReal(c_hi) * (FReal(10) ** e)
+
+        remlo = R - R_lo_approx
+        remmid = R - R_approx
+        remhi = R - R_hi_approx
+
+        remlo_abs = abs(remlo)
+        remmid_abs = abs(remmid)
+        remhi_abs = abs(remhi)
+
+        if remlo_abs < remmid_abs:
+            if remlo_abs < remhi_abs:
+                return c_lo, e, remlo
+            else:
+                return c_hi, e, remhi
+        else:
+            if remmid_abs < remhi_abs:
+                return c, e, remmid
+            else:
+                return c_hi, e, remhi
+
 def pow10_to_f_str(c, e):
     assert isinstance(c, int)
     assert isinstance(e, int)
@@ -309,7 +385,7 @@ def ndig(c):
     if c == 0:
         return 0
     else:
-        return int(sympy.floor(sympy.log(abs(c), 10))) + 1
+        return floor_log10(c) + 1
 
 # "Character precision" of a decimal string in standard or scientific format.
 # There MUST be something (such as 0) before the decimal point. Returns 0 if the
@@ -653,11 +729,14 @@ def implicit_to_rounding_envelope(S, E, T, rm):
 #   c_lo*(10**e_prime) <= c_mid*(10**e_prime) <= c_hi*(10**e_prime) and
 #   c_hi - c_lo <= 1 and
 #   and c_mid is correctly rounded, or None if exactly between.
-def quantize_dec(c, e, n):
+# if either c_lo or c_hi is exact, then they must be the same.
+def quantize_dec(c, e, n, realrem = 0):
     assert isinstance(c, int)
     assert isinstance(e, int)
     assert isinstance(n, int)
     assert n >= 1
+    assert isinstance(realrem, int)
+    assert -1 <= realrem and realrem <= 1
 
     prec = ndig(c)
     if prec <= n:
@@ -674,7 +753,7 @@ def quantize_dec(c, e, n):
         c_floor = c // scale
         c_rem = c % scale
 
-        if c_rem == 0:
+        if c_rem == 0 and realrem == 0:
             return c_floor, c_floor, c_floor, e_prime
 
         round_comp = c_rem - (scale // 2)
@@ -684,7 +763,12 @@ def quantize_dec(c, e, n):
             return c_floor, c_floor, c_floor + 1, e_prime
         # exactly between
         elif round_comp == 0:
-            return c_floor, None, c_floor + 1, e_prime
+            if realrem < 0:
+                return c_floor, c_floor, c_floor + 1, e_prime
+            elif realrem == 0:
+                return c_floor, None, c_floor + 1, e_prime
+            else:
+                return c_floor, c_floor + 1, c_floor + 1, e_prime
         # round up
         else:
             return c_floor, c_floor + 1, c_floor + 1, e_prime
@@ -703,14 +787,15 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
     below = 1
     above = ndig(c)
 
+    # already have few enough digits
     if above <= below:
-        # already have few enough digits
         c_lowest = c
         c_midlo = c
         c_midhi = c
         c_highest = c
         e_final = e
 
+    # binary search!
     while below < above:
         between = below + ((above - below) // 2)
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between)

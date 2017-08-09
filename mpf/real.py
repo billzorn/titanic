@@ -51,6 +51,7 @@ def eval_until_at_least(x, prec,
     f = x.evalf(prec, maxn=n)
     if f.is_comparable:
         return f
+    # is it better to just throw in maxn instead of a loop? or does that waste resources?
     else:
         while n < maxn:
             n = n * default_n_scale
@@ -504,6 +505,10 @@ class FReal(object):
 
     def __neg__(self):
         return FReal(self.magnitude, negative=not self.negative,
+                     infinite=self.infinite, payload=self.payload)
+
+    def __abs__(self):
+        return FReal(self.magnitude, negative=False,
                      infinite=self.infinite, payload=self.payload)
 
     def __add__(self, x):
