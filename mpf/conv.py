@@ -669,6 +669,10 @@ def binsearch_shortest_dec(c, e, intrem,
         e_final = e
 
     # binary search!
+
+    # Question: is this procedure actually stable?
+    # or can we find some n, such that quantize(c, e, n) is not in the envelope,
+    # and yet there exists n' < n such that quantize(c, e, n') is.
     while below < above:
         between = below + ((above - below) // 2)
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between, intrem=intrem)
