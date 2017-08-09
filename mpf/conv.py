@@ -10,12 +10,21 @@ import re
 
 # work around sympy floor bug:
 def floor_log10(r, maxn = real.default_maxn):
-    assert r.is_real
+    assert isinstance(r, int) or r.is_real
     assert isinstance(maxn, int)
     assert maxn > 0
 
-    sign = r.evalf(2, maxn=maxn)
-    if not sign.is_comparable:
+    if isinstance(r, int):
+        if r < 0:
+            sign = -1
+        elif r == 0:
+            sign = 0
+        else:
+            sign = 1
+    else:
+        sign = r.evalf(2, maxn=maxn)
+
+    if not (isinstance(sign, int) or sign.is_comparable):
         raise ValueError('floor_log10: unable to determine sign of {}, maxn={}'
                          .format(repr(r), repr(maxn)))
     elif sign == 0:
@@ -501,148 +510,6 @@ def real_to_pretty_string(R):
             else:
                 return sympy.pretty(R.symbolic_value)
 
-# Ensure that one of c_lo*(10**e) or c_hi*(10**e) rounds to F = (S, E, T)
-# using each of the 5 IEEE rounding modes.
-def check_all_rounding_modes(c_lo, c_hi, e, S, E, T):
-    assert isinstance(c_lo, int)
-    assert isinstance(c_hi, int)
-    assert c_lo <= c_hi and c_hi - c_lo <= 1
-    assert isinstance(e, int)
-    assert isinstance(S, BV)
-    assert S.n == 1
-    assert isinstance(E, BV)
-    assert E.n >= 2
-    assert isinstance(T, BV)
-
-    w = E.n
-    p = T.n + 1
-
-    R_lo = FReal(c_lo) * (FReal(10) ** e)
-    R_hi = FReal(c_hi) * (FReal(10) ** e)
-
-    for rm in (core.RTN, core.RTP, core.RTZ, core.RNE, core.RNA):
-        S_lo, E_lo, T_lo = core.real_to_implicit(R_lo, w, p, rm)
-        S_hi, E_hi, T_hi = core.real_to_implicit(R_hi, w, p, rm)
-
-        # disregard sign of zero
-        if not ((S_lo, E_lo, T_lo,) == (S, E, T,) or
-                (E_lo.uint == 0 and T_lo.uint == 0 and E.uint == 0 and T.uint == 0) or
-                (S_hi, E_hi, T_hi,) == (S, E, T,) or
-                (E_hi.uint == 0 and T_hi.uint == 0 and E.uint == 0 and T.uint == 0)):
-            return False
-
-    return True
-
-# Find the precision of the shortest decimal numerator that will reproduce
-# F = (S, E, T), under all rounding modes. NaN has a precision of 0, zero has
-# a precision of 1, and infinities may have varying precision depending on c and e.
-# We don't necessarily require that F = (S, E, T) = c*(10**2), though if no precision
-# is sufficient to reproduce F we return -1.
-def find_least_prec(c, e, S, E, T):
-    assert isinstance(c, int)
-    assert isinstance(e, int)
-    assert isinstance(S, BV)
-    assert S.n == 1
-    assert isinstance(E, BV)
-    assert E.n >= 2
-    assert isinstance(T, BV)
-
-    R = core.implicit_to_real(S, E, T)
-
-    if R.isnan:
-        return 0, None, None, None, None
-    else:
-        w = E.n
-        p = T.n + 1
-        umax = ((2 ** w) - 1) * (2 ** (p - 1))
-
-        i = core.implicit_to_ordinal(S, E, T)
-        i_prev = max(i-1, -umax)
-        R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
-        i_next = min(i+1, umax)
-        R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
-
-        emax = (2 ** (w - 1)) - 1
-        fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
-        # I think all this is right...
-        if i == -(umax - 1):
-            lower = -fmax
-        elif i == umax:
-            lower = fmax
-        else:
-            lower = R_prev + ((R - R_prev) / 2)
-
-        if i == -umax:
-            upper = -fmax
-        elif i == umax - 1:
-            upper = fmax
-        else:
-            upper = R + ((R_next - R) / 2)
-
-        below = 1
-        above = ndig(c)
-
-        # already enough digits
-        if above <= below:
-            return above, c, c, c, e
-
-        # there will never be enough digits
-        c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, above)
-        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
-        if (not (lower < R_lo and R_lo < upper)) and (not (lower < R_hi and R_hi < upper)):
-            return -1, None, None, None, None
-
-        # binary search!
-        while below < above:
-            between = below + ((above - below) // 2)
-            c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between)
-
-            # check if either rounding direction is in the envelope
-            R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-            R_hi = FReal(c_hi)*(FReal(10)**e_prime)
-            if (lower < R_lo and R_lo < upper) or (lower < R_hi and R_hi < upper):
-                # representation is ok: search for a shorter one
-                above = between
-            else:
-                # representation is not ok, exclude it
-                below = between + 1
-
-        # we have the basic precision, now we need to do some linear search
-        prec = between
-
-        search_down = True
-        search_up = True
-        c_lo_final = None
-        c_mid_final = None
-        c_hi_final = None
-        e_prime_final = None
-        while search_down:
-            new_prec = prec - 1
-            c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, prec)
-            if check_all_rounding_modes(c_lo, c_hi, e_prime, S, E, T):
-                prec = new_prec
-                c_lo_final = c_lo
-                c_mid_final = c_mid
-                c_hi_final = c_hi
-                e_prime_final = e_prime
-                search_up = False
-            else:
-                search_down = False
-
-        while search_up:
-            c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, prec)
-            if check_all_rounding_modes(c_lo, c_hi, e_prime, S, E, T):
-                c_lo_final = c_lo
-                c_mid_final = c_mid
-                c_hi_final = c_hi
-                e_prime_final = e_prime
-                search_up = False
-            else:
-                prec = prec + 1
-
-        return prec, c_lo_final, c_mid_final, c_hi_final, e_prime_final
-
 # The "rounding envelope" of some F = (S, E, T) under rm.
 # return lower, lower_inclusive, upper, upper_inclusive,
 # such that all real values r in the range:
@@ -729,14 +596,17 @@ def implicit_to_rounding_envelope(S, E, T, rm):
 #   c_lo*(10**e_prime) <= c_mid*(10**e_prime) <= c_hi*(10**e_prime) and
 #   c_hi - c_lo <= 1 and
 #   and c_mid is correctly rounded, or None if exactly between.
-# if either c_lo or c_hi is exact, then they must be the same.
-def quantize_dec(c, e, n, realrem = 0):
+# If either c_lo or c_hi is exact, then they must be the same.
+# intrem is a sub-integral remainer used to break ties: we're really comparing
+# to some real number c*(10**e) + intrem, so if the integral remainder c_rem is 0,
+# then we also check intrem.
+def quantize_dec(c, e, n, intrem = 0):
     assert isinstance(c, int)
     assert isinstance(e, int)
     assert isinstance(n, int)
     assert n >= 1
-    assert isinstance(realrem, int)
-    assert -1 <= realrem and realrem <= 1
+    assert isinstance(intrem, int)
+    assert -1 <= intrem and intrem <= 1
 
     prec = ndig(c)
     if prec <= n:
@@ -753,7 +623,7 @@ def quantize_dec(c, e, n, realrem = 0):
         c_floor = c // scale
         c_rem = c % scale
 
-        if c_rem == 0 and realrem == 0:
+        if c_rem == 0 and intrem == 0:
             return c_floor, c_floor, c_floor, e_prime
 
         round_comp = c_rem - (scale // 2)
@@ -763,9 +633,9 @@ def quantize_dec(c, e, n, realrem = 0):
             return c_floor, c_floor, c_floor + 1, e_prime
         # exactly between
         elif round_comp == 0:
-            if realrem < 0:
+            if intrem < 0:
                 return c_floor, c_floor, c_floor + 1, e_prime
-            elif realrem == 0:
+            elif intrem == 0:
                 return c_floor, None, c_floor + 1, e_prime
             else:
                 return c_floor, c_floor + 1, c_floor + 1, e_prime
@@ -773,7 +643,9 @@ def quantize_dec(c, e, n, realrem = 0):
         else:
             return c_floor, c_floor + 1, c_floor + 1, e_prime
 
-def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive):
+def binsearch_shortest_dec(c, e, intrem,
+                           lower, lower_inclusive, upper, upper_inclusive,
+                           round_correctly = False):
     assert isinstance(c, int)
     assert isinstance(e, int)
     assert not lower.isnan
@@ -783,6 +655,7 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
     assert not (lower.isinf and upper.isinf)
     R = FReal(c)*(FReal(10)**e)
     assert (lower < R and R < upper) or (lower_inclusive and lower == R) or (upper_inclusive and R == upper)
+    assert round_correctly is True or round_correctly is False
 
     below = 1
     above = ndig(c)
@@ -798,39 +671,62 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
     # binary search!
     while below < above:
         between = below + ((above - below) // 2)
-        c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between)
-        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+        c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between, intrem=intrem)
 
+        mid_ok = False
         lo_ok = False
         hi_ok = False
 
-        if ((lower < R_lo and R_lo < upper) or
-            (lower_inclusive and lower == R_lo) or
-            (upper_inclusive and R_lo == upper)):
-            lo_ok = True
+        if round_correctly and c_mid is not None:
+            # To enforce correct rounding, we have to use c_mid when it's not None.
 
-            c_midlo = c_lo
-            c_midhi = c_lo
-            e_final = e_prime
+            R_mid = FReal(c_mid)*(FReal(10)**e_prime)
 
-        if ((lower < R_hi and R_hi < upper) or
-            (lower_inclusive and lower == R_hi) or
-            (upper_inclusive and R_hi == upper)):
-            hi_ok = True
+            if ((lower < R_mid and R_mid < upper) or
+                (lower_inclusive and lower == R_mid) or
+                (upper_inclusive and R_mid == upper)):
+                mid_ok = True
 
-            if not lo_ok:
-                c_midlo = c_hi
-                c_midhi = c_hi
+                c_midlo = c_mid
+                c_midhi = c_mid
                 e_final = e_prime
-            else:
-                if c_mid is None:
-                    c_midhi = c_hi
-                else:
-                    c_midlo = c_mid
-                    c_midhi = c_mid
 
-        if lo_ok or hi_ok:
+        else:
+            # This procedure can round INCORRECTLY, if that's what it takes to stay in the envelope.
+            # This means we'll always return a damn short string (proof?????) but it might not
+            # be quite the one you thought you were going to get.
+            # If c_mid is None, then there wasn't a correct way to round (exactly even) so
+            # we can do whatever we want.
+
+            R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+            R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+
+            if ((lower < R_lo and R_lo < upper) or
+                (lower_inclusive and lower == R_lo) or
+                (upper_inclusive and R_lo == upper)):
+                lo_ok = True
+
+                c_midlo = c_lo
+                c_midhi = c_lo
+                e_final = e_prime
+
+            if ((lower < R_hi and R_hi < upper) or
+                (lower_inclusive and lower == R_hi) or
+                (upper_inclusive and R_hi == upper)):
+                hi_ok = True
+
+                if not lo_ok:
+                    c_midlo = c_hi
+                    c_midhi = c_hi
+                    e_final = e_prime
+                else:
+                    if c_mid is None:
+                        c_midhi = c_hi
+                    else:
+                        c_midlo = c_mid
+                        c_midhi = c_mid
+
+        if mid_ok or lo_ok or hi_ok:
             above = between
         else:
             below = between + 1
@@ -866,6 +762,60 @@ def binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
 # Find the shortest decimal numerator that can be used to recover F = (S, E, T).
 # There might be multiple such numerators; if so report all of them.
 # Return prec, lowest, midlo, midhi, highest, e.
+def shortest_dec(R, S, E, T, rm, round_correctly = False):
+    assert isinstance(R, FReal)
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+    assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
+    assert round_correctly is True or round_correctly is False
+
+    if R.isnan:
+        assert core.implicit_to_real(S, E, T).isnan
+        return 0, None, None, None, None, None
+    else:
+        lower, lower_inclusive, upper, upper_inclusive = implicit_to_rounding_envelope(S, E, T, rm)
+        assert (lower < R and R < upper) or (lower_inclusive and lower == R) or (upper_inclusive and R == upper)
+
+        if R.isinf:
+            if lower.isinf and upper.isinf:
+                return 0, None, None, None, None, None
+            else:
+                assert False
+
+        elif R.iszero:
+            assert False
+
+        else:
+            if R.isrational:
+                c, e = real_to_pow10(R)
+                intrem = 0
+            else:
+                c, e = None, None
+            if c is None or e is None:
+                # look for high enough precision to fit in the envelope
+                prec = 100
+                outside_envelope = True
+                while outside_envelope:
+                    c, e, realrem = real_to_pow10_rem(R, prec)
+                    R_approx = FReal(c)*(FReal(10)**e)
+                    if ((lower < R_approx and R_approx < upper) or
+                        (lower_inclusive and lower == R_approx) or
+                        (upper_inclusive and R_approx == upper)):
+                        outside_envelope = False
+                        if realrem.iszero:
+                            intrem = 0
+                        else:
+                            intrem = realrem.sign
+                    else:
+                        prec = prec * 2
+
+            return binsearch_shortest_dec(c, e, intrem,
+                                          lower, lower_inclusive, upper, upper_inclusive,
+                                          round_correctly=round_correctly)
+
 def implicit_to_shortest_dec(S, E, T, rm):
     assert isinstance(S, BV)
     assert S.n == 1
@@ -876,24 +826,20 @@ def implicit_to_shortest_dec(S, E, T, rm):
 
     R = core.implicit_to_real(S, E, T)
 
-    if R.isnan:
-        return 0, None, None, None, None, None
-    else:
-        lower, lower_inclusive, upper, upper_inclusive = implicit_to_rounding_envelope(S, E, T, rm)
+    return shortest_dec(R, S, E, T, rm)
 
-        if R.isinf:
-            if lower.isinf and upper.isinf:
-                return 0, None, None, None, None, None
-            else:
-                pass
+def real_to_shortest_dec(R, w, p, rm, round_correctly = True):
+    assert isinstance(R, FReal)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+    assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
+    assert round_correctly is True or round_correctly is False
 
-        elif R.iszero:
-            pass
+    S, E, T = core.real_to_implicit(R, w, p, rm)
 
-        else:
-            c, e = real_to_pow10(R)
-            assert c is not None and e is not None
-            return binsearch_shortest_dec(c, e, lower, lower_inclusive, upper, upper_inclusive)
+    return shortest_dec(R, S, E, T, rm, round_correctly=round_correctly)
 
 
 # Find the shortest decimal numerator that can be used to recover F = (S, E, T).
