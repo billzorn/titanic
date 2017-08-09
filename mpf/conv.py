@@ -606,6 +606,100 @@ def find_least_prec(c, e, S, E, T):
 
         return prec, c_lo_final, c_mid_final, c_hi_final, e_prime_final
 
+def implicit_to_rounding_envelope(S, E, T, rm):
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+    assert rm == core.RTN or rm == core.RTP or rm == core.RTZ or rm == core.RNE or rm == core.RNA
+    R = core.implicit_to_real(S, E, T)
+    assert not R.isnan
+
+    w = E.n
+    p = T.n + 1
+    umax = ((2 ** w) - 1) * (2 ** (p - 1))
+
+    i = core.implicit_to_ordinal(S, E, T)
+    i_prev = max(i-1, -umax)
+    R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
+    i_next = min(i+1, umax)
+    R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
+
+    emax = (2 ** (w - 1)) - 1
+    fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+
+    if i == -umax:
+        lower = FReal(negative=True, infinite=True)
+    elif i == -(umax - 1):
+        lower = -fmax
+    elif i == umax:
+        lower = fmax
+    else:
+        lower = R_prev + ((R - R_prev) / 2)
+
+    if i == -umax:
+        upper = -fmax
+    elif i == umax:
+        upper = FReal(negative=False, infinite=True)
+    elif i == umax - 1:
+        upper = fmax
+    else:
+        upper = R + ((R_next - R) / 2)
+
+    # we need to be careful with the edges to avoid returning the empty envelope (x, x)
+    if rm == core.RTN:
+        include_boundaries = R == R_next
+        return R, True, R_next, include_boundaries
+    elif rm == core.RTP:
+        include_boundaries = R_prev == R
+        return R_prev, include_boundaries, R, True
+    elif rm == core.RTZ:
+        if R < 0:
+            include_boundaries = R_prev == R
+            return R_prev, include_boundaries, R, True
+        elif R == 0:
+            include_boundaries = R_prev == R_next
+            return R_prev, include_boundaries, R_next, include_boundaries
+        else:
+            include_boundaries = R == R_next
+            return R, True, R_next, include_boundaries
+    elif rm == core.RNE:
+        # case inf: round towards (good)
+        # case largest finite: round away (good)
+        include_boundaries = T[0] == 0
+        return lower, include_boundaries, upper, include_boundaries
+    else: # rm == core.RNA:
+        # Here, we don't have anything "past" infinity that we would round a true
+        # infinity away towards, so remember to make those boundaries inclusive.
+        if R < 0:
+            return lower, lower.isinf, upper, True
+        elif R == 0:
+            include_boundaries = lower == upper
+            return lower, include_boundaries, upper, include_boundaries
+        else:
+            return lower, True, upper, upper.isinf
+
+
+# Find the shortest decimal numerator that can be used to recover F = (S, E, T).
+# There might be multiple such numerators; if so report all of them.
+# Return prec, lowest, midlo, midhi, highest, e.
+def implicit_to_shortest_dec(S, E, T, rm):
+    assert isinstance(S, BV)
+    assert S.n == 1
+    assert isinstance(E, BV)
+    assert E.n >= 2
+    assert isinstance(T, BV)
+    assert rm == RTN or rm == RTP or rm == RTZ or rm == RNE or rm == RNA
+
+    R = core.implicit_to_real(S, E, T)
+
+    if R.isnan:
+        return 0, None, None, None, None, None
+    else:
+        pass
+
+
 # Find the shortest decimal numerator that can be used to recover F = (S, E, T).
 # There might be multiple such numerators; if so report all of them.
 # Specifically, we return (prec, lowest, midlo, midhi, highest, e) where:
