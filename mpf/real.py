@@ -67,7 +67,10 @@ def decide_order(x, y):
     assert y.is_real and y.is_finite
 
     z = default_simplify(x - y)
-    comp = eval_until_at_least(z, 2)
+    if z.is_rational:
+        comp = z
+    else:
+        comp = eval_until_at_least(z, 2)
     assert comp.is_comparable
 
     if comp.is_zero:
@@ -357,12 +360,13 @@ class FReal(object):
 
                         # we may be missing the leading negation
                         r = Rational(s)
+                        r_negative = bool(r < 0)
                         # so refactor it in with a logical xor, to ensure the correct sign for 0.
-                        str_negative = str_negative != bool(r < 0)
+                        str_negative = str_negative != r_negative
 
                         if negative is None:
                             self.negative = str_negative
-                            if self.negative:
+                            if r_negative:
                                 self.magnitude = -r
                             else:
                                 self.magnitude = r
@@ -726,6 +730,8 @@ class FReal(object):
                     return 0
                 else:
                     return -1
+            elif x.isinf:
+                return 1
             else:
                 return decide_order(x.magnitude, self.magnitude)
         else: # self.sign == 1 and x.sign == 1
@@ -734,6 +740,8 @@ class FReal(object):
                     return 0
                 else:
                     return 1
+            elif x.isinf:
+                return -1
             else:
                 return decide_order(self.magnitude, x.magnitude)
 
