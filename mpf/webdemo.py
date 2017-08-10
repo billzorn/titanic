@@ -6,10 +6,12 @@ from http.server import BaseHTTPRequestHandler, HTTPStatus
 import urllib
 import socketserver
 
+import describefloat
+
 version = '0.0'
 
 HOST = 'localhost'
-PORT = 8000
+PORT = 8001
 
 max_w = 20
 max_p = 1024
@@ -22,7 +24,7 @@ default_chars = 'PI'
 page = '''<!DOCTYPE html>
 <html>
   <head>
-    <meta charset="utf-8">    
+    <meta charset="utf-8">
     <title>SymFP</title>
   </head>
 
@@ -40,14 +42,23 @@ page = '''<!DOCTYPE html>
       <input type="text" name="s" value="{{}}" maxlength="{}">
       <input type="submit" value="Submit">
     </form>
-
-    <br>
-
-    <p>BTW you got path: {{}}</p>
-
+{{}}
   </body>
 </html>
 '''.format(str(max_w), str(max_p), str(max_chars))
+
+homepage = page.format(
+    default_w,
+    default_p,
+    default_chars,
+    ''
+)
+
+content = '''<br>
+<pre>
+{}
+</pre>
+'''
 
 def ghetto_arguments(s):
     fields = s.split('&')
@@ -77,21 +88,21 @@ class DemoHTTPRequestHandler(BaseHTTPRequestHandler):
         args = self.translate_path(self.path)
         print(repr(args))
         if args is None:
-            # homepage
-            f = page.format(
-                default_w,
-                default_p,
-                default_chars,
-                repr(self.path)
-            )
+            f = homepage
         else:
             # actually run a query
+            data = describefloat.explain_all(
+                args.get('s', default_chars),
+                int(args.get('w', default_w)),
+                int(args.get('p', default_p))
+            )
+            data_content = content.format(data)
             f = page.format(
                 args.get('w', default_w),
                 args.get('p', default_p),
                 args.get('s', default_chars),
-                repr(self.path)
-            )   
+                data_content
+            )
         ctype = 'text/html'
         try:
             self.send_response(HTTPStatus.OK)

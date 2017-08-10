@@ -228,6 +228,7 @@ def describe_real(x, w, p):
             'p'          : p,
             'input_repr' : input_repr,
             'input'      : x,
+            'R'          : R,
             'i_below'    : i_below,
             'i_above'    : i_above,
             'exact'      : exact,
@@ -242,6 +243,7 @@ def describe_real(x, w, p):
             'p'          : p,
             'input_repr' : input_repr,
             'input'      : x,
+            'R'          : R,
             'i_below'    : i_below,
             'i_above'    : i_above,
             'exact'      : exact,
@@ -304,7 +306,7 @@ def explain_format(d):
     else:
         format_name = 'custom'
 
-    s = 'format "{}": w={:d}, p={:d}, emax={:d}, emin={:d}, umax={}\n'.format(
+    s = '"{}": w={:d}, p={:d}, emax={:d}, emin={:d}, umax={}\n'.format(
         format_name, w, p, d['emax'], d['emin'], d['umax'])
 
     s += '  largest representable: {} = (2**{:d})*({})\n'.format(
@@ -314,6 +316,18 @@ def explain_format(d):
         d['prec'], d['full_prec'])
 
     return s
+
+def explain_dict(d, ident=0):
+    s = ''
+    for k in d:
+        x = d[k]
+        if isinstance(x, dict):
+            s += ' '*ident + repr(k) + ' :\n'
+            s += explain_dict(x, ident=ident+2)
+        else:
+            s += ' '*ident + repr(k) + ' : ' + repr(x) + '\n'
+    return s
+
 
 def explain_float(d):
     S_str = str(d['S']).lower().replace('0b','')
@@ -333,11 +347,11 @@ def explain_float(d):
         s += '  = {}\n'.format(conv.real_to_string(d['R'], exact=True))
     else:
         s += '  = {}\n'.format(approx12_str)
-    
+
     return s
 
 def explain_real(d):
-    pass
+    return str(d['R'])
 
 
 # anecdotally, for (kinda) acceptable performance we need to limit ourselves to:
@@ -345,6 +359,41 @@ def explain_real(d):
 # p <= 1024
 # 1024 characters of input
 # scientific notation exponent <= 200000
+
+def explain_all(x, w, p):
+
+    fmt_descr = describe_format(w, p)
+    r_descr = describe_real(x, w, p)
+    if r_descr.get('exact', False):
+        S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
+        f_descr = describe_float(S, E, T)
+    else:
+        f_descr = None
+
+    s = explain_format(fmt_descr) + '\n\n' + explain_real(r_descr)
+
+    if f_descr is not None:
+        s += '\n\n' + explain_float(f_descr)
+
+    # temporary, dump dict contents
+    s += '\n\n\n\n'
+
+    s += 'fmt_descr:\n'
+    s += explain_dict(fmt_descr, 2)
+    s += '\n'
+
+    s += 'r_descr:\n'
+    s += explain_dict(r_descr, 2)
+    s += '\n'
+
+    if f_descr is None:
+        s += 'f_descr:\n  None\n'
+    else:
+        s += 'f_descr:\n'
+        s += explain_dict(f_descr, 2)
+        s += '\n'
+
+    return s
 
 if __name__ == '__main__':
     import argparse
@@ -360,16 +409,4 @@ if __name__ == '__main__':
                         help='string to describe')
     args = parser.parse_args()
 
-    fmt_descr = describe_format(args.w, args.p)
-    r_descr = describe_real(args.x, args.w, args.p)
-    if r_descr.get('exact', False):
-        S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
-        f_descr = describe_float(S, E, T)
-    else:
-        f_descr = None
-
-    print(explain_format(fmt_descr))
-
-    if f_descr is not None:
-        print()
-        print(explain_float(f_descr))
+    print(explain_all(args.x, args.w, args.p))
