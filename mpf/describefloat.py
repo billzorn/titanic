@@ -304,7 +304,7 @@ def explain_format(d):
     else:
         format_name = 'custom'
 
-    s = 'format info: ({}) w={:d}, p={:d}, emax={:d}, emin={:d}, umax={}\n'.format(
+    s = 'format "{}": w={:d}, p={:d}, emax={:d}, emin={:d}, umax={}\n'.format(
         format_name, w, p, d['emax'], d['emin'], d['umax'])
 
     s += '  largest representable: {} = (2**{:d})*({})\n'.format(
@@ -316,7 +316,25 @@ def explain_format(d):
     return s
 
 def explain_float(d):
-    pass
+    S_str = str(d['S']).lower().replace('0b','')
+    E_str = str(d['E']).lower().replace('0b','')
+    T_str = str(d['T']).lower().replace('0b','')
+    ibit_str  = str(d['implicit_bit'])
+
+    s = '   ' + ' '*len(E_str) + 'implicit bit\n'
+    s += 'S E' + ' '*len(E_str) + u'\u2193 T\n'
+    s += '{} {} {} {}\n'.format(S_str, E_str, ibit_str, T_str)
+    s += '\n'
+
+    s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
+    approx12_str = conv.real_to_string(d['R'], prec=12, exact=False)
+    if approx12_str.startswith(u'\u2248'):
+        s += '  {} {}\n'.format(approx12_str[0], approx12_str[1:])
+        s += '  = {}\n'.format(conv.real_to_string(d['R'], exact=True))
+    else:
+        s += '  = {}\n'.format(approx12_str)
+    
+    return s
 
 def explain_real(d):
     pass
@@ -347,5 +365,11 @@ if __name__ == '__main__':
     if r_descr.get('exact', False):
         S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
         f_descr = describe_float(S, E, T)
+    else:
+        f_descr = None
 
     print(explain_format(fmt_descr))
+
+    if f_descr is not None:
+        print()
+        print(explain_float(f_descr))

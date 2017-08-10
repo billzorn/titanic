@@ -691,6 +691,7 @@ def binsearch_shortest_dec(c, e, intrem,
     # precision*. Note that this proof fails if we are forced to quantize to c_mid, as
     # our target point could be off center in the envelope, and the "wrong" rounding
     # direction could be the only one that stays in.
+    found_c = False
     while below < above:
         between = below + ((above - below) // 2)
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c, e, between, intrem=intrem)
@@ -731,10 +732,21 @@ def binsearch_shortest_dec(c, e, intrem,
                     c_midhi = c_mid
 
         if lo_ok or hi_ok:
+            found_c = True
             above = between
         else:
             below = between + 1
 
+    # Search might terminate without moving above down, or ever checking it
+    # to produce c_midlo, etc.
+    # Handle that case here.
+    if not found_c:
+        c_lowest = c
+        c_midlo = c
+        c_midhi = c
+        c_highest = c
+        e_final = e
+             
     assert above <= below
     prec = above
 
