@@ -16,29 +16,30 @@ def describe_format(w, p):
     emin = 1 - emax
     fmax_scale = FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2))
     fmax = (FReal(2) ** emax) * fmax_scale
+    prec = conv.bdb_round_trip_prec(p)
+    full_prec = conv.dec_full_prec(w, p)
 
     return {
         'w'          : w,
         'p'          : p,
+        'umax'       : umax,
         'emax'       : emax,
         'emin'       : emin,
         'fmax_scale' : fmax_scale,
         'fmax'       : fmax,
-        # 'fmax' : '(2**{})*({})'.format(str(emax), str(fmax_scale)),
-        # precision???
+        'prec'       : prec,
+        'full_prec'  : full_prec,
     }
 
 def describe_float(S, E, T):
     assert isinstance(S, BV)
-    assert size(S) == 1
+    assert S.n == 1
     assert isinstance(E, BV)
-    assert size(E) >= 2
+    assert E.n >= 2
     assert isinstance(T, BV)
 
     w = E.n
     p = T.n + 1
-    fmt_descr = describe_format(w, p)
-
     _, _, C = core.implicit_to_explicit(S, E, T)
     B = core.implicit_to_packed(S, E, T)
 
@@ -90,20 +91,21 @@ def describe_float(S, E, T):
             # slow, duplicates the work of building the envelope, but meh
             prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
             rounding_info[str(rm)] = {
-                'lower' : lower,
-                'lower_inclusive': lower_inclusive,
-                'upper' : upper,
-                'upper_inclusive': upper_inclusive,
-                'prec' : prec,
-                'lowest' : lowest,
-                'midlo' : midlo,
-                'midhi' : midhi,
+                'lower'           : lower,
+                'lower_inclusive' : lower_inclusive,
+                'upper'           : upper,
+                'upper_inclusive' : upper_inclusive,
+                'prec'    : prec,
+                'lowest'  : lowest,
+                'midlo'   : midlo,
+                'midhi'   : midhi,
                 'highest' : highest,
-                'e': e,
+                'e'       : e,
             }
 
     return {
-        'fmt' : fmt,
+        'w' : w,
+        'p' : p,
         'S' : S,
         'E' : E,
         'T' : T,
@@ -113,10 +115,10 @@ def describe_float(S, E, T):
         'e' : e,
         'c' : c,
         'implicit_bit' : implicit_bit,
-        'c_prime' : c_prime,
-        'R' : R,
-        'ieee_class' : ieee_class,
-        'i' : i,
+        'c_prime'      : c_prime,
+        'R'            : R,
+        'ieee_class'   : ieee_class,
+        'i'      : i,
         'i_prev' : i_prev,
         'R_prev' : R_prev,
         'i_next' : i_next,
@@ -172,6 +174,15 @@ def describe_real(x, w, p):
     if i_below is None or i_below == i_above:
         # what do we do for NaN?
         exact = True
+        if i_below is None:
+            S, E, T = core.real_to_implicit(R, w, p, core.RNE)
+            i = None
+        else:
+            S, E, T = core.ordinal_to_implicit(i_below, w, p)
+            # negative zero
+            if R.iszero and R.sign == -1:
+                S = BV(1, 1)
+            i = i_below
     else:
         exact = False
         Sb, Eb, Tb = core.ordinal_to_implicit(i_below, w, p)
@@ -190,32 +201,45 @@ def describe_real(x, w, p):
         rounding_info = {}
         for rm in core.RNE, core.RNA, core.RTZ, core.RTP, core.RTN:
             S, E, T = core.ieee_round_to_implicit(R, i_below, i_above, w, p, rm)
+            i = core.implicit_to_ordinal(S, E, T)
             lower, lower_inclusive, upper, upper_inclusive = conv.implicit_to_rounding_envelope(S, E, T, rm)
             # slow, duplicates the work of building the envelope, but meh
             prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=True)
             rounding_info[str(rm)] = {
-                'lower' : lower,
-                'lower_inclusive': lower_inclusive,
-                'upper' : upper,
-                'upper_inclusive': upper_inclusive,
-                'prec' : prec,
-                'lowest' : lowest,
-                'midlo' : midlo,
-                'midhi' : midhi,
+                'lower'           : lower,
+                'lower_inclusive' : lower_inclusive,
+                'upper'           : upper,
+                'upper_inclusive' : upper_inclusive,
+                'prec'    : prec,
+                'lowest'  : lowest,
+                'midlo'   : midlo,
+                'midhi'   : midhi,
                 'highest' : highest,
-                'e': e,
+                'e'       : e,
+                'S' : S,
+                'E' : E,
+                'T' : T,
+                'i' : i,
             }
 
     if exact:
         return {
+            'w'          : w,
+            'p'          : p,
             'input_repr' : input_repr,
             'input'      : x,
             'i_below'    : i_below,
             'i_above'    : i_above,
             'exact'      : exact,
+            'S' : S,
+            'E' : E,
+            'T' : T,
+            'i' : i,
         }
     else:
         return {
+            'w'          : w,
+            'p'          : p,
             'input_repr' : input_repr,
             'input'      : x,
             'i_below'    : i_below,
@@ -270,7 +294,35 @@ def describe_real(x, w, p):
     #     else:
     #         print('  we rounded down.')
 
-# anecdotally, for acceptable performance we need to limit ourselves to:
+
+def explain_format(d):
+    w = d['w']
+    p = d['p']
+    k = w + p
+    if conv.ieee_split_w_p(k) == (w, p):
+        format_name = 'binary{:d}'.format(k)
+    else:
+        format_name = 'custom'
+
+    s = 'format info: ({}) w={:d}, p={:d}, emax={:d}, emin={:d}, umax={}\n'.format(
+        format_name, w, p, d['emax'], d['emin'], d['umax'])
+
+    s += '  largest representable: {} = (2**{:d})*({})\n'.format(
+        conv.real_to_string(d['fmax'], prec=8, exact=False), d['emax'], str(d['fmax_scale']))
+
+    s += '  decimal precision {:d} (round trip), {:d} (exact)'.format(
+        d['prec'], d['full_prec'])
+
+    return s
+
+def explain_float(d):
+    pass
+
+def explain_real(d):
+    pass
+
+
+# anecdotally, for (kinda) acceptable performance we need to limit ourselves to:
 # w <= 20
 # p <= 1024
 # 1024 characters of input
@@ -290,5 +342,10 @@ if __name__ == '__main__':
                         help='string to describe')
     args = parser.parse_args()
 
-    print(describe_real(args.x, args.w, args.p))
-    exit(0)
+    fmt_descr = describe_format(args.w, args.p)
+    r_descr = describe_real(args.x, args.w, args.p)
+    if r_descr.get('exact', False):
+        S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
+        f_descr = describe_float(S, E, T)
+
+    print(explain_format(fmt_descr))

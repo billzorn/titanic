@@ -35,7 +35,7 @@ def floor_log10(r, maxn = real.default_maxn):
 
     log10f = sympy.log(r, 10).evalf(20, maxn=maxn)
 
-    if log10f > sympy.Float(1e19, 20):
+    if log10f > sympy.Float('1e19', 20):
         raise ValueError('floor_log10: log overflow for {}, maxn={}'
                          .format(repr(r), repr(maxn)))
     else:
@@ -454,7 +454,7 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
             if exact:
                 return str(R.symbolic_value)
             else:
-                return approx_str + str(R.evaluate(prec, abort_incomparables=False))
+                return approx_str + str(R.numeric_value(prec, abort_incomparables=False))
         # there is an exact decimal representation
         else:
             # Exact representation: choose based on exp first, or
@@ -482,7 +482,7 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
                 elif eprec <= prec:
                     return pow10_to_e_str(c, e)
                 else:
-                    return approx_str + str(R.evaluate(prec, abort_incomparables=False))
+                    return approx_str + str(R.numeric_value(prec, abort_incomparables=False))
 
 # Produce a unicode rendering with sympy.pretty. This is probably
 # not able to be parsed back in.
@@ -914,3 +914,73 @@ def real_to_shortest_dec(R, w, p, rm, round_correctly = True):
     S, E, T = core.real_to_implicit(R, w, p, rm)
 
     return shortest_dec(R, S, E, T, rm, round_correctly=round_correctly)
+
+# canonical w and p for an ieee binary representation
+def ieee_split_w_p(k):
+    assert isinstance(k, int)
+
+    if k == 16:
+        return 5, 11
+    elif k == 32:
+        return 8, 24
+    elif k == 64:
+        return 11, 53
+    elif k >= 128 and k % 32 == 0:
+        w_offset_r = 4 * sympy.log(k, 2)
+        w_offset_f = w_offset_r.evalf(20, maxn=real.default_maxn)
+
+        if not w_offset_f.is_comparable:
+            return None, None
+        elif w_offset_f > sympy.Float('1e19', 20):
+            return None, None
+
+        w_offset_floor = int(sympy.floor(w_offset_f))
+
+        realrem = (w_offset_r - w_offset_floor) - sympy.Rational(1,2)
+        signrem = realrem.evalf(2, maxn=real.default_maxn)
+
+        if not signrem.is_comparable:
+            return None, None
+
+        if signrem.is_positive:
+            w_offset = w_offset_floor + 1
+        else:
+            w_offset = w_offset_floor
+
+        w = w_offset - 13
+        p = k - w
+
+        return w, p
+    else:
+        return None, None
+
+# see http://www.exploringbinary.com/number-of-digits-required-for-round-trip-conversions/
+def bdb_round_trip_prec(p):
+    assert isinstance(p, int)
+    assert p >= 2
+
+    r = p * sympy.log(2, 10)
+    r_f = r.evalf(20, maxn=real.default_maxn)
+
+    if not r_f.is_comparable:
+        return None
+    elif r_f > sympy.Float('1e19', 20):
+        return None
+
+    return int(sympy.ceiling(r_f)) + 1
+
+# see http://www.exploringbinary.com/maximum-number-of-decimal-digits-in-binary-floating-point-numbers/
+# this is an alternative (slow) formulation, not the logarithm formula
+def dec_full_prec(w, p):
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+
+    S = BV(0, 1)
+    E = BV(1, w)
+    T = BV(-1, p-1)
+    R = core.implicit_to_real(S, E, T)
+    c, e = real_to_pow10(R)
+
+    return ndig(c)
