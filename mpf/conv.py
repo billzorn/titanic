@@ -996,3 +996,11 @@ def dec_full_prec(w, p):
     c, e = real_to_pow10(R)
 
     return ndig(c)
+
+ieee_rm_names = {
+    core.RTN : 'roundTowardNegative',
+    core.RTP : 'roundTowardPositive',
+    core.RTZ : 'roundTowardZero',
+    core.RNE : 'roundTiesToEven',
+    core.RNA : 'roundTiesToAway',
+}

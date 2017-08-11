@@ -91,6 +91,7 @@ def describe_float(S, E, T):
             # slow, duplicates the work of building the envelope, but meh
             prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
             rounding_info[str(rm)] = {
+                'rm' : rm,
                 'lower'           : lower,
                 'lower_inclusive' : lower_inclusive,
                 'upper'           : upper,
@@ -101,6 +102,15 @@ def describe_float(S, E, T):
                 'midhi'   : midhi,
                 'highest' : highest,
                 'e'       : e,
+                'S' : S,
+                'E' : E,
+                'T' : T,
+                'i'        : i,
+                'R_center' : R,
+                'i_prev'   : i_prev,
+                'R_prev'   : R_prev,
+                'i_next'   : i_next,
+                'R_next'   : R_next,
             }
 
     return {
@@ -198,14 +208,25 @@ def describe_real(x, w, p):
         difference_above = R_above - R
 
         # rounding
+        umax = ((2 ** w) - 1) * (2 ** (p - 1))
         rounding_info = {}
         for rm in core.RNE, core.RNA, core.RTZ, core.RTP, core.RTN:
             S, E, T = core.ieee_round_to_implicit(R, i_below, i_above, w, p, rm)
+            # we need this info to fully describe the envelope
             i = core.implicit_to_ordinal(S, E, T)
+            R_center = core.implicit_to_real(*core.ordinal_to_implicit(i, w, p))
+            i_prev = max(i-1, -umax)
+            R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
+            i_next = min(i+1, umax)
+            R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
+            # -0 compliant nextafter behavior
+            if R_next.iszero:
+                R_next = -R_next
             lower, lower_inclusive, upper, upper_inclusive = conv.implicit_to_rounding_envelope(S, E, T, rm)
             # slow, duplicates the work of building the envelope, but meh
             prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=True)
             rounding_info[str(rm)] = {
+                'rm' : rm,
                 'lower'           : lower,
                 'lower_inclusive' : lower_inclusive,
                 'upper'           : upper,
@@ -219,7 +240,15 @@ def describe_real(x, w, p):
                 'S' : S,
                 'E' : E,
                 'T' : T,
-                'i' : i,
+                'i'        : i,
+                'R_center' : R_center,
+                'i_prev'   : i_prev,
+                'R_prev'   : R_prev,
+                'i_next'   : i_next,
+                'R_next'   : R_next,
+                'R' : R
+                'i_below' : i_below,
+                'i_above' : i_above,
             }
 
     if exact:
@@ -254,48 +283,16 @@ def describe_real(x, w, p):
             'rounding_info' : rounding_info,
         }
 
-    # # print a bunch of stuff, may want to make this separate
-    # if w == 5 and p == 11:
-    #     format_name = ' (binary16)'
-    # elif w == 8 and p == 24:
-    #     format_name = ' (binary32)'
-    # elif w == 11 and p == 53:
-    #     format_name = ' (binary64)'
-    # else:
-    #     format_name = ''
-
-    # D = conv.implicit_to_dec(S, E, T)
-
-    # print('  input   : {}'.format(repr(x)))
-    # print('  format  : w={}, p={}, emax={}, emin={}, umax={}, prec={}, rm={}{}'
-    #       .format(w, p, emax, emin, umax, prec, rm, format_name))
-    # print('            the largest representable magnitude is about ~{:1.4e}'
-    #       .format(conv.real_to_dec(fmax, prec)))
-    # print('  binary  : {} {} ({}) {}'
-    #       .format(str(S)[2:], str(E)[2:], str(C[p-1]), str(T)[2:]))
-    # print('  approx  : ~{:1.8e}'.format(D))
-    # print('  decimal : {}'.format(D))
-    # print('  rational: {} /'.format(R.rational_numerator))
-    # print('            {}'.format(R.rational_denominator))
-    # print('  ordinal : {}'.format(i))
-
-    # if exact:
-    #     print('  this representation is exact.')
-    #     print('  next    : ~{:1.16e}, ~{:1.16e} away'
-    #           .format(conv.real_to_dec(guess_above, prec), conv.real_to_dec(difference_above, prec)))
-    #     print('  prev    : ~{:1.16e}, ~{:1.16e} away'
-    #           .format(conv.real_to_dec(guess_below, prec), conv.real_to_dec(difference_below, prec)))
-    # else:
-    #     print('  this representation is not exact.')
-    #     print('  above   : ~{:1.16e}, ~{:1.16e} away'
-    #           .format(conv.real_to_dec(guess_above, prec), conv.real_to_dec(difference_above, prec)))
-    #     print('  below   : ~{:1.16e}, ~{:1.16e} away'
-    #           .format(conv.real_to_dec(guess_below, prec), conv.real_to_dec(difference_below, prec)))
-    #     if i == above:
-    #         print('  we rounded up.')
-    #     else:
-    #         print('  we rounded down.')
-
+def explain_dict(d, indent=0):
+    s = ''
+    for k in d:
+        x = d[k]
+        if isinstance(x, dict):
+            s += ' '*indent + repr(k) + ' :\n'
+            s += explain_dict(x, indent=indent+2)
+        else:
+            s += ' '*indent + repr(k) + ' : ' + repr(x) + '\n'
+    return s
 
 def explain_format(d):
     w = d['w']
@@ -317,17 +314,84 @@ def explain_format(d):
 
     return s
 
-def explain_dict(d, ident=0):
-    s = ''
-    for k in d:
-        x = d[k]
-        if isinstance(x, dict):
-            s += ' '*ident + repr(k) + ' :\n'
-            s += explain_dict(x, ident=ident+2)
-        else:
-            s += ' '*ident + repr(k) + ' : ' + repr(x) + '\n'
-    return s
+topc = u'\u252c'
+botc = u'\u2534'
+topo = u'\u2564'
+boto = u'\u2567'
+tic = u'\u253c'
+vert = u'\u2502'
+def explain_rm(d):
+    if R in d:
+        approx12_R = conv.real_to_string(d['R'], prec=12, exact=False)
+    else:
+        approx12_R = conv.real_to_string(d['R_center'], prec=12, exact=False)
+    if not approx12_R.startswith(u'\u2248'):
+        approx12_R = '=' + approx12_R
+    s = 'rounding envelope for {} around R{}:\n'.format(conv.ieee_rm_names[d['rm']], approx12_R)
+    s += '  {:d} digits of decimal precision required to round-trip\n\n'.format(d['prec'])
+    # well this is fun
+    lower = d['lower']
+    lower_inclusive = d['lower_inclusive']
+    upper = d['upper']
+    upper_inclusive = d['upper_inclusive']
+    lowest = d['lowest']
+    midlo = d['midlo']
+    midhi = d['midhi']
+    highest = d['highest']
+    e = d['e']
+    S = d['S']
+    E = d['E']
+    T = d['T']
+    i = d['i']
+    R_center = d['R_center']
+    i_prev = d['i_prev']
+    R_prev = d['R_prev']
+    i_next = d['i_next']
+    R_next = d['R_next']
+    R = d.get(R, None)
+    i_below = d.get('i_below', None)
+    i_above = d.get('i_above', None)
 
+    if upper_inclusive:
+        envtop = topc
+    else:
+        envtop = topo
+    if lower_inclusive:
+        envbot = botc
+    else:
+        envbot = boto
+
+    approx_R_next = conv.real_to_string(R_next, prec=8, exact=False)
+    isapprox_R_next = approx_R_next.startswith(u'\u2248'):
+    if not isapprox_R_next:
+        approx_R_next = '= ' + approx_R_next
+    else:
+        approx_R_next = approx_R_next[0] + ' ' + approx_R_next[1:]
+
+    # first line
+    if R_next == upper:
+        in_env = True
+        s += ' {} {} next = upper {}'.format(topo, envtop, approx_R_next)
+        if isapprox_R_next:
+            s += ' = {}\n'.format(str(R_next))
+        else:
+            s += '\n'
+    else:
+        s += ' {}   next {}'.format(topo, approx_R_next)
+        if isapprox_R_next:
+            s += ' = {}\n {} {}\n'.format(str(R_next), vert, vert)
+        else:
+            s += '\n {} {}\n'.format(vert, vert)
+
+    # highest, only if different from midhi
+
+    # midhi, R_center, R, midlo, in some order
+
+    # lowest, only if different from midlo
+
+    # last line
+        
+    
 
 def explain_float(d):
     S_str = str(d['S']).lower().replace('0b','')
