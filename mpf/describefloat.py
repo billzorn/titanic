@@ -84,7 +84,7 @@ leftc = u'\u251c'
 rightc = u'\u2524'
 hori = u'\u2500'
 uarrow = u'\u2191'
-def unicode_horizontal_nl(left, R, right, width, note = ''):
+def unicode_horizontal_nl(left, R, right, width, note = '', mirror=False):
     assert isinstance(left, FReal)
     assert isinstance(R, FReal)
     assert isinstance(right, FReal)
@@ -102,6 +102,11 @@ def unicode_horizontal_nl(left, R, right, width, note = ''):
     effw = width-2
     int_offset = int((left_offset * effw).numeric_value(conv.ndig(effw) + 10))
     int_offset = min(int_offset, width-3)
+
+    # more lol
+    if mirror:
+        left, right = right, left
+        int_offset = effw - 1 - int_offset
 
     mid_at_left = None
 
@@ -619,12 +624,15 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
     if R.iszero:
         R_left = core.implicit_to_real(BV(1,1), E, BV(-1,p-1))
         R_right = core.implicit_to_real(BV(0,1), E, BV(-1,p-1))
+        mirror = False
     elif R > 0:
         R_left = core.implicit_to_real(S, E, BV(0,p-1))
         R_right = core.implicit_to_real(S, E, BV(-1,p-1))
+        mirror = False
     else: # R < 0
         R_left = core.implicit_to_real(S, E, BV(-1,p-1))
         R_right = core.implicit_to_real(S, E, BV(0,p-1))
+        mirror = True
 
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
@@ -633,7 +641,7 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
     s = 'fractional position (linear scale)\n'
     s += unicode_horizontal_nl(R_left, R, R_right, fwidth, note='R=')
     s += '\n\nexponential position (log scale)' + enote + '\n'
-    s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=')
+    s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=', mirror=mirror)
     return s
 
 def explain_float(d, summary_length = 12):
