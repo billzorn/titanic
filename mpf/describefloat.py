@@ -80,6 +80,68 @@ def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
 
     return s
 
+leftc = u'\u251c'
+rightc = u'\u2524'
+hori = u'\u2500'
+uarrow = u'\u2191'
+def unicode_horizontal_nl(left, R, right, width, note = ''):
+    assert isinstance(left, FReal)
+    assert isinstance(R, FReal)
+    assert isinstance(right, FReal)
+    assert left <= R and R <= right
+    assert isinstance(width, int)
+    assert width >= 3
+
+    # lol
+    if left == right:
+        return real_to_string(R, exact=True) + '\n' + vert
+
+    span = right - left
+    left_offset = (R - left) / span
+    # no floor, should be fine for positive
+    effw = width-2
+    int_offset = int((left_offset * effw).numeric_value(conv.ndig(effw) + 10))
+    int_offset = min(int_offset, width-3)
+
+    mid_at_left = None
+
+    if left == R:
+        left_label = note + conv.real_to_string(R, exact=True)
+        mid_at_left = True
+    else:
+        left_label = conv.real_to_string(left, exact=False)
+        mid_label = note + conv.real_to_string(R, exact=True)
+
+    if right == R:
+        right_label = note + conv.real_to_string(R, exact=True)
+        mid_at_left = False
+    else:
+        right_label = conv.real_to_string(right, exact=False)
+        mid_label = note + conv.real_to_string(R, exact=True)
+
+    if mid_at_left is not None:
+        right_label_offset = max(0, width - len(right_label))
+        nl = leftc + hori*(width-2) + rightc
+        if mid_at_left:
+            return left_label + '\n' + darrow + '\n' + nl + '\n' + ' '*right_label_offset + right_label
+        else:
+            return left_label + '\n' + nl + '\n' + ' '*(width-1) + uarrow + '\n' + ' '*right_label_offset + right_label
+    else:
+        nl = leftc + hori*int_offset + tic + hori*(width-3-int_offset) + rightc
+        mid_label_offset = int_offset + 1
+        if len(left_label) + 2 < mid_label_offset:
+            right_label_offset = max(0, width - len(right_label))
+            return (' '*mid_label_offset + mid_label + '\n' +
+                    left_label + ' '*(mid_label_offset-len(left_label)) + darrow + '\n'
+                    + nl + '\n'
+                    + ' '*right_label_offset + right_label)
+        else:
+            right_label_offset = max(1, width - mid_label_offset - 1 - len(right_label))
+            return (' '*mid_label_offset + mid_label + '\n' +
+                    ' '*mid_label_offset + darrow + ' '*right_label_offset + right_label + '\n'
+                    + nl + '\n'
+                    + left_label)
+
 def describe_format(w, p):
     assert isinstance(w, int)
     assert w >= 2
@@ -553,6 +615,27 @@ def explain_rm(d):
                                     rtop=envtop, rbot=envbot)
     return s
 
+def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
+    if R.iszero:
+        R_left = core.implicit_to_real(BV(1,1), E, BV(-1,p-1))
+        R_right = core.implicit_to_real(BV(0,1), E, BV(-1,p-1))
+    elif R > 0:
+        R_left = core.implicit_to_real(S, E, BV(0,p-1))
+        R_right = core.implicit_to_real(S, E, BV(-1,p-1))
+    else: # R < 0
+        R_left = core.implicit_to_real(S, E, BV(-1,p-1))
+        R_right = core.implicit_to_real(S, E, BV(0,p-1))
+
+    emax = (2 ** (w - 1)) - 1
+    emin = 1 - emax
+    e = max(E.uint - emax, emin)
+
+    s = 'fractional position (linear scale)\n'
+    s += unicode_horizontal_nl(R_left, R, R_right, fwidth, note='R=')
+    s += '\n\nexponential position (log scale)' + enote + '\n'
+    s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=')
+    return s
+
 def explain_float(d, summary_length = 12):
 
     s = unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']) + '\n\n'
@@ -571,11 +654,16 @@ def explain_float(d, summary_length = 12):
         s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
         summary_is_approx, R_summary = approx_or_exact(R, prec=summary_length, spacer=' ')
         if summary_is_approx:
-            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=prec, exact=True) + '\n'
+            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=summary_length, exact=True) + '\n'
             s += '  = ' + str(R)
         else:
             s += '  ' + R_summary
 
+    # number lines
+    if not R.isnan or R.isinf:
+        s += '\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'])
+
+    # rounding envelopes
     if 'rounding_info' in d:
         for k, r_info in d['rounding_info'].items():
             s += '\n\n' + explain_rm(r_info)

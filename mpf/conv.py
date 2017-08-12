@@ -142,7 +142,7 @@ def ordinal_to_bounded_real(i, w, p):
 
     below = i
     above = i
-    S, E, T = core.ordinal_to_implicit(x, w, p)
+    S, E, T = core.ordinal_to_implicit(i, w, p)
     R = core.implicit_to_real(S, E, T)
     return R, below, above
 
@@ -155,11 +155,11 @@ def bv_to_bounded_real(B, w, p):
     assert B.n == w + p
 
     try:
-        below = core.packed_to_ordinal(x, w, p)
+        below = core.packed_to_ordinal(B, w, p)
     except core.OrdinalError:
         below = None
     above = below
-    S, E, T = core.packed_to_implicit(x, w, p)
+    S, E, T = core.packed_to_implicit(B, w, p)
     R = core.implicit_to_real(S, E, T)
     return R, below, above
 
@@ -413,7 +413,6 @@ def sprec_of(s):
 # c must not be divisible by 10. 0 always has precision 1.
 def prec_of(c, e = None):
     assert isinstance(c, int)
-    assert c % 10 != 0
     assert isinstance(e, int) or e is None
 
     if c == 0:
