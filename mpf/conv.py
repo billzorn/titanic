@@ -182,22 +182,35 @@ def real_to_bounded_real(R, w, p):
 def str_to_ord_bv_real(x):
     assert isinstance(x, str)
 
-    s = x.strip().lower()
+    s = ''.join(x.split()).lower()
+    if s.startswith('-'):
+        sign = -1
+        s = s[1:]
+    elif s.startswith('+'):
+        sign = 1
+        s = s[1:]
+    else:
+        sign = 1
+
     # ordinal
     if s.startswith('0i'):
         s = s[2:]
-        return int(s)
+        return int(s) * sign
     # hex bitvector
     elif s.startswith('0x'):
         s = s[2:]
-        b = int(s, 16)
+        b = int(s, 16) * sign
         n = len(s) * 4
+        if s.startswith('-') or s.startswith('+'):
+            n -= 4
         return BV(b, n)
     # binary bitvector
     elif s.startswith('0b'):
         s = s[2:]
-        b = int(s, 2)
+        b = int(s, 2) * sign
         n = len(s)
+        if s.startswith('-') or s.startswith('+'):
+            n -= 1
         return BV(b, n)
     # see if the FReal constructor can figure it out
     else:

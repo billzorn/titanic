@@ -464,7 +464,7 @@ def explain_rm(d):
     _, R_approx = approx_or_exact(R, 12)
 
     s = 'rounding envelope for {} around R{}:\n'.format(ieee_rm_names[d['rm']], R_approx)
-    s += '  {:d} digit(s) of decimal precision required to round-trip\n\n'.format(d['prec'])
+    s += '{:d} digit(s) of decimal precision required to round-trip\n'.format(d['prec'])
 
     # well this is fun
     lower = d['lower']
@@ -514,6 +514,7 @@ def explain_rm(d):
         if not fuse_upper:
             lines.append(' upper ' + summarize_with(upper, 8))
 
+    # i don't think this can actually go here...
     if highest != midhi:
         lines.append(' ' + conv.pow10_to_str(highest, e))
 
@@ -571,10 +572,10 @@ def explain_rm(d):
                     (R_center, ' ' + R_center_str + ' ' + summarize_with(R_center, 8), True,),
                     (R_mid, ' ' + conv.pow10_to_str(midlo, e), False,),
                 ]
-                for _, s, lmid in sorted(order, key=operator.itemgetter(0), reverse=True):
+                for _, line, lmid in sorted(order, key=operator.itemgetter(0), reverse=True):
                     if lmid:
                         lmid_idx = len(lines)
-                    lines.append(s)
+                    lines.append(line)
 
     # we know midhi > R > midlo, so we just need to figure out where to stick R_center in there
     else:
@@ -584,24 +585,27 @@ def explain_rm(d):
             (FReal(midlo) * (FReal(10)**e), ' ' + conv.pow10_to_str(midlo, e),),
         ]
         needs_center = True
-        for R_current, s in order:
+        for R_current, line in order:
             if R_center > R_current:
                 lmid_idx = len(lines)
                 lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
                 needs_center = False
-                lines.append(s)
+                lines.append(line)
             elif R_center == R_current:
                 lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' =' + s)
+                lines.append(' ' + R_center_str + ' =' + line)
                 needs_center = False
             else:
-                lines.append(s)
+                lines.append(line)
         if needs_center:
             lmid_idx = len(lines)
             lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
 
+    # nor can this...
     if lowest != midlo:
         lines.append(' ' + conv.pow10_to_str(lowest, e))
+
+        # really we need to do something clever where we sort and dedup
 
     # prev and bottom of envelope
     if R_prev == lower:
@@ -625,14 +629,17 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
         R_left = core.implicit_to_real(BV(1,1), E, BV(-1,p-1))
         R_right = core.implicit_to_real(BV(0,1), E, BV(-1,p-1))
         mirror = False
+        mirror_str = ''
     elif R > 0:
         R_left = core.implicit_to_real(S, E, BV(0,p-1))
         R_right = core.implicit_to_real(S, E, BV(-1,p-1))
         mirror = False
+        mirror_str = ''
     else: # R < 0
         R_left = core.implicit_to_real(S, E, BV(-1,p-1))
         R_right = core.implicit_to_real(S, E, BV(0,p-1))
         mirror = True
+        mirror_str = ', mirrored'
 
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
@@ -640,18 +647,34 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
 
     s = 'fractional position (linear scale)\n'
     s += unicode_horizontal_nl(R_left, R, R_right, fwidth, note='R=')
-    s += '\n\nexponential position (log scale)' + enote + '\n'
+    s += '\n\nexponential position (log scale' + mirror_str + ')' + enote + '\n'
     s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=', mirror=mirror)
     return s
 
 def explain_float(d, summary_length = 12):
 
-    s = unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']) + '\n\n'
-
+    w = d['w']
+    p = d['p']
     R = d['R']
 
+    s = 'floating point representation:\n'
+    s += unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']) + '\n\n'
+
+    s += 'IEEE 754 binary representation:\n'
+    B = d['B']
+    s += '  ' + str(B) + '\n'
+    k = w + p
+    if conv.ieee_split_w_p(k) == (w, p):
+        s += ('  {:#0' + str((k//4)+2) + 'x}\n').format(B.uint)
+    s += '\n'
+
+    if not R.isnan:
+        s += 'ordinal (ulps away from zero):\n'
+        s += '  ' + str(d['i']) + '\n\n'
+
+    s += 'real value:\n'
     if R.isnan:
-        s += '  {} ( with payload: {} )\n\n'.format(conv.real_to_pretty_string(R),
+        s += '  {} (with payload: {})\n\n'.format(conv.real_to_pretty_string(R),
                                                     conv.real_to_string(R, show_payload=True))
     elif R.isinf:
         s += '  {} ( {} )\n\n'.format(conv.real_to_pretty_string(R),
@@ -678,9 +701,50 @@ def explain_float(d, summary_length = 12):
 
     return s
 
-def explain_real(d):
-    return str(d['R'])
+def explain_input(d):
+    s = 'received input (w={:d}, p={:d}):\n'.format(d['w'], d['p'])
+    s += '  ' + d['input_repr'] + '\n\n'
 
+    pretty_repr = conv.real_to_pretty_string(d['R'])
+    pretty_repr = pretty_repr.replace('\n', '\n  ')
+    s += '  ' + pretty_repr
+
+    return s
+
+def explain_real(d):
+    R = d['R']
+    if R.isnan or d['exact']:
+        s = 'this real value has an exact floating point representation'
+    else:
+        R_below = d['R_below']
+        R_above = d['R_above']
+        diff_below = d['difference_below']
+        diff_above = d['difference_above']
+
+        s = 'nearby floating point values:\n'
+        s += '  ordinal ' + str(d['i_above']) + '\n'
+        s += '       above ' + summarize_with(R_above, 8) + '\n'
+        s += '  difference ' + summarize_with(diff_above, 8) + '\n'
+        s += '           R ' + summarize_with(R, 8) + '\n'
+        s += '  difference ' + summarize_with(diff_below, 8) + '\n'
+        s += '       below ' + summarize_with(R_below, 8) + '\n'
+        s += '  ordinal ' + str(d['i_below']) + '\n\n'
+
+        if diff_above < diff_below:
+            s += 'relative position: (linear scale, above is closer)\n'
+        elif diff_above == diff_below:
+            s += 'relative position: (linear scale, exactly between)\n'
+        else:
+            s += 'relative position: (linear scale, below is closer)\n'
+
+        s += unicode_horizontal_nl(R_below, R, R_above, 100, note='R=')
+
+        # rounding envelopes
+        if 'rounding_info' in d:
+            for k, r_info in d['rounding_info'].items():
+                s += '\n\n' + explain_rm(r_info)
+
+    return s
 
 # anecdotally, for (kinda) acceptable performance we need to limit ourselves to:
 # w <= 20
@@ -688,40 +752,28 @@ def explain_real(d):
 # 1024 characters of input
 # scientific notation exponent <= 200000
 
-def explain_all(x, w, p):
+def explain_all(x, w, p, show_format=False):
 
-    fmt_descr = describe_format(w, p)
-    r_descr = describe_real(x, w, p)
-    if r_descr.get('exact', False):
-        S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
-        f_descr = describe_float(S, E, T)
+    if show_format:
+        fmt_descr = describe_format(w, p)
+        return explain_format(fmt_descr)
+
     else:
-        f_descr = None
+        r_descr = describe_real(x, w, p)
+        if r_descr.get('exact', False):
+            S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
+            f_descr = describe_float(S, E, T)
+        else:
+            f_descr = None
 
-    s = explain_format(fmt_descr) + '\n\n' + explain_real(r_descr)
+        s = explain_input(r_descr)
 
-    if f_descr is not None:
-        s += '\n\n' + explain_float(f_descr)
+        if f_descr is None:
+            s += '\n\n' + explain_real(r_descr)
+        else:
+            s += '\n\n' + explain_float(f_descr)
 
-    # # temporary, dump dict contents
-    # s += '\n\n\n\n'
-
-    # s += 'fmt_descr:\n'
-    # s += explain_dict(fmt_descr, 2)
-    # s += '\n'
-
-    # s += 'r_descr:\n'
-    # s += explain_dict(r_descr, 2)
-    # s += '\n'
-
-    # if f_descr is None:
-    #     s += 'f_descr:\n  None\n'
-    # else:
-    #     s += 'f_descr:\n'
-    #     s += explain_dict(f_descr, 2)
-    #     s += '\n'
-
-    return s
+        return s
 
 if __name__ == '__main__':
     import argparse
@@ -731,10 +783,13 @@ if __name__ == '__main__':
                         help='exponent bits')
     parser.add_argument('-p', type=int, default=53,
                         help='significand bits')
-    # parser.add_argument('-rm', choices={core.RTN, core.RTP, core.RTZ, core.RNE, core.RNA}, default=core.RNE,
-    #                     help='IEEE 754 rounding mode')
-    parser.add_argument('x',
+    parser.add_argument('x', nargs='?', default=None,
                         help='string to describe')
+    parser.add_argument('-f', action='store_true',
+                        help='show format information')
     args = parser.parse_args()
 
-    print(explain_all(args.x, args.w, args.p))
+    if not args.f and args.x is None:
+        print('no input string; nothing to do')
+    else:
+        print(explain_all(args.x, args.w, args.p, args.f))
