@@ -397,7 +397,7 @@ def explain_rm(d):
     _, R_approx = approx_or_exact(R, 12)
 
     s = 'rounding envelope for {} around R{}:\n'.format(ieee_rm_names[d['rm']], R_approx)
-    s += '  {:d} digits of decimal precision required to round-trip\n\n'.format(d['prec'])
+    s += '  {:d} digit(s) of decimal precision required to round-trip\n\n'.format(d['prec'])
 
     # well this is fun
     lower = d['lower']
@@ -431,6 +431,9 @@ def explain_rm(d):
     else:
         envbot = boto
 
+    fuse_upper = upper == R_center
+    fuse_lower = lower == R_center
+
     lines = []
 
     # next and top of envelope
@@ -441,12 +444,19 @@ def explain_rm(d):
         start_idx = 2
         lines.append(' next ' + summarize_with(R_next, 8))
         lines.append('')
-        lines.append(' upper ' + summarize_with(upper, 8))
+        if not fuse_upper:
+            lines.append(' upper ' + summarize_with(upper, 8))
 
     if highest != midhi:
         lines.append(' ' + conv.pow10_to_str(highest, e))
 
     # midhi, R_center, R, midlo, in some order
+    if fuse_upper:
+        R_center_str = 'upper = F'
+    elif fuse_lower:
+        R_center_str = 'lower = F'
+    else:
+        R_center_str = 'F'
 
     # only one decimal to worry about, but we don't know where it is
     if midlo == midhi:
@@ -456,16 +466,16 @@ def explain_rm(d):
         if R == R_center:
             if R > R_mid:
                 lmid_idx = len(lines)
-                lines.append(' F = R ' + summarize_with(R, 8))
+                lines.append(' ' + R_center_str + ' = R ' + summarize_with(R, 8))
                 lines.append(' ' + conv.pow10_to_str(midlo, e))
             # exact equality!
             elif R == R_mid:
                 lmid_idx = len(lines)
-                lines.append(' F = R = ' + conv.pow10_to_str(midlo, e))
+                lines.append(' ' + R_center_str + ' = R = ' + conv.pow10_to_str(midlo, e))
             else: # R_mid > R
                 lines.append(' ' + conv.pow10_to_str(midlo, e))
                 lmid_idx = len(lines)
-                lines.append(' F = R ' + summarize_with(R, 8))
+                lines.append(' ' + R_center_str + ' = R ' + summarize_with(R, 8))
 
         # not centered R != R_center
         else:
@@ -473,25 +483,25 @@ def explain_rm(d):
                 if R > R_center:
                     lines.append(' R = ' + conv.pow10_to_str(midlo, e))
                     lmid_idx = len(lines)
-                    lines.append(' F ' + summarize_with(R_center, 8))
+                    lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
                 else:
                     lmid_idx = len(lines)
-                    lines.append(' F ' + summarize_with(R_center, 8))
+                    lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
                     lines.append(' R = ' + conv.pow10_to_str(midlo, e))
             elif R_center == R_mid:
                 if R > R_center:
                     lines.append(' R ' + summarize_with(R, 8))
                     lmid_idx = len(lines)
-                    lines.append(' F = ' + conv.pow10_to_str(midlo, e))
+                    lines.append(' ' + R_center_str + ' = ' + conv.pow10_to_str(midlo, e))
                 else:
                     lmid_idx = len(lines)
-                    lines.append(' F = ' + conv.pow10_to_str(midlo, e))
+                    lines.append(' ' + R_center_str + ' = ' + conv.pow10_to_str(midlo, e))
                     lines.append(' R ' + summarize_with(R, 8))
             else:
                 # 3 numbers, sort
                 order = [
                     (R, ' R ' + summarize_with(R, 8), False,),
-                    (R_center, ' F ' + summarize_with(R_center, 8), True,),
+                    (R_center, ' ' + R_center_str + ' ' + summarize_with(R_center, 8), True,),
                     (R_mid, ' ' + conv.pow10_to_str(midlo, e), False,),
                 ]
                 for _, s, lmid in sorted(order, key=operator.itemgetter(0), reverse=True):
@@ -499,7 +509,7 @@ def explain_rm(d):
                         lmid_idx = len(lines)
                     lines.append(s)
 
-    # we know midlo < R < midhi, so we just need to figure out where to stick R_center in there
+    # we know midhi > R > midlo, so we just need to figure out where to stick R_center in there
     else:
         order = [
             (FReal(midhi) * (FReal(10)**e), ' ' + conv.pow10_to_str(midhi, e),),
@@ -510,18 +520,18 @@ def explain_rm(d):
         for R_current, s in order:
             if R_center > R_current:
                 lmid_idx = len(lines)
-                lines.append(' F ' + summarize_with(R_center, 8))
+                lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
                 needs_center = False
                 lines.append(s)
             elif R_center == R_current:
                 lmid_idx = len(lines)
-                lines.append(' F =' + s)
+                lines.append(' ' + R_center_str + ' =' + s)
                 needs_center = False
             else:
                 lines.append(s)
         if needs_center:
             lmid_idx = len(lines)
-            lines.append(' F ' + summarize_with(R_center, 8))
+            lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
 
     if lowest != midlo:
         lines.append(' ' + conv.pow10_to_str(lowest, e))
@@ -531,8 +541,11 @@ def explain_rm(d):
         end_idx = len(lines)
         lines.append(' prev = lower ' + summarize_with(R_prev, 8))
     else:
-        end_idx = len(lines)
-        lines.append(' lower ' + summarize_with(lower, 8))
+        if fuse_lower:
+            end_idx = lmid_idx
+        else:
+            end_idx = len(lines)
+            lines.append(' lower ' + summarize_with(lower, 8))
         lines.append('')
         lines.append(' prev ' + summarize_with(R_prev, 8))
 
