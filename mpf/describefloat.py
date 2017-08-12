@@ -5,6 +5,81 @@ from real import FReal
 import core
 import conv
 
+import operator
+
+ieee_rm_names = {
+    core.RTN : 'roundTowardNegative',
+    core.RTP : 'roundTowardPositive',
+    core.RTZ : 'roundTowardZero',
+    core.RNE : 'roundTiesToEven',
+    core.RNA : 'roundTiesToAway',
+}
+
+def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
+    R_approx = conv.real_to_string(R, prec=prec, exact=False)
+    isapprox = R_approx.startswith(conv.approx_str)
+    if not isapprox:
+        return isapprox, exact_str + spacer + R_approx
+    else:
+        return isapprox, conv.approx_str + spacer + R_approx[1:]
+
+def summarize_with(R, prec = conv.default_prec, spacer = ' '):
+    is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer)
+    if is_approx:
+        return R_approx + spacer + '=' + spacer + conv.real_to_string(R, prec=prec, exact=True)
+    else:
+        return R_approx
+
+darrow = u'\u2193'
+
+def unicode_fbits(S, E, T, ibit):
+    S_str = str(S).lower().replace('0b','')
+    E_str = str(E).lower().replace('0b','')
+    T_str = str(T).lower().replace('0b','')
+    ibit_str  = str(ibit)
+
+    s = '   ' + ' '*len(E_str) + 'implicit bit\n'
+    s += 'S E' + ' '*len(E_str) + darrow + ' T\n'
+    s += '{} {} {} {}'.format(S_str, E_str, ibit_str, T_str)
+    return s
+
+
+topc = u'\u252c'
+botc = u'\u2534'
+topo = u'\u2564'
+boto = u'\u2567'
+vert = u'\u2502'
+tic = u'\u253c'
+
+def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
+                               ltop = topc, rtop = topc, lbot = botc, rbot = botc):
+    lmax = len(lines) - 1
+    s = ''
+    for idx, line in enumerate(lines):
+        if idx == 0:
+            ll = ltop
+        elif idx == lmax:
+            ll = lbot
+        elif lmid_idx is not None and idx == lmid_idx:
+            ll = tic
+        else:
+            ll = vert
+
+        if idx == start_idx:
+            rl = rtop
+        elif start_idx < idx and idx < end_idx:
+            rl = vert
+        elif idx == end_idx:
+            rl = rbot
+        else:
+            rl = ' '
+
+        s += ' {} {}{}'.format(ll, rl, line)
+        if idx < lmax:
+            s += '\n'
+
+    return s
+
 def describe_format(w, p):
     assert isinstance(w, int)
     assert w >= 2
@@ -89,7 +164,7 @@ def describe_float(S, E, T):
         for rm in core.RNE, core.RNA, core.RTZ, core.RTP, core.RTN:
             lower, lower_inclusive, upper, upper_inclusive = conv.implicit_to_rounding_envelope(S, E, T, rm)
             # slow, duplicates the work of building the envelope, but meh
-            prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
+            prec, lowest, midlo, midhi, highest, r_e = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
             rounding_info[str(rm)] = {
                 'rm' : rm,
                 'lower'           : lower,
@@ -101,7 +176,7 @@ def describe_float(S, E, T):
                 'midlo'   : midlo,
                 'midhi'   : midhi,
                 'highest' : highest,
-                'e'       : e,
+                'e'       : r_e,
                 'S' : S,
                 'E' : E,
                 'T' : T,
@@ -246,7 +321,7 @@ def describe_real(x, w, p):
                 'R_prev'   : R_prev,
                 'i_next'   : i_next,
                 'R_next'   : R_next,
-                'R' : R
+                'R' : R,
                 'i_below' : i_below,
                 'i_above' : i_above,
             }
@@ -314,21 +389,16 @@ def explain_format(d):
 
     return s
 
-topc = u'\u252c'
-botc = u'\u2534'
-topo = u'\u2564'
-boto = u'\u2567'
-tic = u'\u253c'
-vert = u'\u2502'
 def explain_rm(d):
-    if R in d:
-        approx12_R = conv.real_to_string(d['R'], prec=12, exact=False)
+    if 'R' in d:
+        R = d['R']
     else:
-        approx12_R = conv.real_to_string(d['R_center'], prec=12, exact=False)
-    if not approx12_R.startswith(u'\u2248'):
-        approx12_R = '=' + approx12_R
-    s = 'rounding envelope for {} around R{}:\n'.format(conv.ieee_rm_names[d['rm']], approx12_R)
+        R = d['R_center']
+    _, R_approx = approx_or_exact(R, 12)
+
+    s = 'rounding envelope for {} around R{}:\n'.format(ieee_rm_names[d['rm']], R_approx)
     s += '  {:d} digits of decimal precision required to round-trip\n\n'.format(d['prec'])
+
     # well this is fun
     lower = d['lower']
     lower_inclusive = d['lower_inclusive']
@@ -348,10 +418,10 @@ def explain_rm(d):
     R_prev = d['R_prev']
     i_next = d['i_next']
     R_next = d['R_next']
-    R = d.get(R, None)
     i_below = d.get('i_below', None)
     i_above = d.get('i_above', None)
 
+    # set up some arguments to pass to the numberline generator
     if upper_inclusive:
         envtop = topc
     else:
@@ -361,56 +431,141 @@ def explain_rm(d):
     else:
         envbot = boto
 
-    approx_R_next = conv.real_to_string(R_next, prec=8, exact=False)
-    isapprox_R_next = approx_R_next.startswith(u'\u2248'):
-    if not isapprox_R_next:
-        approx_R_next = '= ' + approx_R_next
-    else:
-        approx_R_next = approx_R_next[0] + ' ' + approx_R_next[1:]
+    lines = []
 
-    # first line
+    # next and top of envelope
     if R_next == upper:
-        in_env = True
-        s += ' {} {} next = upper {}'.format(topo, envtop, approx_R_next)
-        if isapprox_R_next:
-            s += ' = {}\n'.format(str(R_next))
-        else:
-            s += '\n'
+        start_idx = 0
+        lines.append(' next = upper ' + summarize_with(R_next, 8))
     else:
-        s += ' {}   next {}'.format(topo, approx_R_next)
-        if isapprox_R_next:
-            s += ' = {}\n {} {}\n'.format(str(R_next), vert, vert)
-        else:
-            s += '\n {} {}\n'.format(vert, vert)
+        start_idx = 2
+        lines.append(' next ' + summarize_with(R_next, 8))
+        lines.append('')
+        lines.append(' upper ' + summarize_with(upper, 8))
 
-    # highest, only if different from midhi
+    if highest != midhi:
+        lines.append(' ' + conv.pow10_to_str(highest, e))
 
     # midhi, R_center, R, midlo, in some order
 
-    # lowest, only if different from midlo
+    # only one decimal to worry about, but we don't know where it is
+    if midlo == midhi:
+        R_mid = FReal(midlo) * (FReal(10)**e)
 
-    # last line
-        
-    
+        # centered
+        if R == R_center:
+            if R > R_mid:
+                lmid_idx = len(lines)
+                lines.append(' F = R ' + summarize_with(R, 8))
+                lines.append(' ' + conv.pow10_to_str(midlo, e))
+            # exact equality!
+            elif R == R_mid:
+                lmid_idx = len(lines)
+                lines.append(' F = R = ' + conv.pow10_to_str(midlo, e))
+            else: # R_mid > R
+                lines.append(' ' + conv.pow10_to_str(midlo, e))
+                lmid_idx = len(lines)
+                lines.append(' F = R ' + summarize_with(R, 8))
 
-def explain_float(d):
-    S_str = str(d['S']).lower().replace('0b','')
-    E_str = str(d['E']).lower().replace('0b','')
-    T_str = str(d['T']).lower().replace('0b','')
-    ibit_str  = str(d['implicit_bit'])
+        # not centered R != R_center
+        else:
+            if R == R_mid:
+                if R > R_center:
+                    lines.append(' R = ' + conv.pow10_to_str(midlo, e))
+                    lmid_idx = len(lines)
+                    lines.append(' F ' + summarize_with(R_center, 8))
+                else:
+                    lmid_idx = len(lines)
+                    lines.append(' F ' + summarize_with(R_center, 8))
+                    lines.append(' R = ' + conv.pow10_to_str(midlo, e))
+            elif R_center == R_mid:
+                if R > R_center:
+                    lines.append(' R ' + summarize_with(R, 8))
+                    lmid_idx = len(lines)
+                    lines.append(' F = ' + conv.pow10_to_str(midlo, e))
+                else:
+                    lmid_idx = len(lines)
+                    lines.append(' F = ' + conv.pow10_to_str(midlo, e))
+                    lines.append(' R ' + summarize_with(R, 8))
+            else:
+                # 3 numbers, sort
+                order = [
+                    (R, ' R ' + summarize_with(R, 8), False,),
+                    (R_center, ' F ' + summarize_with(R_center, 8), True,),
+                    (R_mid, ' ' + conv.pow10_to_str(midlo, e), False,),
+                ]
+                for _, s, lmid in sorted(order, key=operator.itemgetter(0), reverse=True):
+                    if lmid:
+                        lmid_idx = len(lines)
+                    lines.append(s)
 
-    s = '   ' + ' '*len(E_str) + 'implicit bit\n'
-    s += 'S E' + ' '*len(E_str) + u'\u2193 T\n'
-    s += '{} {} {} {}\n'.format(S_str, E_str, ibit_str, T_str)
-    s += '\n'
-
-    s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
-    approx12_str = conv.real_to_string(d['R'], prec=12, exact=False)
-    if approx12_str.startswith(u'\u2248'):
-        s += '  {} {}\n'.format(approx12_str[0], approx12_str[1:])
-        s += '  = {}\n'.format(conv.real_to_string(d['R'], exact=True))
+    # we know midlo < R < midhi, so we just need to figure out where to stick R_center in there
     else:
-        s += '  = {}\n'.format(approx12_str)
+        order = [
+            (FReal(midhi) * (FReal(10)**e), ' ' + conv.pow10_to_str(midhi, e),),
+            (R, ' R ' + summarize_with(R, 8),),
+            (FReal(midlo) * (FReal(10)**e), ' ' + conv.pow10_to_str(midlo, e),),
+        ]
+        needs_center = True
+        for R_current, s in order:
+            if R_center > R_current:
+                lmid_idx = len(lines)
+                lines.append(' F ' + summarize_with(R_center, 8))
+                needs_center = False
+                lines.append(s)
+            elif R_center == R_current:
+                lmid_idx = len(lines)
+                lines.append(' F =' + s)
+                needs_center = False
+            else:
+                lines.append(s)
+        if needs_center:
+            lmid_idx = len(lines)
+            lines.append(' F ' + summarize_with(R_center, 8))
+
+    if lowest != midlo:
+        lines.append(' ' + conv.pow10_to_str(lowest, e))
+
+    # prev and bottom of envelope
+    if R_prev == lower:
+        end_idx = len(lines)
+        lines.append(' prev = lower ' + summarize_with(R_prev, 8))
+    else:
+        end_idx = len(lines)
+        lines.append(' lower ' + summarize_with(lower, 8))
+        lines.append('')
+        lines.append(' prev ' + summarize_with(R_prev, 8))
+
+    s += unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx=lmid_idx,
+                                    rtop=envtop, rbot=envbot)
+    return s
+
+def explain_float(d, summary_length = 12):
+
+    s = unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']) + '\n\n'
+
+    R = d['R']
+
+    if R.isnan:
+        s += '  {} ( with payload: {} )\n\n'.format(conv.real_to_pretty_string(R),
+                                                    conv.real_to_string(R, show_payload=True))
+    elif R.isinf:
+        s += '  {} ( {} )\n\n'.format(conv.real_to_pretty_string(R),
+                                      conv.real_to_string(R))
+    elif R.iszero:
+        s += '  ' + conv.real_to_string(R) + '\n\n'
+    else:
+        s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
+        summary_is_approx, R_summary = approx_or_exact(R, prec=summary_length, spacer=' ')
+        if summary_is_approx:
+            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=prec, exact=True) + '\n'
+            s += '  = ' + str(R)
+        else:
+            s += '  ' + R_summary
+
+    if 'rounding_info' in d:
+        for k, r_info in d['rounding_info'].items():
+            s += '\n\n' + explain_rm(r_info)
 
     return s
 
@@ -439,23 +594,23 @@ def explain_all(x, w, p):
     if f_descr is not None:
         s += '\n\n' + explain_float(f_descr)
 
-    # temporary, dump dict contents
-    s += '\n\n\n\n'
+    # # temporary, dump dict contents
+    # s += '\n\n\n\n'
 
-    s += 'fmt_descr:\n'
-    s += explain_dict(fmt_descr, 2)
-    s += '\n'
+    # s += 'fmt_descr:\n'
+    # s += explain_dict(fmt_descr, 2)
+    # s += '\n'
 
-    s += 'r_descr:\n'
-    s += explain_dict(r_descr, 2)
-    s += '\n'
+    # s += 'r_descr:\n'
+    # s += explain_dict(r_descr, 2)
+    # s += '\n'
 
-    if f_descr is None:
-        s += 'f_descr:\n  None\n'
-    else:
-        s += 'f_descr:\n'
-        s += explain_dict(f_descr, 2)
-        s += '\n'
+    # if f_descr is None:
+    #     s += 'f_descr:\n  None\n'
+    # else:
+    #     s += 'f_descr:\n'
+    #     s += explain_dict(f_descr, 2)
+    #     s += '\n'
 
     return s
 

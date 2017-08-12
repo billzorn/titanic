@@ -428,6 +428,15 @@ def prec_of(c, e = None):
         else:
             return max(prec, 1 - e)
 
+# abuse precision as a heuristic for determining the "most readable" form
+def pow10_to_str(c, e):
+    sprec = prec_of(c, e)
+    eprec = prec_of(c)
+    if sprec <= eprec + 3:
+        return pow10_to_f_str(c, e)
+    else:
+        return pow10_to_e_str(c, e)
+
 # If exact is true, then the precise value should be recoverable from the
 # output. If not, we will try to respect the character limit n, and prefix
 # the string with a unicode u"\u2248"
@@ -465,12 +474,7 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
                 elif exp is False:
                     return pow10_to_f_str(c, e)
                 else: # exp is None
-                    sprec = prec_of(c, e)
-                    eprec = prec_of(c)
-                    if sprec <= prec or sprec <= eprec + 3:
-                        return pow10_to_f_str(c, e)
-                    else:
-                        return pow10_to_e_str(c, e)
+                    return pow10_to_str(c, e)
             else:
                 # We're giving an approximate representation;
                 # first see if there is a short exact one, otherwise
@@ -500,7 +504,6 @@ def real_to_pretty_string(R):
         if c is None or e is None:
             return sympy.pretty(R.symbolic_value)
         else:
-            # abuse precision as a heuristic for determining the "most readable" form
             sprec = prec_of(c, e)
             eprec = prec_of(c)
             if sprec <= default_prec:
@@ -746,7 +749,7 @@ def binsearch_shortest_dec(c, e, intrem,
         c_midhi = c
         c_highest = c
         e_final = e
-             
+
     assert above <= below
     prec = above
 
@@ -996,11 +999,3 @@ def dec_full_prec(w, p):
     c, e = real_to_pow10(R)
 
     return ndig(c)
-
-ieee_rm_names = {
-    core.RTN : 'roundTowardNegative',
-    core.RTP : 'roundTowardPositive',
-    core.RTZ : 'roundTowardZero',
-    core.RNE : 'roundTiesToEven',
-    core.RNA : 'roundTiesToAway',
-}
