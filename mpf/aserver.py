@@ -2,6 +2,8 @@ from multiprocessing import Pool
 from http.server import BaseHTTPRequestHandler, HTTPStatus
 from socketserver import ThreadingMixIn, TCPServer
 
+import os
+import time
 import threading
 import urllib
 
@@ -28,8 +30,22 @@ page = '''<!DOCTYPE html>
 </html>
 '''
 
-def do_work(args):
-    return ''
+def do_work(mode, w, p, s):
+    mypid = os.getpid()
+    sleep_ms = int(w)
+
+    # begin work
+    start = time.time()
+
+    time.sleep(3.0 + (sleep_ms / 1000))
+
+    content = ('got some args:\n  mode: {}\n  w   : {}\n  p   : {}\n  s   : {}'
+               .format(repr(mode), repr(w), repr(p), repr(s)))
+
+    # end work
+    elapsed = time.time() - start
+
+    return content + '\nelapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
 
 # simple threadsafe key-value store with LRU
 class AsyncCache(object):
@@ -53,25 +69,44 @@ class AsyncCache(object):
             else:
                 v, idx = record[0], record[1]
                 # update LRU order
-                self.order.append(self.order.pop(idx))
+                print('lookup', self.order)
+                self.order.pop(idx)
+                self.order.append(k)
+                print(self.order)
                 # update record in cache
                 record[1] = len(self.order) - 1
+                # TODO: oops, lru isn't this easy...
                 return v
 
     def update(self, k, v):
-        # placeholder index
-        record = [v, -1]
         with self.lock:
-            self.cache[k] = record
+            existing_record = self.cache.get(k, None)
+            if existing_record is None:
+                # LRU: delete an item if necessary
+                if len(self.order) >= self.n:
+                    print('del', self.order)
+                    xk = self.order.pop(0)
+                    self.cache.pop(xk)
+                    print(self.order)
+                # add new record
+                record = [v, len(self.order)]
+                self.cache[k] = record
+                print('new', self.order)
+            else:
+                existing_record[0] = v
+                print('update', self.order)
+                self.order.pop(existing_record[1])
+                print(self.order)
+                existing_record[1] = len(self.order) - 1
             self.order.append(k)
-            # LRU: delete an item if necessary
-            if len(self.order) > self.n:
-                self.cache.pop(self.order.pop(0))
-            # fix index
-            record[1] = len(self.order) - 1
-        
+            print(self.order)
+            print(self.cache)
 
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
+
+    # subclass and overwrite these before using
+    the_cache = None
+    the_pool = None
 
     # interface
 
@@ -100,13 +135,46 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
         return pr.path, args
 
+    def process_args(self, args):
+        try:
+            w = int(args['w'])
+            assert w > 2
+        except Exception:
+            w = 8
+
+        try:
+            p = int(args['p'])
+            assert p > 2
+        except Exception:
+            p = 24
+
+        try:
+            s = str(args['s'])
+        except Exception:
+            s = 'the default'
+
+        return w, p, s
+
     def construct_content(self):
         myself = threading.current_thread().name
         path, args = self.translate_path()
+        processed_args = self.process_args(args)
+
+        # get cached content
+        cached = type(self).the_cache.lookup(processed_args)
+        if cached is None:
+            cached = type(self).the_pool.apply(do_work, (path, *processed_args))
+            type(self).the_cache.update(processed_args, cached)
+
         s = '\n'.join(
             ('using {}'.format(repr(myself)),
              repr(path),
-             *('  {} : {}'.format(repr(k), repr(v)) for k, v in args.items()),)
+             *('  {} : {}'.format(repr(k), repr(v)) for k, v in args.items()),
+             '',
+             cached,
+             '',
+             repr(type(self).the_cache.cache),
+             repr(type(self).the_cache.order),)
             )
         return page.format(s)
 
@@ -136,17 +204,23 @@ PORT = 8000
 if __name__ == '__main__':
     import sys
 
-    with ThreadedTCPServer((HOST, PORT,), AsyncHTTPRequestHandler) as server:
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = True
-        server_thread.start()
+    the_cache = AsyncCache(3)
+    with Pool(2) as the_pool:
+        class MyHTTPRequestHandler(AsyncHTTPRequestHandler):
+            the_cache = the_cache
+            the_pool = the_pool
 
-        print('server on thread:', server_thread.name)
-        print('close stdin to stop.')
+        with ThreadedTCPServer((HOST, PORT,), MyHTTPRequestHandler) as server:
+            server_thread = threading.Thread(target=server.serve_forever)
+            server_thread.daemon = True
+            server_thread.start()
 
-        for line in sys.stdin:
-            pass
+            print('server on thread:', server_thread.name)
+            print('close stdin to stop.')
 
-        print('stdin closed, stopping.')
-        server.shutdown()
-        print('goodbye!')
+            for line in sys.stdin:
+                pass
+
+            print('stdin closed, stopping.')
+            server.shutdown()
+            print('goodbye!')
