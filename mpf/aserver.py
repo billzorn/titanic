@@ -165,6 +165,8 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     def translate_path(self):
         pr = urllib.parse.urlparse(self.path)
         path = pr.path.lower()
+        if webcontent.empty_re.fullmatch(path):
+            path = webcontent.root_page
 
         page_match = webcontent.page_re.fullmatch(path)
         if page_match:
