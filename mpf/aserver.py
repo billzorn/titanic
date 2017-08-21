@@ -6,46 +6,32 @@ import os
 import time
 import threading
 import urllib
+import json
 
-# enc
+import webcontent
 
-page = '''<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>aserver</title>
-  </head>
+# for testing purposes
+def sleepfor(x):
+    mypid = os.getpid()
+    start = time.time()
+    time.sleep(x)
+    elapsed = time.time() - start
+    return 'elapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
 
-  <body>
-    <header>
-      <h1>aserver</h1>
-      <aside>test site plz ignore</aside>
-    </header>
-
-    <br>
-    <pre>
-{}
-    </pre>
-  </body>
-</html>
-'''
+# main work targets for protocols
 
 def do_work(mode, w, p, s):
-    mypid = os.getpid()
-    sleep_ms = int(w)
+    sleep_s = 3.0 + int(w) / 1000
 
-    # begin work
-    start = time.time()
+    content = ('{} mode:\n  w: {}\n  p: {}\n  s: {}'
+               .format(repr(mode.upper()), repr(w), repr(p), repr(s)))
+    sleepy = sleepfor(sleep_s)
 
-    time.sleep(3.0 + (sleep_ms / 1000))
+    return content + '\n' + sleepy
 
-    content = ('got some args:\n  mode: {}\n  w   : {}\n  p   : {}\n  s   : {}'
-               .format(repr(mode), repr(w), repr(p), repr(s)))
 
-    # end work
-    elapsed = time.time() - start
-
-    return content + '\nelapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
+# for LRU's circular DLL
+_PREV, _NEXT, _KEY = 0, 1, 2
 
 # simple threadsafe key-value store with LRU
 class AsyncCache(object):
@@ -53,12 +39,34 @@ class AsyncCache(object):
     def __init__(self, n = 1024):
         self.n = int(n)
         assert self.n > 0
-
         self.lock = threading.Lock()
-        # key : [value, indexof(value, self.order)]
-        self.cache = {}
-        # ordering for LRU
-        self.order = []
+        self.reset()
+
+    # not threadsafe - only call if you have the lock!
+    def _move_to_front(self, link):
+        link_prev, link_next, link_k = link
+        # update LRU order, if necessary
+        if link_next is not self.root:
+            # remove link from list
+            link_prev[_NEXT] = link_next
+            link_next[_PREV] = link_prev
+            # get the end of the list
+            last = self.root[_PREV]
+            # insert this link between the end and self.root
+            link[_NEXT] = self.root
+            self.root[_PREV] = link
+            last[_NEXT] = link
+            link[_PREV] = last
+
+    # user-facing cache interface
+
+    def reset(self):
+        with self.lock:
+            # key : (value, link)
+            self.cache = {}
+            # ordering for LRU, stored in circular doubly-linked listed
+            self.root = []
+            self.root[:] = (self.root, self.root, None,)
 
     def lookup(self, k):
         with self.lock:
@@ -67,40 +75,62 @@ class AsyncCache(object):
                 # cache doesn't have it
                 return None
             else:
-                v, idx = record[0], record[1]
-                # update LRU order
-                print('lookup', self.order)
-                self.order.pop(idx)
-                self.order.append(k)
-                print(self.order)
-                # update record in cache
-                record[1] = len(self.order) - 1
-                # TODO: oops, lru isn't this easy...
+                v, link = record
+                self._move_to_front(link)
                 return v
 
     def update(self, k, v):
         with self.lock:
-            existing_record = self.cache.get(k, None)
-            if existing_record is None:
-                # LRU: delete an item if necessary
-                if len(self.order) >= self.n:
-                    print('del', self.order)
-                    xk = self.order.pop(0)
-                    self.cache.pop(xk)
-                    print(self.order)
-                # add new record
-                record = [v, len(self.order)]
-                self.cache[k] = record
-                print('new', self.order)
+            record = self.cache.get(k, None)
+            if record is None:
+                # insert a new element
+                if len(self.cache) < self.n:
+                    last = self.root[_PREV]
+                    link = [last, self.root, k]
+                    last[_NEXT] = link
+                    self.root[_PREV] = link
+                    self.cache[k] = (v, link,)
+                # at capacity - move root to reclaim an existing slot in the DLL
+                else:
+                    # root becomes new link
+                    link = self.root
+                    link[_KEY] = k
+                    # next list becomes new root
+                    self.root = link[_NEXT]
+                    old_k = self.root[_KEY]
+                    self.root[_KEY] = None
+                    # update cache
+                    del self.cache[old_k]
+                    self.cache[k] = (v, link,)
             else:
-                existing_record[0] = v
-                print('update', self.order)
-                self.order.pop(existing_record[1])
-                print(self.order)
-                existing_record[1] = len(self.order) - 1
-            self.order.append(k)
-            print(self.order)
-            print(self.cache)
+                old_v, link = record
+                # the key stays the same, move the existing one to the front
+                self._move_to_front(link)
+                # but we need to update the value in the cache
+                self.cache[k] = (v, link,)
+
+    # serialization with json
+
+    def to_json(self):
+        with self.lock:
+            # make a list of (key, value,) pairs in the order things were used (oldest first)
+            jl = []
+            link = self.root[_NEXT]
+            while link is not self.root:
+                _, link_next, k = link
+                record = self.cache.get(k, None)
+                if record is not None:
+                    v, link = record
+                    jl.append((k, v,))
+                link = link_next
+            return json.dumps(jl)
+
+    def from_json(self, s):
+        # adds a list of (k, value,) pairs to the cache in order
+        jl = json.loads(s)
+        for k, v in jl:
+            self.update(tuple(k), v)
+
 
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
@@ -117,23 +147,36 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         content = self.send_head()
-        self.wfile.write(content)
+        if content is not None:
+            try:
+                self.wfile.write(content)
+            except Exception:
+                # could try again, but we don't really care that much
+                pass
 
     # helpers
 
     def translate_path(self):
         pr = urllib.parse.urlparse(self.path)
+        path = pr.path.lower()
 
-        args = {}
-        for f in pr.query.split('&'):
-            name_arg = f.split('=')
-            if len(name_arg) == 2:
-                name = urllib.parse.unquote_plus(name_arg[0].strip())
-                if len(name) > 0 and name not in args:
-                    arg = urllib.parse.unquote_plus(name_arg[1].strip())
-                    args[name] = arg
+        page_match = webcontent.page_re.fullmatch(path)
+        if page_match:
+            return page_match.group(1), None
 
-        return pr.path, args
+        protocol_match = webcontent.protocol_re.fullmatch(path)
+        if protocol_match:
+            args = {}
+            for f in pr.query.split('&'):
+                name_arg = f.split('=')
+                if len(name_arg) == 2:
+                    name = urllib.parse.unquote_plus(name_arg[0].strip())
+                    if len(name) > 0 and name not in args:
+                        arg = urllib.parse.unquote_plus(name_arg[1].strip())
+                        args[name] = arg
+            return protocol_match.group(1), args
+
+        return None, None
 
     def process_args(self, args):
         try:
@@ -156,39 +199,54 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
         return w, p, s
 
     def construct_content(self):
-        myself = threading.current_thread().name
-        path, args = self.translate_path()
-        processed_args = self.process_args(args)
+        path, raw_args = self.translate_path()
 
-        # get cached content
-        cached = type(self).the_cache.lookup(processed_args)
-        if cached is None:
-            cached = type(self).the_pool.apply(do_work, (path, *processed_args))
-            type(self).the_cache.update(processed_args, cached)
+        # no content
+        if path is None:
+            return None, None
 
-        s = '\n'.join(
-            ('using {}'.format(repr(myself)),
-             repr(path),
-             *('  {} : {}'.format(repr(k), repr(v)) for k, v in args.items()),
-             '',
-             cached,
-             '',
-             repr(type(self).the_cache.cache),
-             repr(type(self).the_cache.order),)
-            )
-        return page.format(s)
+        # static page
+        elif raw_args is None:
+            return webcontent.page_content[path]
+
+        # dynamic content protocol
+        else:
+            args = self.process_args(raw_args)
+            myself = threading.current_thread().name
+
+            # get cached content
+            cached = type(self).the_cache.lookup(args)
+            if cached is None:
+                cached = type(self).the_pool.apply(do_work, (path, *args))
+                type(self).the_cache.update(args, cached)
+
+            # format stuff
+            s = '\n'.join(
+                ('using {}'.format(repr(myself)),
+                 repr(path),
+                 *('  {} : {}'.format(repr(k), repr(v)) for k, v in raw_args.items()),
+                 '',
+                 cached,
+                 '',
+                 type(self).the_cache.to_json(),)
+                )
+
+            return webcontent.skeletonize(webcontent.pre(s)), 'text/html'
 
     # also returns the content that would have been sent for these headers
     def send_head(self):
-        content = bytes(self.construct_content(), 'utf-8')
-        ctype = 'text/html'
+        content, ctype = self.construct_content()
 
         try:
-            self.send_response(HTTPStatus.OK)
-            self.send_header('Content-type', ctype)
-            self.send_header('Content-Length', len(content))
-            self.end_headers()
-            return content
+            if content is None or ctype is None:
+                self.send_error(HTTPStatus.NOT_FOUND, 'Unknown request')
+                return None
+            else:
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', ctype)
+                self.send_header('Content-Length', len(content))
+                self.end_headers()
+                return content
         except:
             # could do cleanup like closing a file
             raise
