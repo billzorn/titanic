@@ -7,6 +7,13 @@ import conv
 
 import operator
 
+def weblink(s, S, E, T):
+    w = E.n
+    p = T.n + 1
+    Bs = str(core.implicit_to_packed(S, E, T))
+    href = '"/demo?s={}&w={:d}&p={:d}"'.format(Bs, w, p)
+    return '<a href={}>{}</a>'.format(href, s)
+
 ieee_rm_names = {
     core.RTN : 'roundTowardNegative',
     core.RTP : 'roundTowardPositive',
@@ -84,10 +91,24 @@ leftc = u'\u251c'
 rightc = u'\u2524'
 hori = u'\u2500'
 uarrow = u'\u2191'
-def unicode_horizontal_nl(left, R, right, width, note = '', mirror=False):
-    assert isinstance(left, FReal)
+def unicode_horizontal_nl(left, R, right, width,
+                          note = '', prec = 12, mirror = False):
+    assert isinstance(left, FReal) or isinstance(left, tuple)
+    assert isinstance(right, FReal) or isinstance(right, tuple)
+
+    if isinstance(left, tuple):
+        left, Sl, El, Tl = left
+        link_left = True
+    else:
+        link_left = False
+
+    if isinstance(right, tuple):
+        right, Sr, Er, Tr = right
+        link_right = True
+    else:
+        link_right = False
+
     assert isinstance(R, FReal)
-    assert isinstance(right, FReal)
     assert left <= R and R <= right
     assert isinstance(width, int)
     assert width >= 3
@@ -114,14 +135,18 @@ def unicode_horizontal_nl(left, R, right, width, note = '', mirror=False):
         left_label = note + conv.real_to_string(R, exact=True)
         mid_at_left = True
     else:
-        left_label = conv.real_to_string(left, exact=False)
+        left_label = conv.real_to_string(left, prec=prec, exact=False)
+        if link_left:
+            left_label = weblink(left_label, Sl, El, Tl)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if right == R:
         right_label = note + conv.real_to_string(R, exact=True)
         mid_at_left = False
     else:
-        right_label = conv.real_to_string(right, exact=False)
+        right_label = conv.real_to_string(right, prec=prec, exact=False)
+        if link_right:
+            right_label = weblink(right_label, Sr, Er, Tr)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if mid_at_left is not None:
@@ -716,19 +741,23 @@ def explain_real(d):
     if R.isnan or d['exact']:
         s = 'this real value has an exact floating point representation'
     else:
+        w = d['w']
+        p = d['p']
+        i_below = d['i_below']
+        i_above = d['i_above']
         R_below = d['R_below']
         R_above = d['R_above']
         diff_below = d['difference_below']
         diff_above = d['difference_above']
 
         s = 'nearby floating point values:\n'
-        s += '  ordinal ' + str(d['i_above']) + '\n'
+        s += '  ordinal ' + str(i_above) + '\n'
         s += '       above ' + summarize_with(R_above, 8) + '\n'
         s += '  difference ' + summarize_with(diff_above, 8) + '\n'
         s += '           R ' + summarize_with(R, 8) + '\n'
         s += '  difference ' + summarize_with(diff_below, 8) + '\n'
         s += '       below ' + summarize_with(R_below, 8) + '\n'
-        s += '  ordinal ' + str(d['i_below']) + '\n\n'
+        s += '  ordinal ' + str(i_below) + '\n\n'
 
         if diff_above < diff_below:
             s += 'relative position: (linear scale, above is closer)\n'
@@ -737,7 +766,17 @@ def explain_real(d):
         else:
             s += 'relative position: (linear scale, below is closer)\n'
 
-        s += unicode_horizontal_nl(R_below, R, R_above, 100, note='R=')
+        Sb, Eb, Tb = core.ordinal_to_implicit(i_below, w, p)
+        if R_below.iszero and R_below.sign == -1:
+            Sb = BV(1, 1)
+        Sa, Ea, Ta = core.ordinal_to_implicit(i_above, w, p)
+        if R_above.iszero and R_above.sign == -1:
+            Sa = BV(1, 1)
+
+        RSET_below = (R_below, Sb, Eb, Tb,)
+        RSET_above = (R_above, Sa, Ea, Ta,)
+
+        s += unicode_horizontal_nl(RSET_below, R, RSET_above, 100, note='R=')
 
         # rounding envelopes
         if 'rounding_info' in d:
