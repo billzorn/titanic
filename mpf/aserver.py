@@ -5,6 +5,7 @@ from socketserver import ThreadingMixIn, TCPServer
 import os
 import time
 import threading
+import traceback
 import urllib
 import json
 
@@ -16,19 +17,24 @@ def sleepfor(x):
     start = time.time()
     time.sleep(x)
     elapsed = time.time() - start
+    assert False
     return 'elapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
 
 # main work targets for protocols
 
 def do_work(mode, w, p, s):
-    sleep_s = 3.0 + int(w) / 1000
+    try:
+        sleep_s = 3.0 + int(w) / 1000
 
-    content = ('{} mode:\n  w: {}\n  p: {}\n  s: {}'
-               .format(repr(mode.upper()), repr(w), repr(p), repr(s)))
-    sleepy = sleepfor(sleep_s)
+        content = ('{} mode:\n  w: {}\n  p: {}\n  s: {}'
+                   .format(repr(mode.upper()), repr(w), repr(p), repr(s)))
+        sleepy = sleepfor(sleep_s)
 
-    return content + '\n' + sleepy
-
+        return True, content + '\n' + sleepy
+    except Exception as e:
+        s = ('Caught {} while working.\n\n{}'
+             .format(repr(e), traceback.format_exc()))
+        return False, s
 
 # for LRU's circular DLL
 _PREV, _NEXT, _KEY = 0, 1, 2
@@ -217,8 +223,9 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
             # get cached content
             cached = type(self).the_cache.lookup(args)
             if cached is None:
-                cached = type(self).the_pool.apply(do_work, (path, *args))
-                type(self).the_cache.update(args, cached)
+                success, cached = type(self).the_pool.apply(do_work, (path, *args))
+                if success:
+                    type(self).the_cache.update(args, cached)
 
             # format stuff
             s = '\n'.join(
@@ -235,7 +242,13 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # also returns the content that would have been sent for these headers
     def send_head(self):
-        content, ctype = self.construct_content()
+        try:
+            content, ctype = self.construct_content()
+        except Exception as e:
+            s = ('Caught {} while preparing content.\n\n{}'
+                 .format(repr(e), traceback.format_exc()))
+            content = webcontent.skeletonize(webcontent.pre(s))
+            ctype = 'text/html'
 
         try:
             if content is None or ctype is None:
@@ -254,6 +267,7 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
 class ThreadedTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
+    daemon_threads = True
 
 
 HOST = 'localhost'
@@ -280,5 +294,9 @@ if __name__ == '__main__':
                 pass
 
             print('stdin closed, stopping.')
+            the_pool.close()
+            print('workers closing...')
+            the_pool.join()
+            print('workers joined successfully.')
             server.shutdown()
             print('goodbye!')

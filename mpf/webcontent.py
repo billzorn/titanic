@@ -19,15 +19,17 @@ with open(skeleton, encoding=webenc, mode='r') as f:
 def pre(s):
     return '<pre>\n' + s.strip() + '\n</pre>'
 
-def skeletonize(s):
-    s = skeleton_indent + s.strip().replace('\n', '\n' + skeleton_indent)
+def skeletonize(s, indent=False):
+    s = s.strip()
+    if indent:
+        s = skeleton_indent + s.replace('\n', '\n' + skeleton_indent)
     return bytes(skeleton_content.format(s), webenc)
 
 def import_page(path):
     if path.endswith('.html'):
         with open(path, encoding=webenc, mode='r') as f:
             s = f.read()
-            return skeletonize(s)
+            return skeletonize(s, indent=True)
     else:
         with open(path, mode='rb') as f:
             data = f.read()
