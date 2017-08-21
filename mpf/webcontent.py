@@ -4,7 +4,6 @@ webenc = 'utf-8'
 skeleton = 'www/skeleton.html'
 skeleton_indent = '    '
 
-
 default_w = 8
 default_p = 24
 default_s = 'pi'
@@ -24,7 +23,8 @@ pages = {
 root_page = 'index'
 web_form = '$form$'
 
-protocols = {'demo', 'json', 'text' 'fmt', 'jfmt'}
+#protocols = {'demo', 'json', 'text', 'fmt', 'jfmt'}
+protocols = {'demo', 'fmt'}
 
 with open(skeleton, encoding=webenc, mode='r') as f:
     skeleton_content = f.read()
@@ -49,6 +49,10 @@ def import_asset(path, formatter):
         return s.strip(), formatter
 
 asset_content = {name : import_asset(path, formatter) for name, (path, formatter,) in assets.items()}
+
+def create_webform(w, p, s):
+    form, _ = asset_content[web_form]
+    return format_webform(form, w, p, s)
 
 def process_assets(s):
     to_replace = re_assets.findall(s)
@@ -77,7 +81,7 @@ def import_page(path):
         return data
 
 def re_prefix(keys):
-    return re.compile(r'/(' + r'|'.join(re.escape(k) for k in keys) + r')(\.html?)?/*')
+    return re.compile(r'/*(' + r'|'.join(re.escape(k) for k in keys) + r')(\.html?)?/*')
 
 page_re = re_prefix(pages.keys())
 empty_re = re.compile(r'/*')

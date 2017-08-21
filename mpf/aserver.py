@@ -3,37 +3,24 @@ from http.server import BaseHTTPRequestHandler, HTTPStatus
 from socketserver import ThreadingMixIn, TCPServer
 
 import os
-import time
 import threading
 import traceback
 import urllib
 import json
 
 import webcontent
+import describefloat
 
-# for testing purposes
-def sleepfor(x):
-    mypid = os.getpid()
-    start = time.time()
-    time.sleep(x)
-    elapsed = time.time() - start
-    return 'elapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
-
-# main work targets for protocols
-
-def do_work(mode, w, p, s):
+# main work process for worker pool
+def do_work(w, p, s, show_format):
     try:
-        sleep_s = 3.0 + int(w) / 1000
-
-        content = ('{} mode:\n  w: {}\n  p: {}\n  s: {}'
-                   .format(repr(mode.upper()), repr(w), repr(p), repr(s)))
-        sleepy = sleepfor(sleep_s)
-
-        return True, content + '\n' + sleepy
+        s = describefloat.explain_all(s, w, p, show_format=show_format)
+        return True, s
     except Exception as e:
         s = ('Caught {} while working.\n\n{}'
              .format(repr(e), traceback.format_exc()))
         return False, s
+
 
 # for LRU's circular DLL
 _PREV, _NEXT, _KEY = 0, 1, 2
@@ -140,7 +127,8 @@ class AsyncCache(object):
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # subclass and overwrite these before using
-    the_cache = None
+    fmt_cache = None
+    demo_cache = None
     the_pool = None
 
     # interface
@@ -219,32 +207,30 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
         # dynamic content protocol
         else:
             args = self.process_args(raw_args)
-            myself = threading.current_thread().name
+            show_format = path in {'fmt', 'jfmt'}
+            the_pool = type(self).the_pool
+
+            if show_format:
+                the_cache = type(self).fmt_cache
+                w, p, s = args
+                kargs = (w, p,)
+            else:
+                the_cache = type(self).demo_cache
+                kargs = args
 
             # get cached content
-            cached = type(self).the_cache.lookup(args)
+            cached = the_cache.lookup(kargs)
             if cached is None:
-                success, cached = type(self).the_pool.apply(do_work, (path, *args))
+                success, cached = the_pool.apply(do_work, (*args, show_format))
                 if success:
-                    type(self).the_cache.update(args, cached)
+                    the_cache.update(kargs, cached)
 
-            # stress test cache serialization
-            cache_json = type(self).the_cache.to_json()
-            type(self).the_cache.reset()
-            type(self).the_cache.from_json(cache_json)
+            # construct page
+            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(*args))
+            body.replace('\n', '\n' + webcontent.skeleton_indent)
+            body += '\n\n' + webcontent.pre(cached)
 
-            # format stuff
-            s = '\n'.join(
-                ('using {}'.format(repr(myself)),
-                 repr(path),
-                 *('  {} : {}'.format(repr(k), repr(v)) for k, v in raw_args.items()),
-                 '',
-                 cached,
-                 '',
-                 type(self).the_cache.to_json(),)
-                )
-
-            return webcontent.skeletonize(webcontent.pre(s)), 'text/html'
+            return webcontent.skeletonize(body), 'text/html'
 
     # also returns the content that would have been sent for these headers
     def send_head(self):
@@ -279,20 +265,23 @@ class ThreadedTCPServer(ThreadingMixIn, TCPServer):
 HOST = 'localhost'
 PORT = 8000
 
-cache_size = 10000
+fmt_cache_size = 1000
+demo_cache_size = 10000
 ncores = os.cpu_count()
 pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
 
 if __name__ == '__main__':
     import sys
 
-    the_cache = AsyncCache(cache_size)
+    fmt_cache = AsyncCache(fmt_cache_size)
+    demo_cache = AsyncCache(demo_cache_size)
     with Pool(pool_size) as the_pool:
         class MyHTTPRequestHandler(AsyncHTTPRequestHandler):
-            the_cache = the_cache
+            fmt_cache = fmt_cache
+            demo_cache = demo_cache
             the_pool = the_pool
 
-            print('caching {:d} requests'.format(cache_size))
+            print('caching {:d} fmt, {:d} demo'.format(fmt_cache_size, demo_cache_size))
             print('{:d} worker processes'.format(pool_size))
 
         with ThreadedTCPServer((HOST, PORT,), MyHTTPRequestHandler) as server:
