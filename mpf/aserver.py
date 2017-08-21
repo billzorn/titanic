@@ -17,7 +17,6 @@ def sleepfor(x):
     start = time.time()
     time.sleep(x)
     elapsed = time.time() - start
-    assert False
     return 'elapsed {:2f}s on pid {:d}'.format(elapsed, mypid)
 
 # main work targets for protocols
@@ -229,6 +228,11 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
                 if success:
                     type(self).the_cache.update(args, cached)
 
+            # stress test cache serialization
+            cache_json = type(self).the_cache.to_json()
+            type(self).the_cache.reset()
+            type(self).the_cache.from_json(cache_json)
+
             # format stuff
             s = '\n'.join(
                 ('using {}'.format(repr(myself)),
@@ -275,14 +279,21 @@ class ThreadedTCPServer(ThreadingMixIn, TCPServer):
 HOST = 'localhost'
 PORT = 8000
 
+cache_size = 10000
+ncores = os.cpu_count()
+pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
+
 if __name__ == '__main__':
     import sys
 
-    the_cache = AsyncCache(3)
-    with Pool(2) as the_pool:
+    the_cache = AsyncCache(cache_size)
+    with Pool(pool_size) as the_pool:
         class MyHTTPRequestHandler(AsyncHTTPRequestHandler):
             the_cache = the_cache
             the_pool = the_pool
+
+            print('caching {:d} requests'.format(cache_size))
+            print('{:d} worker processes'.format(pool_size))
 
         with ThreadedTCPServer((HOST, PORT,), MyHTTPRequestHandler) as server:
             server_thread = threading.Thread(target=server.serve_forever)
