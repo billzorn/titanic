@@ -30,10 +30,10 @@ def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
     else:
         return isapprox, conv.approx_str + spacer + R_approx[1:]
 
-def summarize_with(R, prec = conv.default_prec, spacer = ' '):
-    is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer)
+def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' '):
+    is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer1)
     if is_approx:
-        return R_approx + spacer + '=' + spacer + conv.real_to_string(R, prec=prec, exact=True)
+        return R_approx + spacer2 + '=' + spacer2 + conv.real_to_string(R, prec=prec, exact=True)
     else:
         return R_approx
 
@@ -57,6 +57,32 @@ topo = u'\u2564'
 boto = u'\u2567'
 vert = u'\u2502'
 tic = u'\u253c'
+bullet = u'\u2022'
+
+def vertical_nl_line(R, tag, s, pri):
+    return tag + s
+
+def vertical_nl_combine(line1, line2):
+    R1, tag1, s1, pri1 = line1
+    R2, tag2, s2, pri2 = line2
+
+    if len(tag1.strip()) > 0:
+        if len(tag2.strip()) > 0:
+            tag = tag1.rstrip() + ' = ' + tag2.lstrip()
+        else:
+            tag = tag1
+    else:
+        tag = tag2
+
+    if pri1 > pri2:
+        R = R1
+        s = s1
+        pri = pri1
+    else:
+        R = R2
+        s = s2
+        pri = pri2
+    return R, tag, s, pri
 
 def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
                                ltop = topc, rtop = topc, lbot = botc, rbot = botc):
@@ -133,24 +159,28 @@ def unicode_horizontal_nl(left, R, right, width,
 
     if left == R:
         left_label = note + conv.real_to_string(R, exact=True)
+        len_left_label = len(left_label)
         mid_at_left = True
     else:
         left_label = conv.real_to_string(left, prec=prec, exact=False)
+        len_left_label = len(left_label)
         if link_left:
             left_label = weblink(left_label, Sl, El, Tl)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if right == R:
         right_label = note + conv.real_to_string(R, exact=True)
+        len_right_label = len(right_label)
         mid_at_left = False
     else:
         right_label = conv.real_to_string(right, prec=prec, exact=False)
+        len_right_label = len(right_label)
         if link_right:
             right_label = weblink(right_label, Sr, Er, Tr)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if mid_at_left is not None:
-        right_label_offset = max(0, width - len(right_label))
+        right_label_offset = max(0, width - len_right_label)
         nl = leftc + hori*(width-2) + rightc
         if mid_at_left:
             return left_label + '\n' + darrow + '\n' + nl + '\n' + ' '*right_label_offset + right_label
@@ -159,14 +189,14 @@ def unicode_horizontal_nl(left, R, right, width,
     else:
         nl = leftc + hori*int_offset + tic + hori*(width-3-int_offset) + rightc
         mid_label_offset = int_offset + 1
-        if len(left_label) + 2 < mid_label_offset:
-            right_label_offset = max(0, width - len(right_label))
+        if len_left_label + 2 < mid_label_offset:
+            right_label_offset = max(0, width - len_right_label)
             return (' '*mid_label_offset + mid_label + '\n' +
-                    left_label + ' '*(mid_label_offset-len(left_label)) + darrow + '\n'
+                    left_label + ' '*(mid_label_offset-len_left_label) + darrow + '\n'
                     + nl + '\n'
                     + ' '*right_label_offset + right_label)
         else:
-            right_label_offset = max(1, width - mid_label_offset - 1 - len(right_label))
+            right_label_offset = max(1, width - mid_label_offset - 1 - len_right_label)
             return (' '*mid_label_offset + mid_label + '\n' +
                     ' '*mid_label_offset + darrow + ' '*right_label_offset + right_label + '\n'
                     + nl + '\n'
@@ -482,14 +512,19 @@ def explain_format(d):
     return s
 
 def explain_rm(d):
+    prec = d['prec']
     if 'R' in d:
         R = d['R']
+        R_label = ' R '
+        R_spacer = ' '
     else:
         R = d['R_center']
-    _, R_approx = approx_or_exact(R, 12)
+        R_label = ' '
+        R_spacer = ''
+    _, R_approx = approx_or_exact(R, prec+1)
 
     s = 'rounding envelope for {} around R{}:\n'.format(ieee_rm_names[d['rm']], R_approx)
-    s += '{:d} digit(s) of decimal precision required to round-trip\n'.format(d['prec'])
+    s += '{:d} digit(s) of decimal precision required to round-trip\n'.format(prec)
 
     # well this is fun
     lower = d['lower']
@@ -523,127 +558,90 @@ def explain_rm(d):
     else:
         envbot = boto
 
-    fuse_upper = upper == R_center
-    fuse_lower = lower == R_center
+    w = E.n
+    p = T.n + 1
 
-    lines = []
+    Sp, Ep, Tp = core.ordinal_to_implicit(i_prev, w, p)
+    if R_prev.iszero and R_prev.sign == -1:
+        Sp = BV(1, 1)
+    Sn, En, Tn = core.ordinal_to_implicit(i_next, w, p)
+    if R_next.iszero and R_next.sign == -1:
+        Sn = BV(1, 1)
 
-    # next and top of envelope
-    if R_next == upper:
-        start_idx = 0
-        lines.append(' next = upper ' + summarize_with(R_next, 8))
-    else:
+    # left number line:
+    # - next
+    # - upper (could be =next =center)
+    # - center (could be =upper or =lower)
+    # - lower (could be =center or =prev)
+    # - prev
+    lnl = [
+        (R_next,   ' ', weblink(summarize_with(R_next, prec+1, spacer1=''), Sn, En, Tn), 1,),
+        (upper,    ' ', summarize_with(upper, prec+1, spacer1=''),                       0,),
+        (R_center, ' ', weblink(summarize_with(R_center, prec+1, spacer1=''), S, E, T),  1,),
+        (lower,    ' ', summarize_with(lower, prec+1, spacer1=''),                       0,),
+        (R_prev,   ' ', weblink(summarize_with(R_prev, prec+1, spacer1=''), Sp, Ep, Tp), 1,),
+    ]
+
+    # right number line: (could all be equal, R could be anywhere in this ordering)
+    # - highest
+    # - midhi
+    # - midlo
+    # - lowest
+    #   ?? R
+    rnl = [(R, R_label, summarize_with(R, prec+1, spacer1=R_spacer), 2,),]
+    # trim identical decimal tags using (hopefully) fast integer compare
+    old_c = None
+    for c in (midhi, midlo, lowest,):
+        if old_c is None or c != old_c:
+            old_c = c
+            R_c = FReal(c) * (FReal(10)**e)
+            if c == midhi or c == midlo:
+                tag = bullet
+            else:
+                tag = ' '
+            rnl.append((R_c, tag, conv.pow10_to_str(c, e), 1,))
+
+    # special cases for top and bottom
+    if R_next > upper:
         start_idx = 2
-        lines.append(' next ' + summarize_with(R_next, 8))
-        lines.append('')
-        if not fuse_upper:
-            lines.append(' upper ' + summarize_with(upper, 8))
-
-    # i don't think this can actually go here...
-    if highest != midhi:
-        lines.append(' ' + conv.pow10_to_str(highest, e))
-
-    # midhi, R_center, R, midlo, in some order
-    if fuse_upper:
-        R_center_str = 'upper = F'
-    elif fuse_lower:
-        R_center_str = 'lower = F'
+        lines = [vertical_nl_line(*lnl[0]), '',]
+        lnl[:] = lnl[1:]
     else:
-        R_center_str = 'F'
+        start_idx = 0
+        lines = []
 
-    # only one decimal to worry about, but we don't know where it is
-    if midlo == midhi:
-        R_mid = FReal(midlo) * (FReal(10)**e)
+    if R_prev < lower:
+        post_lines = ['', vertical_nl_line(*lnl[-1]),]
+        lnl[:] = lnl[:-1]
+    else:
+        post_lines = []
 
-        # centered
-        if R == R_center:
-            if R > R_mid:
-                lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' = R ' + summarize_with(R, 8))
-                lines.append(' ' + conv.pow10_to_str(midlo, e))
-            # exact equality!
-            elif R == R_mid:
-                lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' = R = ' + conv.pow10_to_str(midlo, e))
-            else: # R_mid > R
-                lines.append(' ' + conv.pow10_to_str(midlo, e))
-                lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' = R ' + summarize_with(R, 8))
-
-        # not centered R != R_center
+    # sort
+    protos = sorted(lnl + rnl, key=operator.itemgetter(0), reverse=True)
+    # dedup and append
+    lmid_idx = None
+    old_proto = None
+    for proto in protos:
+        if old_proto is None:
+            old_proto = proto
         else:
-            if R == R_mid:
-                if R > R_center:
-                    lines.append(' R = ' + conv.pow10_to_str(midlo, e))
-                    lmid_idx = len(lines)
-                    lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
-                else:
-                    lmid_idx = len(lines)
-                    lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
-                    lines.append(' R = ' + conv.pow10_to_str(midlo, e))
-            elif R_center == R_mid:
-                if R > R_center:
-                    lines.append(' R ' + summarize_with(R, 8))
-                    lmid_idx = len(lines)
-                    lines.append(' ' + R_center_str + ' = ' + conv.pow10_to_str(midlo, e))
-                else:
-                    lmid_idx = len(lines)
-                    lines.append(' ' + R_center_str + ' = ' + conv.pow10_to_str(midlo, e))
-                    lines.append(' R ' + summarize_with(R, 8))
+            Ro, _, _, _ = old_proto
+            R, _, _, _ = proto
+            if R == Ro:
+                old_proto = vertical_nl_combine(old_proto, proto)
             else:
-                # 3 numbers, sort
-                order = [
-                    (R, ' R ' + summarize_with(R, 8), False,),
-                    (R_center, ' ' + R_center_str + ' ' + summarize_with(R_center, 8), True,),
-                    (R_mid, ' ' + conv.pow10_to_str(midlo, e), False,),
-                ]
-                for _, line, lmid in sorted(order, key=operator.itemgetter(0), reverse=True):
-                    if lmid:
-                        lmid_idx = len(lines)
-                    lines.append(line)
-
-    # we know midhi > R > midlo, so we just need to figure out where to stick R_center in there
-    else:
-        order = [
-            (FReal(midhi) * (FReal(10)**e), ' ' + conv.pow10_to_str(midhi, e),),
-            (R, ' R ' + summarize_with(R, 8),),
-            (FReal(midlo) * (FReal(10)**e), ' ' + conv.pow10_to_str(midlo, e),),
-        ]
-        needs_center = True
-        for R_current, line in order:
-            if R_center > R_current:
-                lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
-                needs_center = False
-                lines.append(line)
-            elif R_center == R_current:
-                lmid_idx = len(lines)
-                lines.append(' ' + R_center_str + ' =' + line)
-                needs_center = False
-            else:
-                lines.append(line)
-        if needs_center:
+                if Ro == R_center:
+                    lmid_idx = len(lines)
+                lines.append(vertical_nl_line(*old_proto))
+                old_proto = proto
+    if old_proto is not None:
+        Ro, _, _, _ = old_proto
+        if Ro == R_center:
             lmid_idx = len(lines)
-            lines.append(' ' + R_center_str + ' ' + summarize_with(R_center, 8))
+        lines.append(vertical_nl_line(*old_proto))
 
-    # nor can this...
-    if lowest != midlo:
-        lines.append(' ' + conv.pow10_to_str(lowest, e))
-
-        # really we need to do something clever where we sort and dedup
-
-    # prev and bottom of envelope
-    if R_prev == lower:
-        end_idx = len(lines)
-        lines.append(' prev = lower ' + summarize_with(R_prev, 8))
-    else:
-        if fuse_lower:
-            end_idx = lmid_idx
-        else:
-            end_idx = len(lines)
-            lines.append(' lower ' + summarize_with(lower, 8))
-        lines.append('')
-        lines.append(' prev ' + summarize_with(R_prev, 8))
+    end_idx = len(lines) - 1
+    lines.extend(post_lines)
 
     s += unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx=lmid_idx,
                                     rtop=envtop, rbot=envbot)
