@@ -30,8 +30,8 @@ def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
     else:
         return isapprox, conv.approx_str + spacer + R_approx[1:]
 
-def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' '):
-    is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer1)
+def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' ', exact_str = '='):
+    is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer1, exact_str=exact_str)
     if is_approx:
         return R_approx + spacer2 + '=' + spacer2 + conv.real_to_string(R, prec=prec, exact=True)
     else:
@@ -59,30 +59,43 @@ vert = u'\u2502'
 tic = u'\u253c'
 bullet = u'\u2022'
 
-def vertical_nl_line(R, tag, s, pri):
-    return tag + s
+def vertical_nl_line(R, tag, name, s, pri):
+    if len(tag) == 0:
+        tag = ' '
+    else:
+        tag = tag[0]
+    return tag + name + s
 
 def vertical_nl_combine(line1, line2):
-    R1, tag1, s1, pri1 = line1
-    R2, tag2, s2, pri2 = line2
+    R1, tag1, name1, s1, pri1 = line1
+    R2, tag2, name2, s2, pri2 = line2
 
-    if len(tag1.strip()) > 0:
-        if len(tag2.strip()) > 0:
-            tag = tag1.rstrip() + ' = ' + tag2.lstrip()
+    if len(name1) > 0:
+        if len(name2) > 0:
+            name = name1 + ' = ' + name2
         else:
-            tag = tag1
+            name = name1
     else:
-        tag = tag2
+        name = name2
 
     if pri1 > pri2:
+        if len(tag1) > 0:
+            tag = tag1
+        else:
+            tag = tag2
         R = R1
         s = s1
         pri = pri1
     else:
+        if len(tag2) > 0:
+            tag = tag2
+        else:
+            tag = tag1
         R = R2
         s = s2
         pri = pri2
-    return R, tag, s, pri
+
+    return R, tag, name, s, pri
 
 def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
                                ltop = topc, rtop = topc, lbot = botc, rbot = botc):
@@ -515,12 +528,14 @@ def explain_rm(d):
     prec = d['prec']
     if 'R' in d:
         R = d['R']
-        R_label = ' R '
+        R_label = 'R'
         R_spacer = ' '
+        R_exact = '='
     else:
         R = d['R_center']
-        R_label = ' '
+        R_label = ''
         R_spacer = ''
+        R_exact = ''
     _, R_approx = approx_or_exact(R, prec+1)
 
     s = 'rounding envelope for {} around R{}:\n'.format(ieee_rm_names[d['rm']], R_approx)
@@ -575,11 +590,11 @@ def explain_rm(d):
     # - lower (could be =center or =prev)
     # - prev
     lnl = [
-        (R_next,   ' ', weblink(summarize_with(R_next, prec+1, spacer1=''), Sn, En, Tn), 1,),
-        (upper,    ' ', summarize_with(upper, prec+1, spacer1=''),                       0,),
-        (R_center, ' ', weblink(summarize_with(R_center, prec+1, spacer1=''), S, E, T),  1,),
-        (lower,    ' ', summarize_with(lower, prec+1, spacer1=''),                       0,),
-        (R_prev,   ' ', weblink(summarize_with(R_prev, prec+1, spacer1=''), Sp, Ep, Tp), 1,),
+        (R_next,   '', '', weblink(summarize_with(R_next, prec+1, spacer1='', exact_str=''), Sn, En, Tn), 1,),
+        (upper,    '', '', summarize_with(upper, prec+1, spacer1='', exact_str=''),                       0,),
+        (R_center, '', '', weblink(summarize_with(R_center, prec+1, spacer1='', exact_str=''), S, E, T),  1,),
+        (lower,    '', '', summarize_with(lower, prec+1, spacer1='', exact_str=''),                       0,),
+        (R_prev,   '', '', weblink(summarize_with(R_prev, prec+1, spacer1='', exact_str=''), Sp, Ep, Tp), 1,),
     ]
 
     # right number line: (could all be equal, R could be anywhere in this ordering)
@@ -588,7 +603,7 @@ def explain_rm(d):
     # - midlo
     # - lowest
     #   ?? R
-    rnl = [(R, R_label, summarize_with(R, prec+1, spacer1=R_spacer), 2,),]
+    rnl = [(R, '', R_label + R_spacer, summarize_with(R, prec+1, spacer1=R_spacer, exact_str=R_exact), 2,),]
     # trim identical decimal tags using (hopefully) fast integer compare
     old_c = None
     for c in (midhi, midlo, lowest,):
@@ -598,8 +613,8 @@ def explain_rm(d):
             if c == midhi or c == midlo:
                 tag = bullet
             else:
-                tag = ' '
-            rnl.append((R_c, tag, conv.pow10_to_str(c, e), 1,))
+                tag = ''
+            rnl.append((R_c, tag, '', conv.pow10_to_str(c, e), 0,))
 
     # special cases for top and bottom
     if R_next > upper:
@@ -625,8 +640,8 @@ def explain_rm(d):
         if old_proto is None:
             old_proto = proto
         else:
-            Ro, _, _, _ = old_proto
-            R, _, _, _ = proto
+            Ro, _, _, _, _ = old_proto
+            R, _, _, _, _ = proto
             if R == Ro:
                 old_proto = vertical_nl_combine(old_proto, proto)
             else:
@@ -635,7 +650,7 @@ def explain_rm(d):
                 lines.append(vertical_nl_line(*old_proto))
                 old_proto = proto
     if old_proto is not None:
-        Ro, _, _, _ = old_proto
+        Ro, _, _, _, _ = old_proto
         if Ro == R_center:
             lmid_idx = len(lines)
         lines.append(vertical_nl_line(*old_proto))
