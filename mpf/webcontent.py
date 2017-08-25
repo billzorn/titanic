@@ -19,6 +19,7 @@ pages = {
     'index' : ('www/index.html', 'text/html',),
     'about' : ('www/about.html', 'text/html',),
     'favicon.ico' : ('www/favicon.ico', 'image/x-icon',),
+    'piceberg.png' : ('www/piceberg.png', 'image/png',),
 }
 root_page = 'index'
 web_form = '$form$'
