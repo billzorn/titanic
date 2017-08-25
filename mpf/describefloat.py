@@ -606,7 +606,7 @@ def explain_rm(d):
     rnl = [(R, '', R_label + R_spacer, summarize_with(R, prec+1, spacer1=R_spacer, exact_str=R_exact), 2,),]
     # trim identical decimal tags using (hopefully) fast integer compare
     old_c = None
-    for c in (midhi, midlo, lowest,):
+    for c in (highest, midhi, midlo, lowest,):
         if old_c is None or c != old_c:
             old_c = c
             R_c = FReal(c) * (FReal(10)**e)
