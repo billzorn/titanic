@@ -261,30 +261,40 @@ class ThreadedTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-
-HOST = 'localhost'
-PORT = 8000
-
-fmt_cache_size = 1000
-demo_cache_size = 10000
+    
 ncores = os.cpu_count()
-pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
+default_pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
 
 if __name__ == '__main__':
     import sys
+    import argparse
 
-    fmt_cache = AsyncCache(fmt_cache_size)
-    demo_cache = AsyncCache(demo_cache_size)
-    with Pool(pool_size) as the_pool:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--demo_cache', type=int, default=10000,
+                        help='number of demos to cache')
+    parser.add_argument('--fmt_cache', type=int, default=1000,
+                        help='number formats to cache')
+    parser.add_argument('--workers', type=int, default=default_pool_size,
+                        help='number of worker processes to run in parallel')
+
+    parser.add_argument('--host', type=str, default='localhost',
+                        help='server host')
+    parser.add_argument('--port', type=int, default=8000,
+                        help='server port')
+    args = parser.parse_args()
+    
+    fmt_cache = AsyncCache(args.fmt_cache)
+    demo_cache = AsyncCache(args.demo_cache)
+    with Pool(args.workers, maxtasksperchild=100) as the_pool:
         class MyHTTPRequestHandler(AsyncHTTPRequestHandler):
             fmt_cache = fmt_cache
             demo_cache = demo_cache
             the_pool = the_pool
 
-            print('caching {:d} fmt, {:d} demo'.format(fmt_cache_size, demo_cache_size))
-            print('{:d} worker processes'.format(pool_size))
+            print('caching {:d} fmt, {:d} demo'.format(args.fmt_cache, args.demo_cache))
+            print('{:d} worker processes'.format(args.workers))
 
-        with ThreadedTCPServer((HOST, PORT,), MyHTTPRequestHandler) as server:
+        with ThreadedTCPServer((args.host, args.port,), MyHTTPRequestHandler) as server:
             server_thread = threading.Thread(target=server.serve_forever)
             server_thread.daemon = True
             server_thread.start()
