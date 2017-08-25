@@ -660,6 +660,27 @@ def quantize_dec(c, e, n, intrem = 0):
         else:
             return c_floor, c_floor + 1, c_floor + 1, e_prime
 
+# rescale c to fit a desired exponent, if possible
+def force_exponent(c, e_orig, e_target):
+    assert isinstance(c, int)
+    assert isinstance(e_orig, int)
+    assert isinstance(e_orig, int)
+
+    e = e_orig
+
+    while e > e_target:
+        e = e - 1
+        c = c * 10
+
+    while e < e_target:
+        if c % 10 == 0:
+            e = e + 1
+            c = c // 10
+        else:
+            return None, None
+
+    return c, e
+
 # Find the shortest prefix of (c*(10**e)) + (epsilon<<1)*intrem) that fits in
 # the envelope defined by lower, lower_inclusive, upper, upper_inclusive.
 # If round_correctly is True, then ensure this prefix is correctly rounded,
@@ -833,24 +854,36 @@ def binsearch_shortest_dec(c, e, intrem,
         c_lowest = None
     else:
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c_lower, e_lower, prec)
+        c_hi, e_prime = force_exponent(c_hi, e_prime, e_final)
+        assert c_hi is not None and e_prime is not None and e_prime == e_final
+        # does this always work? Or do we have to handle a case where the exponent can't be forced?
+
         R_hi = FReal(c_hi)*(FReal(10)**e_prime)
         if lower < R_hi or (lower_inclusive and lower == R_hi):
             c_lowest = c_hi
         else:
+            R_hi = FReal(c_hi+1)*(FReal(10)**e_prime)
+            assert lower < R_hi or (lower_inclusive and lower == R_hi)
+            # does this always work?
             c_lowest = c_hi + 1
-            # proof that this is ok?
 
     c_upper, e_upper = real_to_pow10(upper)
     if c_upper is None or e_upper is None:
         c_highest = None
     else:
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c_upper, e_upper, prec)
+        c_lo, e_prime = force_exponent(c_lo, e_prime, e_final)
+        assert c_lo is not None and e_prime is not None and e_prime == e_final
+        # does this always work? Or do we have to handle a case where the exponent can't be forced?
+
         R_lo = FReal(c_lo)*(FReal(10)**e_prime)
         if R_lo < upper or (upper_inclusive and R_lo == upper):
             c_highest = c_lo
         else:
+            R_lo = FReal(c_lo-1)*(FReal(10)**e_prime)
+            assert R_lo < upper or (upper_inclusive and R_lo == upper)
+            # does this always work?
             c_highest = c_lo - 1
-            # proof that this is ok?
 
     return prec, c_lowest, c_midlo, c_midhi, c_highest, e_final
 
