@@ -692,7 +692,7 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
     s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=', mirror=mirror)
     return s
 
-def explain_float(d, summary_length = 12):
+def explain_float(d):
 
     w = d['w']
     p = d['p']
@@ -718,17 +718,18 @@ def explain_float(d, summary_length = 12):
     s += 'real value:\n'
     if R.isnan:
         s += '  {} (with payload: {})\n\n'.format(conv.real_to_pretty_string(R),
-                                                    conv.real_to_string(R, show_payload=True))
+                                                  conv.real_to_string(R, show_payload=True))
     elif R.isinf:
         s += '  {} ( {} )\n\n'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
         s += '  ' + conv.real_to_string(R) + '\n\n'
     else:
+        prec = conv.bdb_round_trip_prec(p) + 1
         s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
-        summary_is_approx, R_summary = approx_or_exact(R, prec=summary_length, spacer=' ')
+        summary_is_approx, R_summary = approx_or_exact(R, prec=prec, spacer=' ')
         if summary_is_approx:
-            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=summary_length, exact=True) + '\n'
+            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=prec, exact=True) + '\n'
             s += '  = ' + str(R)
         else:
             s += '  ' + R_summary
@@ -768,14 +769,16 @@ def explain_real(d):
         diff_below = d['difference_below']
         diff_above = d['difference_above']
 
+        prec = conv.bdb_round_trip_prec(p) + 1
+
         s = 'nearby floating point values:\n'
         #s += '  ordinal ' + strlink(str(i_above), '0i' + str(i_above), w, p) + '\n'
         s += '  ordinal ' + str(i_above) + '\n'
-        s += '       above ' + summarize_with(R_above, 8) + '\n'
-        s += '  difference ' + summarize_with(diff_above, 8) + '\n'
-        s += '           R ' + summarize_with(R, 8) + '\n'
-        s += '  difference ' + summarize_with(diff_below, 8) + '\n'
-        s += '       below ' + summarize_with(R_below, 8) + '\n'
+        s += '       above ' + summarize_with(R_above, prec) + '\n'
+        s += '  difference ' + summarize_with(diff_above, prec) + '\n'
+        s += '           R ' + summarize_with(R, prec) + '\n'
+        s += '  difference ' + summarize_with(diff_below, prec) + '\n'
+        s += '       below ' + summarize_with(R_below, prec) + '\n'
         #s += '  ordinal ' + strlink(str(i_below), '0i' + str(i_below), w, p) + '\n\n'
         s += '  ordinal ' + str(i_below) + '\n\n'
 
@@ -796,7 +799,7 @@ def explain_real(d):
         RSET_below = (R_below, Sb, Eb, Tb,)
         RSET_above = (R_above, Sa, Ea, Ta,)
 
-        s += unicode_horizontal_nl(RSET_below, R, RSET_above, 100, note='R=')
+        s += unicode_horizontal_nl(RSET_below, R, RSET_above, 100, note='R=', prec=prec)
 
         # rounding envelopes
         if 'rounding_info' in d:

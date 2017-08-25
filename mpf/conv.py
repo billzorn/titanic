@@ -441,8 +441,21 @@ def prec_of(c, e = None):
         else:
             return max(prec, 1 - e)
 
+# slow, destroys information, useful for consistent printing
+def simplify_exponent(c, e):
+    assert isinstance(c, int)
+    assert isinstance(e, int)
+
+    while c % 10 == 0 and c != 0:
+        c = c // 10
+        e = e + 1
+
+    return c, e
+
 # abuse precision as a heuristic for determining the "most readable" form
-def pow10_to_str(c, e):
+def pow10_to_str(c, e, simplify = True):
+    if simplify:
+        c, e = simplify_exponent(c, e)
     sprec = prec_of(c, e)
     eprec = prec_of(c)
     if sprec <= eprec + bonus_prec:
