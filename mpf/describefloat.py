@@ -610,7 +610,7 @@ def explain_rm(d):
     # trim identical decimal tags using (hopefully) fast integer compare
     old_c = None
     for c in (highest, midhi, midlo, lowest,):
-        if old_c is None or c != old_c:
+        if (old_c is None or c != old_c) and c is not None:
             old_c = c
             R_c = FReal(c) * (FReal(10)**e)
             if c == midhi or c == midlo:
