@@ -28,10 +28,10 @@ ieee_rm_names = {
 def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
     R_approx = conv.real_to_string(R, prec=prec, exact=False)
     isapprox = R_approx.startswith(conv.approx_str)
-    if not isapprox:
-        return isapprox, exact_str + spacer + R_approx
-    else:
+    if isapprox:
         return isapprox, conv.approx_str + spacer + R_approx[1:]
+    else:
+        return isapprox, exact_str + spacer + R_approx
 
 def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' ', exact_str = '='):
     is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer1, exact_str=exact_str)

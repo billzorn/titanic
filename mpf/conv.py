@@ -398,6 +398,7 @@ def pow10_to_e_str(c, e):
         return sign_str + s[:1] + '.' + s[1:] + 'e' + esign_str + str(e3)
 
 default_prec = 12
+bonus_prec = 4
 approx_str = u'\u2248'
 dec_re = re.compile(r'[-+]?([0-9]+)\.?([0-9]*)([eE][-+]?[0-9]+)?')
 
@@ -444,7 +445,7 @@ def prec_of(c, e = None):
 def pow10_to_str(c, e):
     sprec = prec_of(c, e)
     eprec = prec_of(c)
-    if sprec <= eprec + 3:
+    if sprec <= eprec + bonus_prec:
         return pow10_to_f_str(c, e)
     else:
         return pow10_to_e_str(c, e)
@@ -493,11 +494,12 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
                 # truncate with evalf.
                 sprec = prec_of(c, e)
                 eprec = prec_of(c)
-                if sprec <= prec:
+                if sprec <= prec + bonus_prec:
                     return pow10_to_f_str(c, e)
                 elif eprec <= prec:
                     return pow10_to_e_str(c, e)
                 else:
+                    # TODO: should this use quantize_dec?
                     return approx_str + str(R.numeric_value(prec, abort_incomparables=False))
 
 # Produce a unicode rendering with sympy.pretty. This is probably
