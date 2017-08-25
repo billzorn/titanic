@@ -7,12 +7,15 @@ import conv
 
 import operator
 
+def strlink(s, s_link, w, p):
+    href = '"/demo?s={}&w={:d}&p={:d}"'.format(s_link, w, p)
+    return '<a href={}>{}</a>'.format(href, s)
+
 def weblink(s, S, E, T):
     w = E.n
     p = T.n + 1
     Bs = str(core.implicit_to_packed(S, E, T))
-    href = '"/demo?s={}&w={:d}&p={:d}"'.format(Bs, w, p)
-    return '<a href={}>{}</a>'.format(href, s)
+    return strlink(s, Bs, w, p)
 
 ieee_rm_names = {
     core.RTN : 'roundTowardNegative',
@@ -696,7 +699,9 @@ def explain_float(d, summary_length = 12):
     R = d['R']
 
     s = 'floating point representation:\n'
-    s += unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']) + '\n\n'
+    s += '  '
+    s += unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']).replace('\n', '\n  ')
+    s += '\n\n'
 
     s += 'IEEE 754 binary representation:\n'
     B = d['B']
@@ -764,12 +769,14 @@ def explain_real(d):
         diff_above = d['difference_above']
 
         s = 'nearby floating point values:\n'
+        #s += '  ordinal ' + strlink(str(i_above), '0i' + str(i_above), w, p) + '\n'
         s += '  ordinal ' + str(i_above) + '\n'
         s += '       above ' + summarize_with(R_above, 8) + '\n'
         s += '  difference ' + summarize_with(diff_above, 8) + '\n'
         s += '           R ' + summarize_with(R, 8) + '\n'
         s += '  difference ' + summarize_with(diff_below, 8) + '\n'
         s += '       below ' + summarize_with(R_below, 8) + '\n'
+        #s += '  ordinal ' + strlink(str(i_below), '0i' + str(i_below), w, p) + '\n\n'
         s += '  ordinal ' + str(i_below) + '\n\n'
 
         if diff_above < diff_below:
