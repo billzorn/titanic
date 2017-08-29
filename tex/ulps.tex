@@ -3,7 +3,7 @@
 \usepackage{amsmath}
 \usepackage{tikz}
 
-\title{Reals, Bitvectors, Ordinals, and Ulps:\\a bit about floating point representations}
+\title{Reals, Bitvectors, Ordinals, and Ulps:\\a complete formalization for \emph{Titanic}}
 \author{Bill Zorn}
 
 \begin{document}
@@ -13,6 +13,13 @@
 \begin{abstract}
  Floating point number representations are complicated; we seek to provide a crisp definition of the terms in the title and the relationships between them. Traditionally, floating point numbers are thought of as representing the values of real numbers. In some situations, we find that it makes more sense to impose an ordering on them and treat them like signed integer ordinals, for example when computing units in the last place difference (ulps), or the Posix \texttt{nextafter()} function. We formalize the mathematical underpinnings of these relationships as operations on bitvectors.
 \end{abstract}
+
+\begin{center}
+ \huge \color{red} Work In Progress:
+
+\large This vessel is not yet seaworthy.
+\normalsize \normalcolor
+\end{center}
 
 \section{Introduction}
 
@@ -330,6 +337,26 @@ Ordering is much harder to compute for the explicit representation. Because of t
  % validated by a sat solver, here's a box with the requirements
  \item table of useful constants (1, tiny, umax, etc.)
 \end{itemize}
+
+\section{From reals to bitvectors}
+
+\begin{itemize}
+ \item theory - binsearch!
+ \item algorithm
+ \item this gets us within 1 ulp, but doesn't tell us which direction to round
+ \item IEEE rounding modes, algorithm, discussion
+\end{itemize}
+
+\section{Conclusion}
+
+\begin{itemize}
+ \item We have specified, in math, how to convert back and forth between the members of the set of any IEEE representation and real numbers.
+ \item The integer properties of FP numbers are critical to the conversion back from reals, and allow us to consider other useful properties like ulps.
+ \item If we have a theory of real arithmetic that we can compute over (and that meets a few other requirements) then we automatically get, for free, a specification of how arithmetic works for IEEE 754 floating point.
+ \item Spec is ``infinite precision,'' and the kinds of functions it describes are only limited by the RA theory - could g beyound the required, or even suggested, math functions in the IEEE standard.
+\end{itemize}
+
+
 
 \bibliographystyle{ieeetr}
 \bibliography{ref}
