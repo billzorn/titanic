@@ -20,6 +20,8 @@ pages = {
     'about' : ('www/about.html', 'text/html',),
     'favicon.ico' : ('www/favicon.ico', 'image/x-icon',),
     'piceberg.png' : ('www/piceberg.png', 'image/png',),
+    'reals.pdf' : ('www/reals.pdf', 'application/pdf',),
+    'ulps.pdf' : ('www/ulps.pdf', 'application/pdf',),
 }
 root_page = 'index'
 web_form = '$form$'
