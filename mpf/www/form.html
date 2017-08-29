@@ -1,9 +1,22 @@
 <form method="get">
-  <input type="text" name="s" value="{}" maxlength="1024" size="52"
-	 style="font-family:Consolas,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New, monospace;">
-  <button type="submit" formaction="/demo">Float!</button>
-  <br>
-  w (exponent bits): <input type="number" name="w" value="{}" min="2" max="20">
-  p (significand bits, plus one): <input type="number" name="p" value="{}" min="2" max="1024">
-  <button type="submit" formaction="/fmt">View Format</button>
+  <table border="1">
+    <tr>
+      <td style="padding-right:6px;">
+	<input type="text" name="s" value="{}" maxlength="1024"
+	       style="font-family:Consolas,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New,monospace;width:100%">
+      </td>
+      <td>
+	<button type="submit" formaction="/demo" style="width:100%;">Float!</button>
+      </td>
+    </tr>
+    <tr>
+      <td>
+	w (exponent bits): <input type="number" name="w" value="{}" min="2" max="20">
+	p (significand bits, plus one): <input type="number" name="p" value="{}" min="2" max="1024">
+      </td>
+      <td>
+	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>
+      </td>
+    </tr>
+  </table>
 </form>
