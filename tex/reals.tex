@@ -161,6 +161,8 @@ This definition runs into some trouble with NaN. To be faithful to the IEEE 754 
 
 \section{Integer powers}
 
+
+
 An integer power function is necessary to compute the real values of floating point numbers. The implementation should be equivalent to iterated multiplication (and optionally division for negative powers).
 
 More details coming soon!
@@ -170,6 +172,12 @@ More details coming soon!
 An integer root function is useful to complete the mandated ``single-ulp'' correctly rounded operations in the IEEE 754 standard, + - * / and sqrt. This has not yet been implemented for Titanic, as it is not needed to convert between floating point and real numbers.
 
 More details coming soon!
+
+\section{Other operations}
+
+The operations defined as of this document's compilation on \today\; are sufficient to implement the required correctly rounded arithmetic operations of the IEEE 754 standard: addition, subtraction, multiplication, division, squareRoot, and fusedMultiplyAdd. The defined integer powers and roots also implement the corresponding IEEE 754 recommended operations.
+
+Future versions of this document will add other definitions, with the intention of covering all IEEE 754 recommended operations and the common mathematical operations present in the FPCore standard.
 
 %\bibliographystyle{ieeetr}
 %\bibliography{ref}
