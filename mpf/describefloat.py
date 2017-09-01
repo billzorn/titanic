@@ -163,7 +163,10 @@ def unicode_horizontal_nl(left, R, right, width,
     left_offset = (R - left) / span
     # no floor, should be fine for positive
     effw = width-2
-    int_offset = int((left_offset * effw).numeric_value(conv.ndig(effw) + 10))
+    if left_offset.isnan:
+        int_offset = effw
+    else:
+        int_offset = int((left_offset * effw).numeric_value(conv.ndig(effw) + 2))
     int_offset = min(int_offset, width-3)
 
     # more lol

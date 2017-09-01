@@ -189,7 +189,7 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
         try:
             s = str(args['s'])
         except Exception:
-            s = 'the default'
+            s = ''
 
         return w, p, s
 
@@ -261,7 +261,7 @@ class ThreadedTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    
+
 ncores = os.cpu_count()
 default_pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
 
@@ -282,7 +282,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=8000,
                         help='server port')
     args = parser.parse_args()
-    
+
     fmt_cache = AsyncCache(args.fmt_cache)
     demo_cache = AsyncCache(args.demo_cache)
     with Pool(args.workers, maxtasksperchild=100) as the_pool:
