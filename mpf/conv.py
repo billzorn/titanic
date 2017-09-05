@@ -1,4 +1,6 @@
 import sys
+import operator
+import re
 import numpy as np
 import sympy
 
@@ -6,7 +8,6 @@ from bv import BV
 import real
 FReal = real.FReal
 import core
-import re
 
 # work around sympy floor bug:
 def floor_log10(r, maxn = real.default_maxn):
@@ -228,12 +229,60 @@ def str_to_implicit(s, w, p, rm = core.RNE):
     r = FReal(s)
     return core.real_to_implicit(r, w, p, rm)
 
+# convert a decimal representation c * (10**e) == R
+# back to the real number R.
+# there are a few special cases:
+#   if c is None, then this pair is no good (return None)
+#   if e is None, then this number is not real:
+#     if c is 0, then this is some NaN (return FReal(None), payload of nan is not stored)
+#     if c is not 0, then this number is inf (return c * FReal(infinite=True))
+def pow10_to_real(c, e):
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
+
+    if c is None:
+        return None
+    elif e is None:
+        if c == 0:
+            return FReal(None)
+        else:
+            return FReal(c) ** FReal(infinite=True)
+    else:
+        return FReal(c) * (FReal(10) ** e)
+
+# convert a decimal representation with a real-valued remainder c * (10**e) + rem == R
+# back to the real number R.
+# if c, e is no good, return the remainder directly.
+# if the remainder is None, then ignore it.
+# if c * (10**e) is 0, then be clever and return the remainder directly to retain the sign
+# of zero if we can.
+def pow10_rem_to_real(c, e, rem):
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
+    assert isinstance(rem, FReal) or rem is None
+
+    if c is None:
+        return rem
+    else:
+        R = pow10_to_real(c, e)
+        if rem is None:
+            return R
+        elif R is None or R.iszero:
+            return rem
+        else:
+            return R + rem
+
 # Returns integers c an e such that c * (10**e) == R.
 # Note that the sign of zero is destroyed.
 # If no such c and e exist, then returns (None, None)
 def real_to_pow10(R):
     assert isinstance(R, FReal)
-    if not R.isrational:
+
+    if R.isnan:
+        return 0, None
+    elif R.isinf:
+        return R.sign, None
+    elif not R.isrational:
         return None, None
 
     p = R.rational_numerator
@@ -292,21 +341,23 @@ def real_to_pow10(R):
         assert e >= 0
         c = int(p_scaled // (10 ** e))
 
-    assert R == FReal(c) * (FReal(10) ** e)
     return c, e
 
 # Returns an approximate c and e, and remainder rem, such that c*(10**e) + rem == R.
 # c will have exactly n digits.
-# If c and e are exact, then rem will be none.
+# If c and e are exact, then rem will be FReal(0). If R was -0, rem will be FReal(0, negative=True).
+# NaN has a decimal representation but no meaningful remainder, so remainder will be None.
 def real_to_pow10_rem(R, n):
     assert isinstance(R, FReal)
     assert isinstance(n, int)
     assert n >= 1
 
-    if R.isnan or R.isinf:
-        return None, None, R
+    if R.isnan:
+        return 0, None, None
+    elif R.isinf:
+        return R.sign, None, FReal(0)
     elif R.iszero:
-        return 0, 0, None
+        return 0, 0, R
     else:
         f = R.numeric_value(n)
         e_f = floor_log10(f)
@@ -332,30 +383,32 @@ def real_to_pow10_rem(R, n):
         remmid = R - R_approx
         remhi = R - R_hi_approx
 
-        remlo_abs = abs(remlo)
-        remmid_abs = abs(remmid)
-        remhi_abs = abs(remhi)
+        rem_abs, c_e_rem = min(
+            (abs(remlo),  (c_lo, e, remlo,), ),
+            (abs(remmid), (c,    e, remmid,),),
+            (abs(remhi),  (c_hi, e, remhi,), ),
+            key=operator.itemgetter(0))
 
-        if remlo_abs < remmid_abs:
-            if remlo_abs < remhi_abs:
-                return c_lo, e, remlo
-            else:
-                return c_hi, e, remhi
-        else:
-            if remmid_abs < remhi_abs:
-                return c, e, remmid
-            else:
-                return c_hi, e, remhi
+        return c_e_rem
 
 def pow10_to_f_str(c, e):
-    assert isinstance(c, int)
-    assert isinstance(e, int)
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
+
+    if c is None:
+        return None
 
     if c < 0:
         sign_str = '-'
         c = -c
     else:
         sign_str = ''
+
+    if e is None:
+        if c == 0:
+            return real.preferred_nan_str
+        else:
+            return sign_str + real.preferred_inf_str
 
     if e < 0:
         s = str(c)
@@ -372,14 +425,23 @@ def pow10_to_f_str(c, e):
         return sign_str + str(c) + ('0' * e)
 
 def pow10_to_e_str(c, e):
-    assert isinstance(c, int)
-    assert isinstance(e, int)
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
+
+    if c is None:
+        return None
 
     if c < 0:
         sign_str = '-'
         c = -c
     else:
         sign_str = ''
+
+    if e is None:
+        if c == 0:
+            return real.preferred_nan_str
+        else:
+            return sign_str + real.preferred_inf_str
 
     s = str(c)
     e2 = len(s) - 1
@@ -404,9 +466,12 @@ dec_re = re.compile(r'[-+]?([0-9]+)\.?([0-9]*)([eE][-+]?[0-9]+)?')
 
 # Number of decimal digits in an integer.
 def ndig(c):
-    assert isinstance(c, int)
-    if c == 0:
+    assert isinstance(c, int) or c is None
+
+    if c is None:
         return 0
+    elif c == 0:
+        return 1
     else:
         return floor_log10(c) + 1
 
@@ -415,6 +480,7 @@ def ndig(c):
 # format is not recognized.
 def sprec_of(s):
     assert isinstance(s, str)
+
     m = dec_re.fullmatch(s)
     if m:
         return(len(m.group(1) + m.group(2)))
@@ -426,14 +492,11 @@ def sprec_of(s):
 # the "character precision" of the standard (non-scientific) representation.
 # c must not be divisible by 10. 0 always has precision 1.
 def prec_of(c, e = None):
-    assert isinstance(c, int)
+    assert isinstance(c, int) or c is None
     assert isinstance(e, int) or e is None
 
-    if c == 0:
-        return 1
     prec = ndig(c)
-
-    if e is None:
+    if e is None or c is None:
         return prec
     else:
         if e > 0:
@@ -443,17 +506,32 @@ def prec_of(c, e = None):
 
 # slow, destroys information, useful for consistent printing
 def simplify_exponent(c, e):
-    assert isinstance(c, int)
-    assert isinstance(e, int)
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
 
-    while c % 10 == 0 and c != 0:
-        c = c // 10
-        e = e + 1
-
-    return c, e
+    if c is None:
+        return None, None
+    elif e is None:
+        if c > 0:
+            return 1, None
+        elif c == 0:
+            return 0, None
+        else: # c < 0
+            return -1, None
+    elif c == 0:
+        return 0, 0
+    else:
+        while c % 10 == 0:
+            c = c // 10
+            e = e + 1
+        return c, e
 
 # abuse precision as a heuristic for determining the "most readable" form
 def pow10_to_str(c, e, simplify = True):
+    assert isinstance(c, int) or c is None
+    assert isinstance(e, int) or e is None
+    assert simplify is True or simplift is False
+
     if simplify:
         c, e = simplify_exponent(c, e)
     sprec = prec_of(c, e)
@@ -674,6 +752,7 @@ def quantize_dec(c, e, n, intrem = 0):
             return c_floor, c_floor + 1, c_floor + 1, e_prime
 
 # rescale c to fit a desired exponent, if possible
+# this is massively inefficient if used in binsearch_shortest_dec
 def force_exponent(c, e_orig, e_target):
     assert isinstance(c, int)
     assert isinstance(e_orig, int)
@@ -700,18 +779,18 @@ def force_exponent(c, e_orig, e_target):
 # i.e. 1.27 can only be rounded to 1.3, never 1.2.
 # return a bunch of numbers describing the precision and the decimals of that
 # precision that fall inside the envelope:
-#   prec, c_lowest, c_midlo, c_midhi, c_highest, e
+#   prec, lowest_ce, midlo_ce, midhi_ce, highest_ce
+# As a hack to allow infinite c, e values, c=+-1, e=None indicates an infinity of the corresponding sign.
 def binsearch_shortest_dec(c, e, intrem,
                            lower, lower_inclusive, upper, upper_inclusive,
                            round_correctly = False):
     assert isinstance(c, int)
-    assert isinstance(e, int)
+    assert isinstance(e, int) or e is None
     assert not lower.isnan
     assert lower_inclusive is True or lower_inclusive is False
     assert not upper.isnan
     assert upper_inclusive is True or upper_inclusive is False
-    assert not (lower.isinf and upper.isinf)
-    R = FReal(c)*(FReal(10)**e)
+    R = pow10_to_real(c, e)
     assert (lower < R and R < upper) or (lower_inclusive and lower == R) or (upper_inclusive and R == upper)
     assert round_correctly is True or round_correctly is False
 
@@ -754,8 +833,8 @@ def binsearch_shortest_dec(c, e, intrem,
         # This means we'll always find the shortest string (proof?????) but it might not
         # be quite the one you thought you were going to get.
 
-        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+        R_lo = pow10_to_real(c_lo, e_prime)
+        R_hi = pow10_to_real(c_hi, e_prime)
 
         if ((lower < R_lo and R_lo < upper) or
             (lower_inclusive and lower == R_lo) or
@@ -816,7 +895,7 @@ def binsearch_shortest_dec(c, e, intrem,
 
             # To enforce correct rounding, we have to use c_mid when it's not None.
             if c_mid is not None:
-                R_mid = FReal(c_mid)*(FReal(10)**e_prime)
+                R_mid = pow10_to_real(c_mid, e_prime)
 
                 if ((lower < R_mid and R_mid < upper) or
                     (lower_inclusive and lower == R_mid) or
@@ -828,8 +907,8 @@ def binsearch_shortest_dec(c, e, intrem,
                     e_final = e_prime
 
             else:
-                R_lo = FReal(c_lo)*(FReal(10)**e_prime)
-                R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+                R_lo = pow10_to_real(c_lo, e_prime)
+                R_hi = pow10_to_real(c_hi, e_prime)
 
                 if ((lower < R_lo and R_lo < upper) or
                     (lower_inclusive and lower == R_lo) or
@@ -871,11 +950,11 @@ def binsearch_shortest_dec(c, e, intrem,
         assert c_hi is not None and e_prime is not None and e_prime == e_final
         # does this always work? Or do we have to handle a case where the exponent can't be forced?
 
-        R_hi = FReal(c_hi)*(FReal(10)**e_prime)
+        R_hi = pow10_to_real(c_hi, e_prime)
         if lower < R_hi or (lower_inclusive and lower == R_hi):
             c_lowest = c_hi
         else:
-            R_hi = FReal(c_hi+1)*(FReal(10)**e_prime)
+            R_hi = pow10_to_real(c_hi + 1, e_prime)
             assert lower < R_hi or (lower_inclusive and lower == R_hi)
             # does this always work?
             c_lowest = c_hi + 1
@@ -889,16 +968,16 @@ def binsearch_shortest_dec(c, e, intrem,
         assert c_lo is not None and e_prime is not None and e_prime == e_final
         # does this always work? Or do we have to handle a case where the exponent can't be forced?
 
-        R_lo = FReal(c_lo)*(FReal(10)**e_prime)
+        R_lo = pow10_to_real(c_lo, e_prime)
         if R_lo < upper or (upper_inclusive and R_lo == upper):
             c_highest = c_lo
         else:
-            R_lo = FReal(c_lo-1)*(FReal(10)**e_prime)
+            R_lo = pow10_to_real(c_l0 - 1, e_prime)
             assert R_lo < upper or (upper_inclusive and R_lo == upper)
             # does this always work?
             c_highest = c_lo - 1
 
-    return prec, c_lowest, c_midlo, c_midhi, c_highest, e_final
+    return prec, (c_lowest, e_final,), (c_midlo, e_final,), (c_midhi, e_final,), (c_highest, e_final,)
 
 # Find the shortest decimal numerator that can be used to recover R = (S, E, T) under rm.
 # There might be multiple such numerators; if so report all of them.
@@ -928,42 +1007,43 @@ def shortest_dec(R, S, E, T, rm, round_correctly = False):
         lower, lower_inclusive, upper, upper_inclusive = implicit_to_rounding_envelope(S, E, T, rm)
         assert (lower < R and R < upper) or (lower_inclusive and lower == R) or (upper_inclusive and R == upper)
 
-        if R.isinf:
-            if lower.isinf and upper.isinf:
-                return 0, None, None, None, None, None
-            else:
-                assert False
+        # if R.isinf:
+        #     if lower.isinf and upper.isinf:
+        #         return 0, None, None, None, None, None
+        #     else:
+        #         assert False
 
-        elif R.iszero:
-            assert False
+        # elif R.iszero:
+        #     assert False
 
+        # else:
+
+        if R.isrational:
+            c, e = real_to_pow10(R)
+            intrem = 0
         else:
-            if R.isrational:
-                c, e = real_to_pow10(R)
-                intrem = 0
-            else:
-                c, e = None, None
-            if c is None or e is None:
-                # look for high enough precision to fit in the envelope
-                prec = 100
-                outside_envelope = True
-                while outside_envelope:
-                    c, e, realrem = real_to_pow10_rem(R, prec)
-                    R_approx = FReal(c)*(FReal(10)**e)
-                    if ((lower < R_approx and R_approx < upper) or
-                        (lower_inclusive and lower == R_approx) or
-                        (upper_inclusive and R_approx == upper)):
-                        outside_envelope = False
-                        if realrem.iszero:
-                            intrem = 0
-                        else:
-                            intrem = realrem.sign
+            c, e = None, None
+        if c is None or e is None:
+            # look for high enough precision to fit in the envelope
+            prec = 100
+            outside_envelope = True
+            while outside_envelope:
+                c, e, realrem = real_to_pow10_rem(R, prec)
+                R_approx = pow10_to_real(c, e)
+                if ((lower < R_approx and R_approx < upper) or
+                    (lower_inclusive and lower == R_approx) or
+                    (upper_inclusive and R_approx == upper)):
+                    outside_envelope = False
+                    if realrem.iszero:
+                        intrem = 0
                     else:
-                        prec = prec * 2
+                        intrem = realrem.sign
+                else:
+                    prec = prec * 2
 
-            return binsearch_shortest_dec(c, e, intrem,
-                                          lower, lower_inclusive, upper, upper_inclusive,
-                                          round_correctly=round_correctly)
+        return binsearch_shortest_dec(c, e, intrem,
+                                      lower, lower_inclusive, upper, upper_inclusive,
+                                      round_correctly=round_correctly)
 
 def implicit_to_shortest_dec(S, E, T, rm):
     assert isinstance(S, BV)

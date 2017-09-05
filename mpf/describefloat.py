@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
+import operator
+
 from bv import BV
 from real import FReal
 import core
 import conv
-
-import operator
 
 def strlink(s, s_link, w, p):
     href = '"/demo?s={}&w={:d}&p={:d}"'.format(s_link, w, p)
@@ -305,7 +305,11 @@ def describe_float(S, E, T):
         for rm in core.RNE, core.RNA, core.RTZ, core.RTP, core.RTN:
             lower, lower_inclusive, upper, upper_inclusive = conv.implicit_to_rounding_envelope(S, E, T, rm)
             # slow, duplicates the work of building the envelope, but meh
-            prec, lowest, midlo, midhi, highest, r_e = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
+            prec, lowest_ce, midlo_ce, midhi_ce, highest_ce = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
+            lowest_c, lowest_e = lowest_ce
+            midlo_c, midlo_e = midlo_ce
+            midhi_c, midhi_e = midhi_ce
+            highest_c, highest_e = highest_ce
             rounding_info[str(rm)] = {
                 'rm' : rm,
                 'lower'           : lower,
@@ -313,11 +317,14 @@ def describe_float(S, E, T):
                 'upper'           : upper,
                 'upper_inclusive' : upper_inclusive,
                 'prec'    : prec,
-                'lowest'  : lowest,
-                'midlo'   : midlo,
-                'midhi'   : midhi,
-                'highest' : highest,
-                'e'       : r_e,
+                'lowest_c'  : lowest_c,
+                'lowest_e'  : lowest_e,
+                'midlo_c'   : midlo_c,
+                'midlo_e'   : midlo_e,
+                'midhi_c'   : midhi_c,
+                'midhi_e'   : midhi_e,
+                'highest_c' : highest_c,
+                'highest_e' : highest_e,
                 'S' : S,
                 'E' : E,
                 'T' : T,
@@ -440,7 +447,11 @@ def describe_real(x, w, p):
                 R_next = -R_next
             lower, lower_inclusive, upper, upper_inclusive = conv.implicit_to_rounding_envelope(S, E, T, rm)
             # slow, duplicates the work of building the envelope, but meh
-            prec, lowest, midlo, midhi, highest, e = conv.shortest_dec(R, S, E, T, rm, round_correctly=True)
+            prec, lowest_ce, midlo_ce, midhi_ce, highest_ce = conv.shortest_dec(R, S, E, T, rm, round_correctly=False)
+            lowest_c, lowest_e = lowest_ce
+            midlo_c, midlo_e = midlo_ce
+            midhi_c, midhi_e = midhi_ce
+            highest_c, highest_e = highest_ce
             rounding_info[str(rm)] = {
                 'rm' : rm,
                 'lower'           : lower,
@@ -448,11 +459,14 @@ def describe_real(x, w, p):
                 'upper'           : upper,
                 'upper_inclusive' : upper_inclusive,
                 'prec'    : prec,
-                'lowest'  : lowest,
-                'midlo'   : midlo,
-                'midhi'   : midhi,
-                'highest' : highest,
-                'e'       : e,
+                'lowest_c'  : lowest_c,
+                'lowest_e'  : lowest_e,
+                'midlo_c'   : midlo_c,
+                'midlo_e'   : midlo_e,
+                'midhi_c'   : midhi_c,
+                'midhi_e'   : midhi_e,
+                'highest_c' : highest_c,
+                'highest_e' : highest_e,
                 'S' : S,
                 'E' : E,
                 'T' : T,
@@ -552,11 +566,10 @@ def explain_rm(d):
     lower_inclusive = d['lower_inclusive']
     upper = d['upper']
     upper_inclusive = d['upper_inclusive']
-    lowest = d['lowest']
-    midlo = d['midlo']
-    midhi = d['midhi']
-    highest = d['highest']
-    e = d['e']
+    lowest_ce = (d['lowest_c'], d['lowest_e'],)
+    midlo_ce = (d['midlo_c'], d['midlo_e'],)
+    midhi_ce = (d['midhi_c'], d['midhi_e'],)
+    highest_ce = (d['highest_c'], d['highest_e'],)
     S = d['S']
     E = d['E']
     T = d['T']
@@ -611,12 +624,12 @@ def explain_rm(d):
     #   ?? R
     rnl = [(R, '', R_label + R_spacer, summarize_with(R, prec+1, spacer1=R_spacer, exact_str=R_exact), 2,),]
     # trim identical decimal tags using (hopefully) fast integer compare
-    old_c = None
-    for c in (highest, midhi, midlo, lowest,):
-        if (old_c is None or c != old_c) and c is not None:
-            old_c = c
+    old_c_e = None
+    for c, e in (highest_ce, midhi_ce, midlo_ce, lowest_ce,):
+        if (old_c_e is None or (c, e,) != old_c_e) and c is not None and e is not None:
+            old_c_e = (c, e,)
             R_c = FReal(c) * (FReal(10)**e)
-            if c == midhi or c == midlo:
+            if (c, e,) == midhi_ce or (c, e,) == midlo_ce:
                 tag = bullet
             else:
                 tag = ''
