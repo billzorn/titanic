@@ -138,9 +138,6 @@ rightc = u'\u2524'
 uarrow = u'\u2191'
 def unicode_horizontal_nl(left, R, right, width,
                           note = '', prec = 12, mirror = False):
-
-    print(left, R, right)
-
     assert isinstance(left, FReal) or isinstance(left, tuple)
     assert isinstance(right, FReal) or isinstance(right, tuple)
 
@@ -443,7 +440,7 @@ def describe_real(x, w, p):
             S, E, T = core.ieee_round_to_implicit(R, i_below, i_above, w, p, rm)
             # we need this info to fully describe the envelope
             i = core.implicit_to_ordinal(S, E, T)
-            R_center = core.implicit_to_real(*core.ordinal_to_implicit(i, w, p))
+            R_center = core.implicit_to_real(S, E, T)
             i_prev = max(i-1, -umax)
             R_prev = core.implicit_to_real(*core.ordinal_to_implicit(i_prev, w, p))
             i_next = min(i+1, umax)
@@ -658,6 +655,7 @@ def explain_rm(d):
 
     # sort
     protos = sorted(lnl + rnl, key=operator.itemgetter(0), reverse=True)
+
     # dedup and append
     lmid_idx = None
     old_proto = None

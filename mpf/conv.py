@@ -661,6 +661,10 @@ def implicit_to_rounding_envelope(S, E, T, rm):
     i_next = min(i+1, umax)
     R_next = core.implicit_to_real(*core.ordinal_to_implicit(i_next, w, p))
 
+    # -0 compliant nextafter behavior
+    if R_next.iszero:
+        R_next = -R_next
+
     emax = (2 ** (w - 1)) - 1
     fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
 
