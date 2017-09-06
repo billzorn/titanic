@@ -99,7 +99,7 @@ def decide_order(x, y):
 import re
 
 inf_strs_re = re.compile(r'inf|infinity|oo')
-nan_strs_re = re.compile(r'nan(([-0-9]+)|\(([-0-9]+)\))?')
+nan_strs_re = re.compile(r's?nan(([-0-9]+)|\(([-0-9]+)\))?')
 preferred_inf_str = 'inf'
 preferred_nan_str = 'nan'
 

@@ -42,16 +42,56 @@ def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' ', ex
 
 darrow = u'\u2193'
 
-def unicode_fbits(S, E, T, ibit):
+def unicode_fbits(R, S, E, T, C, ibit, prec=12):
     S_str = str(S).lower().replace('0b','')
     E_str = str(E).lower().replace('0b','')
     T_str = str(T).lower().replace('0b','')
     ibit_str  = str(ibit)
 
+    w = E.n
+    p = C.n
+    emax = (2 ** (w - 1)) - 1
+    e = E.uint - emax
+    c_prime = T.uint
+    c = C.uint
+
+    e_str = 'e={:d}'.format(e)
+    c_prime_str = "c'={:d}".format(c_prime)
+
     s = '   ' + ' '*len(E_str) + 'implicit bit\n'
     s += 'S E' + ' '*len(E_str) + darrow + ' T\n'
-    s += '{} {} {} {}'.format(S_str, E_str, ibit_str, T_str)
+    s += '{} {} {} {}\n'.format(S_str, E_str, ibit_str, T_str)
+    s += '  ' + e_str + ' '*(len(E_str) + 3 - len(e_str)) + c_prime_str
+
+    if not (R.isinf or R.isnan):
+        Rm = FReal(c) * (FReal(2)**(1-p))
+        s += '\n\n'
+        s += ' ' + ' '*len(E_str) + 'c = {:d} + (2**{:d})\n'.format(c_prime, 1-p)
+        s += ' ' + ' '*len(E_str) + '  = {:d}\n'.format(c)
+        s += ' ' + ' '*len(E_str) + 'm = {:d} * (2**{:d})\n'.format(c, (1-p))
+        s += ' ' + ' '*len(E_str) + '  ' + summarize_with(Rm, prec, spacer1=' ') + '\n'
+        s += ' ' + ' '*len(E_str) + '  = 0b{}.{}'.format(ibit_str, T_str)
+
     return s
+
+def explain_class(R, class_str):
+    if R.sign < 0:
+        sign_str = 'negative'
+    else:
+        sign_str = 'positive'
+
+    if class_str == 'nan':
+        return 'signalingNaN OR quietNaN - at present, Titanic does not distinguish'
+    elif class_str == 'inf':
+        return sign_str + 'Infinity'
+    elif class_str == 'zero':
+        return sign_str + 'Zero'
+    elif class_str == 'subnormal':
+        return sign_str + 'Subnormal'
+    elif class_str == 'normal':
+        return sign_str + 'Normal'
+    else:
+        return 'unknown class {} - this is probably a bug'.format(repr(class_str))
 
 topc = u'\u252c'
 botc = u'\u2534'
@@ -732,9 +772,12 @@ def explain_float(d):
     R = d['R']
     prec = conv.bdb_round_trip_prec(p) + 1
 
-    s = 'floating point representation:\n'
-    s += '  '
-    s += unicode_fbits(d['S'], d['E'], d['T'], d['implicit_bit']).replace('\n', '\n  ')
+    s = 'floating point representation:\n  '
+    s += unicode_fbits(R, d['S'], d['E'], d['T'], d['C'], d['implicit_bit'], prec=prec).replace('\n', '\n  ')
+    s += '\n\n'
+
+    s += 'IEEE 754 class:\n  '
+    s += explain_class(R, d['ieee_class']).replace('\n', '\n  ')
     s += '\n\n'
 
     s += 'IEEE 754 binary representation:\n'
@@ -745,6 +788,14 @@ def explain_float(d):
         s += ('  {:#0' + str((k//4)+2) + 'x}\n').format(B.uint)
     s += '\n'
 
+    s += 'SMTLIB2 notation (compatible with Z3):\n'
+    s += '  (fp #b{} #b{} #b{})'.format(
+        str(d['S']).lower().replace('0b',''),
+        str(d['E']).lower().replace('0b',''),
+        str(d['T']).lower().replace('0b','')
+    )
+    s += '\n\n'
+
     if not R.isnan:
         s += 'ordinal (ulps away from zero):\n'
         s += '  ' + str(d['i']) + '\n\n'
@@ -754,12 +805,12 @@ def explain_float(d):
         s += '  {} (with payload: {})\n\n'.format(conv.real_to_pretty_string(R),
                                                   conv.real_to_string(R, show_payload=True))
     elif R.isinf:
-        s += '  {} ( {} )\n\n'.format(conv.real_to_pretty_string(R),
+        s += '  {} ({})\n\n'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
         s += '  ' + conv.real_to_string(R) + '\n\n'
     else:
-        s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
+        s += '  (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
         summary_is_approx, R_summary = approx_or_exact(R, prec=prec, spacer=' ')
         if summary_is_approx:
             s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=prec, exact=True) + '\n'
