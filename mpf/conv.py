@@ -246,7 +246,7 @@ def pow10_to_real(c, e):
         if c == 0:
             return FReal(None)
         else:
-            return FReal(c) ** FReal(infinite=True)
+            return FReal(c) * FReal(infinite=True)
     else:
         return FReal(c) * (FReal(10) ** e)
 
@@ -390,6 +390,23 @@ def real_to_pow10_rem(R, n):
             key=operator.itemgetter(0))
 
         return c_e_rem
+
+def pow10_inc(c, e, negative = False):
+    assert isinstance(c, int)
+    assert isinstance(e, int) or e is None
+    assert negative is True or negative is False
+
+    # no next/previous number for infinity and NaN
+    if e is None:
+        return c, e
+    elif negative:
+        if c == 1:
+            return 9, e-1
+        else:
+            return c-1, e
+    # might result in a number with more digits, expensive to check
+    else:
+        return c+1, e
 
 def pow10_to_f_str(c, e):
     assert isinstance(c, int) or c is None
@@ -710,11 +727,19 @@ def implicit_to_rounding_envelope(S, E, T, rm):
 # then we also check intrem.
 def quantize_dec(c, e, n, intrem = 0):
     assert isinstance(c, int)
-    assert isinstance(e, int)
+    assert isinstance(e, int) or e is None
     assert isinstance(n, int)
     assert n >= 1
     assert isinstance(intrem, int)
     assert -1 <= intrem and intrem <= 1
+
+    if e is None:
+       if c > 0:
+           return 1, 1, 1, None
+       elif c == 0:
+           return 0, 0, 0, None
+       else: # c < 0
+           return -1, -1, -1, None
 
     prec = ndig(c)
     if prec <= n:
@@ -751,28 +776,6 @@ def quantize_dec(c, e, n, intrem = 0):
         else:
             return c_floor, c_floor + 1, c_floor + 1, e_prime
 
-# rescale c to fit a desired exponent, if possible
-# this is massively inefficient if used in binsearch_shortest_dec
-def force_exponent(c, e_orig, e_target):
-    assert isinstance(c, int)
-    assert isinstance(e_orig, int)
-    assert isinstance(e_orig, int)
-
-    e = e_orig
-
-    while e > e_target:
-        e = e - 1
-        c = c * 10
-
-    while e < e_target:
-        if c % 10 == 0:
-            e = e + 1
-            c = c // 10
-        else:
-            return None, None
-
-    return c, e
-
 # Find the shortest prefix of (c*(10**e)) + (epsilon<<1)*intrem) that fits in
 # the envelope defined by lower, lower_inclusive, upper, upper_inclusive.
 # If round_correctly is True, then ensure this prefix is correctly rounded,
@@ -799,11 +802,9 @@ def binsearch_shortest_dec(c, e, intrem,
 
     # already have few enough digits
     if above <= below:
-        c_lowest = c
         c_midlo = c
         c_midhi = c
-        c_highest = c
-        e_final = e
+        e_mid = e
 
     # binary search!
 
@@ -843,7 +844,7 @@ def binsearch_shortest_dec(c, e, intrem,
 
             c_midlo = c_lo
             c_midhi = c_lo
-            e_final = e_prime
+            e_mid = e_prime
 
         if ((lower < R_hi and R_hi < upper) or
             (lower_inclusive and lower == R_hi) or
@@ -853,7 +854,7 @@ def binsearch_shortest_dec(c, e, intrem,
             if not lo_ok:
                 c_midlo = c_hi
                 c_midhi = c_hi
-                e_final = e_prime
+                e_mid = e_prime
             else:
                 if c_mid is None:
                     c_midhi = c_hi
@@ -871,11 +872,9 @@ def binsearch_shortest_dec(c, e, intrem,
     # to produce c_midlo, etc.
     # Handle that case here.
     if not found_c:
-        c_lowest = c
         c_midlo = c
         c_midhi = c
-        c_highest = c
-        e_final = e
+        e_mid = e
 
     assert above <= below
     prec = above
@@ -904,7 +903,7 @@ def binsearch_shortest_dec(c, e, intrem,
 
                     c_midlo = c_mid
                     c_midhi = c_mid
-                    e_final = e_prime
+                    e_mid = e_prime
 
             else:
                 R_lo = pow10_to_real(c_lo, e_prime)
@@ -917,7 +916,7 @@ def binsearch_shortest_dec(c, e, intrem,
 
                     c_midlo = c_lo
                     c_midhi = c_lo
-                    e_final = e_prime
+                    e_mid = e_prime
 
                 if ((lower < R_hi and R_hi < upper) or
                     (lower_inclusive and lower == R_hi) or
@@ -927,7 +926,7 @@ def binsearch_shortest_dec(c, e, intrem,
                     if not lo_ok:
                         c_midlo = c_hi
                         c_midhi = c_hi
-                        e_final = e_prime
+                        e_mid = e_prime
                     else:
                         if c_mid is None:
                             c_midhi = c_hi
@@ -942,42 +941,49 @@ def binsearch_shortest_dec(c, e, intrem,
 
     # look for lowest and highest
     c_lower, e_lower = real_to_pow10(lower)
-    if c_lower is None or e_lower is None:
-        c_lowest = None
+    assert c_lower is not None
+    if e_lower is None:
+        # should never be NaN
+        assert c_lower != 0
+        # if this is a closed interval, return the infinity
+        if lower_inclusive:
+            c_lowest, e_lowest = c_lower, e_lower
+        # if this is an open interval, then there is no next number closest to inf
+        else:
+            c_lowest, e_lowest = None, None
     else:
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c_lower, e_lower, prec)
-        c_hi, e_prime = force_exponent(c_hi, e_prime, e_final)
-        assert c_hi is not None and e_prime is not None and e_prime == e_final
-        # does this always work? Or do we have to handle a case where the exponent can't be forced?
-
         R_hi = pow10_to_real(c_hi, e_prime)
         if lower < R_hi or (lower_inclusive and lower == R_hi):
-            c_lowest = c_hi
+            c_lowest, e_lowest = c_hi, e_prime
         else:
-            R_hi = pow10_to_real(c_hi + 1, e_prime)
+            c_lowest, e_lowest = pow10_inc(c_hi, e_prime, negative=False)
+            # is this needed?
+            R_hi = pow10_to_real(c_lowest, e_lowest)
             assert lower < R_hi or (lower_inclusive and lower == R_hi)
-            # does this always work?
-            c_lowest = c_hi + 1
 
     c_upper, e_upper = real_to_pow10(upper)
-    if c_upper is None or e_upper is None:
-        c_highest = None
+    if e_upper is None:
+        # should never be NaN
+        assert c_upper != 0
+        # if this is a closed interval, return the infinity
+        if upper_inclusive:
+            c_highest, e_highest = c_upper, e_upper
+        # if this is an open interval, then there is no next number closest to inf
+        else:
+            c_highest, e_highest = None, None
     else:
         c_lo, c_mid, c_hi, e_prime = quantize_dec(c_upper, e_upper, prec)
-        c_lo, e_prime = force_exponent(c_lo, e_prime, e_final)
-        assert c_lo is not None and e_prime is not None and e_prime == e_final
-        # does this always work? Or do we have to handle a case where the exponent can't be forced?
-
         R_lo = pow10_to_real(c_lo, e_prime)
         if R_lo < upper or (upper_inclusive and R_lo == upper):
-            c_highest = c_lo
+            c_highest, e_highest = c_lo, e_prime
         else:
-            R_lo = pow10_to_real(c_l0 - 1, e_prime)
+            c_highest, e_highest = pow10_inc(c_lo, e_prime, negative=True)
+            # is this needed?
+            R_lo = pow10_to_real(c_highest, e_highest)
             assert R_lo < upper or (upper_inclusive and R_lo == upper)
-            # does this always work?
-            c_highest = c_lo - 1
 
-    return prec, (c_lowest, e_final,), (c_midlo, e_final,), (c_midhi, e_final,), (c_highest, e_final,)
+    return prec, (c_lowest, e_lowest,), (c_midlo, e_mid,), (c_midhi, e_mid,), (c_highest, e_highest,)
 
 # Find the shortest decimal numerator that can be used to recover R = (S, E, T) under rm.
 # There might be multiple such numerators; if so report all of them.
@@ -1006,17 +1012,6 @@ def shortest_dec(R, S, E, T, rm, round_correctly = False):
     else:
         lower, lower_inclusive, upper, upper_inclusive = implicit_to_rounding_envelope(S, E, T, rm)
         assert (lower < R and R < upper) or (lower_inclusive and lower == R) or (upper_inclusive and R == upper)
-
-        # if R.isinf:
-        #     if lower.isinf and upper.isinf:
-        #         return 0, None, None, None, None, None
-        #     else:
-        #         assert False
-
-        # elif R.iszero:
-        #     assert False
-
-        # else:
 
         if R.isrational:
             c, e = real_to_pow10(R)

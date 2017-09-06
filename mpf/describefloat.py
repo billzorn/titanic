@@ -53,7 +53,6 @@ def unicode_fbits(S, E, T, ibit):
     s += '{} {} {} {}'.format(S_str, E_str, ibit_str, T_str)
     return s
 
-
 topc = u'\u252c'
 botc = u'\u2534'
 topo = u'\u2564'
@@ -61,6 +60,8 @@ boto = u'\u2567'
 vert = u'\u2502'
 tic = u'\u253c'
 bullet = u'\u2022'
+larrow = u'\u2190'
+hori = u'\u2500'
 
 def vertical_nl_line(R, tag, name, s, pri):
     if len(tag) == 0:
@@ -115,7 +116,10 @@ def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
             ll = vert
 
         if idx == start_idx:
-            rl = rtop
+            if start_idx == end_idx:
+                rl = hori
+            else:
+                rl = rtop
         elif start_idx < idx and idx < end_idx:
             rl = vert
         elif idx == end_idx:
@@ -131,10 +135,12 @@ def unicode_double_vertical_nl(lines, start_idx, end_idx, lmid_idx = None,
 
 leftc = u'\u251c'
 rightc = u'\u2524'
-hori = u'\u2500'
 uarrow = u'\u2191'
 def unicode_horizontal_nl(left, R, right, width,
                           note = '', prec = 12, mirror = False):
+
+    print(left, R, right)
+
     assert isinstance(left, FReal) or isinstance(left, tuple)
     assert isinstance(right, FReal) or isinstance(right, tuple)
 
@@ -609,11 +615,11 @@ def explain_rm(d):
     # - lower (could be =center or =prev)
     # - prev
     lnl = [
-        (R_next,   '', '', weblink(summarize_with(R_next, prec+1, spacer1='', exact_str=''), Sn, En, Tn), 1,),
-        (upper,    '', '', summarize_with(upper, prec+1, spacer1='', exact_str=''),                       0,),
-        (R_center, '', '', weblink(summarize_with(R_center, prec+1, spacer1='', exact_str=''), S, E, T),  1,),
-        (lower,    '', '', summarize_with(lower, prec+1, spacer1='', exact_str=''),                       0,),
-        (R_prev,   '', '', weblink(summarize_with(R_prev, prec+1, spacer1='', exact_str=''), Sp, Ep, Tp), 1,),
+        (R_next,   '',      '', weblink(summarize_with(R_next, prec+1, spacer1='', exact_str=''), Sn, En, Tn), 1,),
+        (upper,    '',      '', summarize_with(upper, prec+1, spacer1='', exact_str=''),                       0,),
+        (R_center, larrow, '', weblink(summarize_with(R_center, prec+1, spacer1='', exact_str=''), S, E, T),  1,),
+        (lower,    '',      '', summarize_with(lower, prec+1, spacer1='', exact_str=''),                       0,),
+        (R_prev,   '',      '', weblink(summarize_with(R_prev, prec+1, spacer1='', exact_str=''), Sp, Ep, Tp), 1,),
     ]
 
     # right number line: (could all be equal, R could be anywhere in this ordering)
@@ -681,38 +687,52 @@ def explain_rm(d):
                                     rtop=envtop, rbot=envbot)
     return s
 
-def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = ''):
+def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = '', fprec=12):
+    emax = (2 ** (w - 1)) - 1
+    emin = 1 - emax
+    e = max(E.uint - emax, emin)
+    eprec = conv.ndig(emax) + 1
+
     if R.iszero:
         R_left = core.implicit_to_real(BV(1,1), E, BV(-1,p-1))
         R_right = core.implicit_to_real(BV(0,1), E, BV(-1,p-1))
         mirror = False
         mirror_str = ''
-    elif R > 0:
-        R_left = core.implicit_to_real(S, E, BV(0,p-1))
-        R_right = core.implicit_to_real(S, E, BV(-1,p-1))
+    elif R.sign > 0:
+        if e > emax:
+            fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+            R_left = fmax
+            R_right = FReal(infinite=True, negative=False)
+        else:
+            R_left = core.implicit_to_real(S, E, BV(0,p-1))
+            R_right = core.implicit_to_real(S, E, BV(-1,p-1))
         mirror = False
         mirror_str = ''
-    else: # R < 0
-        R_left = core.implicit_to_real(S, E, BV(-1,p-1))
-        R_right = core.implicit_to_real(S, E, BV(0,p-1))
+    else: # R.sign < 0
+        if e > emax:
+            fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+            R_left = FReal(infinite=True, negative=True)
+            R_right = -fmax
+        else:
+            R_left = core.implicit_to_real(S, E, BV(-1,p-1))
+            R_right = core.implicit_to_real(S, E, BV(0,p-1))
         mirror = True
         mirror_str = ', mirrored'
 
-    emax = (2 ** (w - 1)) - 1
-    emin = 1 - emax
-    e = max(E.uint - emax, emin)
-
     s = 'fractional position (linear scale)\n'
-    s += unicode_horizontal_nl(R_left, R, R_right, fwidth, note='R=')
+    s += unicode_horizontal_nl(R_left, R, R_right, fwidth,
+                               note='R=', prec=fprec)
     s += '\n\nexponential position (log scale' + mirror_str + ')' + enote + '\n'
-    s += unicode_horizontal_nl(FReal(emin), FReal(e), FReal(emax), ewidth, note='e=', mirror=mirror)
+    Re = FReal(e)
+    s += unicode_horizontal_nl(min(Re, FReal(emin)), Re, max(FReal(emax), Re), ewidth,
+                               note='e=', prec=eprec, mirror=mirror)
     return s
 
 def explain_float(d):
-
     w = d['w']
     p = d['p']
     R = d['R']
+    prec = conv.bdb_round_trip_prec(p) + 1
 
     s = 'floating point representation:\n'
     s += '  '
@@ -741,7 +761,6 @@ def explain_float(d):
     elif R.iszero:
         s += '  ' + conv.real_to_string(R) + '\n\n'
     else:
-        prec = conv.bdb_round_trip_prec(p) + 1
         s += '  (-1)**{:d} * 2**({:d}) * ({:d} * 2**({:d}))\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
         summary_is_approx, R_summary = approx_or_exact(R, prec=prec, spacer=' ')
         if summary_is_approx:
@@ -752,7 +771,7 @@ def explain_float(d):
 
     # number lines
     if not R.isnan or R.isinf:
-        s += '\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'])
+        s += '\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'], fprec=prec)
 
     # rounding envelopes
     if 'rounding_info' in d:
