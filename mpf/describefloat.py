@@ -802,13 +802,13 @@ def explain_float(d):
 
     s += 'real value:\n'
     if R.isnan:
-        s += '  {} (with payload: {})\n\n'.format(conv.real_to_pretty_string(R),
+        s += '  {} (with payload: {})'.format(conv.real_to_pretty_string(R),
                                                   conv.real_to_string(R, show_payload=True))
     elif R.isinf:
-        s += '  {} ({})\n\n'.format(conv.real_to_pretty_string(R),
+        s += '  {} ({})'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
-        s += '  ' + conv.real_to_string(R) + '\n\n'
+        s += '  ' + conv.real_to_string(R) + ''
     else:
         s += '  (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
         summary_is_approx, R_summary = approx_or_exact(R, prec=prec, spacer=' ')
