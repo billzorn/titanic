@@ -712,6 +712,11 @@ class FReal(object):
                     return FReal(negative=negative, infinite=True)
                 else: # i > 0
                     return FReal(0, negative=negative)
+            elif self.isinf:
+                if i < 0:
+                    return FReal(0, negative=negative)
+                else:
+                    return FReal(negative=negative, infinite=True)
             else:
                 return FReal(self.magnitude ** i, negative=negative)
 

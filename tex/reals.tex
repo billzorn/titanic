@@ -80,8 +80,8 @@
  sign(-0) &= -1 \\
  sign(a) &=
  \begin{cases}
-  -1, a < 0 \\
-  1, a = 0 \lor 0 < a \\
+  -1, &a < 0 \\
+  1,  &a = 0 \lor 0 < a \\
  \end{cases}\\
  sign(\NaN) &= -1 \;[]\; 1
 \end{align}
@@ -108,14 +108,14 @@ This definition runs into some trouble with NaN. To be faithful to the IEEE 754 
  -0 \;\overline{+}\; \overline{x} \in \mathbb{R}^* \setminus \{0\} &\equiv \overline{x} \\
  -0 \;\overline{+}\; 0 &\equiv
  \begin{cases}
-  -0, \text{roundTowardNegative} \\
-  0, \lnot \text{roundTowardNegative} \\
+  -0, &\text{roundTowardNegative} \\
+  0,  &\lnot \text{roundTowardNegative} \\
  \end{cases}\\
  a \;\overline{+}\; b &\equiv
  \begin{cases}
-  a + b, a + b \not= 0 \\
-  -0, a + b = 0 \land \text{roundTowardNegative} \\
-  0, a + b = 0 \land \lnot \text{roundTowardNegative} \\
+  a + b, &a + b \not= 0 \\
+  -0,    &a + b = 0 \land \text{roundTowardNegative} \\
+  0,     &a + b = 0 \land \lnot \text{roundTowardNegative} \\
  \end{cases}
 \end{align}
  roundTowardNegative is some arbitrary predicate representing the IEEE 754 rounding mode. If it is True, then addition producing 0 should produce -0 instead, in accordance with the IEEE specification for arithmetic with that rounding mode. It can be thought of as a parameter of this theory, or as a distinction between two similar theories.
@@ -161,11 +161,27 @@ This definition runs into some trouble with NaN. To be faithful to the IEEE 754 
 
 \section{Integer powers}
 
+ Integer powers are convenient for computing the real values of floating point numbers. The implementation here is equivalent to iterated multiplication (and division, in the case of negative exponents) for all exponents except 0. Note that the second argument is an integer, not a real number or a number in $\mathbb{R}^*$. We define the integer power function $pown$ as follows:
 
-
-An integer power function is necessary to compute the real values of floating point numbers. The implementation should be equivalent to iterated multiplication (and optionally division for negative powers).
-
-More details coming soon!
+\begin{align}
+ pown(\overline{x}, 0) &\equiv 1 \\
+ pown(\NaN, n \in \mathbb{Z} \setminus \{0\}) &\equiv \NaN \\
+ pown(\overline{x} \in \{\infty, -\infty\}, n \in \mathbb{Z} \setminus \{0\}) &\equiv
+ \begin{cases}
+  0,                              &\text{$n$ negative and even} \\
+  copysign(0, \overline{x}),      &\text{$n$ negative and odd} \\
+  \infty,                         &\text{$n$ positive and even} \\
+  copysign(\infty, \overline{x}), &\text{$n$ positive and odd}
+ \end{cases} \\
+ pown(\overline{x} \in \{0, -0\}, n \in \mathbb{Z} \setminus \{0\}) &\equiv
+ \begin{cases}
+  \infty,                         &\text{$n$ negative and even}\\
+  copysign(\infty, \overline{x}), &\text{$n$ negative and odd}\\
+  0,                              &\text{$n$ positive and even}\\
+  copysign(0, \overline{x}),      &\text{$n$ positive and odd}
+ \end{cases} \\
+ pown(x, n \in \mathbb{Z} \setminus \{0\}) &\equiv x^n
+\end{align}
 
 \section{Integer roots}
 

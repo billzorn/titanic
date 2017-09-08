@@ -323,7 +323,36 @@ Here $w$ and $p$ are only needed to figure out the size of the packed bitvector.
 
 Ordering is much harder to compute for the explicit representation. Because of the inherent redundancy, it is difficult to write down a simple arithmetic or bitvector expression to convert an explicit triple into an ordinal. Any such algorithm will have to effectively canonicalize the representation, so we might as well just convert it to the implicit representation and take the ordinal of that. We can think of the implicit representation as a way of assigning the canonical floating point representations to reals in a convenient order.
 
-\section{Ulps: units in the last place}
+Besides the totalOrder predicate discussed above, our notion of ordinals is closely related to the IEEE 754 standard's nextUp and nextDown operations. These operations produce the ``next'' immediately smaller or larger number in a floation point representation, i.e. the number with the next greater or smaller ordinal. A number's ordinal is the number of times one must call nextUp (or negative the number of times one must call nextDown, for negative numbers), starting from zero, to reach that number.
+
+We can implement nextUp and nextDown in terms of operations on ordinals, as given by Equations \ref{eq:nextup} and \ref{eq:nextdown} for implicit triples:
+
+\begin{align} \label{eq:nextup}
+ nextUp(S, E, T) = 
+ \begin{cases}
+  (S, E, T)                      & i \; \text{is} \; undefined \lor i = u_{max}\\
+  (bv(1, 1), bv(0, w), bv(0, p-1)) & i = -1\\
+  float(i+1, w, p)               & i < u_{max} \land i \not= -1
+ \end{cases}
+\end{align}
+\begin{align} \label{eq:nextdown}
+ nextDown(S, E, T) = 
+ \begin{cases}
+  (S, E, T)                      & i \; \text{is} \; undefined \lor i = -u_{max}\\
+  float(i-1, w, p)               & i > -u_{max}
+ \end{cases}
+\end{align}
+where:
+\begin{description}
+ \item $w = size(E)$
+ \item $p = size(T) + 1$
+ \item $u_{max} = (2^w-1) \times 2^{p-1}$
+ \item $i = ord(S, E, T)$.
+\end{description}
+
+The extra case in nextUp is required to deal with the sign of zero. The IEEE 754 standard specifies that nextUp should produce negative zero; this is natural given the behavior of rounding small negative values to negative zero. Since our ordinals do not model the sign of zero, we must handle this case separately.
+
+\subsection{Ulps: units in the last place}
 
 \begin{itemize}
  \item ulps as ordinal difference
@@ -340,23 +369,83 @@ Ordering is much harder to compute for the explicit representation. Because of t
 
 \section{From reals to bitvectors}
 
-\begin{itemize}
- \item theory - binsearch!
- \item algorithm
- \item this gets us within 1 ulp, but doesn't tell us which direction to round
- \item IEEE rounding modes, algorithm, discussion
-\end{itemize}
+So far, our discussion of the relationship between real numbers and floating point numbers has been limited to defining which real number a given floating point number represents. This makes it easy to convert from floats to reals, at least on paper: the definition tells us exactly what to calculate. Going the other way, finding the floating point number closest to a given real number, is more challenging. Rather than simple arithmetic, we will have to perform some kind of quantization or search.
+
+\subsection{Searching the ordinals}
+
+Fortunately, treating floating point numbers as ordinals allows us to search them efficiently. As long as we can compare a real number to the calculated real values of floating point numbers, we can conduct a binary search over the space of ordinals to find two adjacent ordinals whose real values bracket it. This procedure is implemented by the Python code in Figure \ref{fig:binsearch}.
+
+\begin{figure}[t!]
+\label{fig:binsearch}
+\caption{Binary search for ordinals bracketing a real number R, implemented in Python}
+\begin{verbatim}
+def binsearch_nearest_ordinals(R, w, p):
+  umax = ((2**w) - 1) * (2 ** (p-1))
+  below = -umax
+  above = umax
+  while above - below > 1:
+    between = below + ((above - below) // 2)
+    S, E, T = float(between, w, p)
+    guess = real(S, E, T)
+    
+    if R < guess:
+      above = between
+    elif guess < R:
+      below = between
+    else:
+      return between, between
+      
+  return below, above  
+\end{verbatim}
+\end{figure}
+
+The first argument \texttt{R} is the real number $R$ we are searching for, and the second and third arguments \texttt{w} and \texttt{p} are the typical exponent size and precision $w$ and $p$ used to define a format. The function returns a tuple of two integers, representing the two ordinals $i$ and $j$ such that $j \geq i$, $j-i \leq 1$, and $real(float(i, w, p)) \leq R \leq real(float(j, w, p))$.
+
+Integers in python are unbounded, so we can assume that all integer arithmetic is exact without having to worry about overflow. The \texttt{//} operator is integer ``floor'' division, rounded down to the nearest integer. The \texttt{float} and \texttt{real} functions are as defined in Equations \ref{eq:ord2} and \ref{eq:real4}. \texttt{float} returns a tuple of bitvectors, while \texttt{real} returns some representation of a real number that we can compare with our input.
+
+The correctness of the algorithm is easy to sketch out. First, note we have the loop invariant that $real(float(\texttt{below}, w, p)) < R < real(float(\texttt{above}, w, p))$. This is initially true because \texttt{above} and \texttt{below} are initialized to $\pm u_{max}$ such that $real(float(\pm u_{max}, w, p)) = \pm \infty$. $R$ is a real number, which means that it is strictly not infinite; extending the algorithm to deal with the two infinities is not difficult (just return $(u_{max}, u_{max})$ for $\infty$ or $(-u_{max}, -u_{max})$ for $-\infty$).
+
+To show that the loop invariant holds after executing the loop body, there are three cases to consider. The \texttt{guess} is the real value of the floating point number with ordinal \texttt{between}. If $R < \texttt{guess}$, then we assign \texttt{above} = \texttt{between}, and the invariant holds. If $\texttt{guess} < R$, then we assign \texttt{below} = \texttt{between}, and the invariant holds. Otherwise, we will break out of the loop and return early.
+
+Because of the loop condition, we know that $\texttt{below} < \texttt{between} < \texttt{above}$. This implies that the loop will terminate: on each iteration, we either return directly or set one of \texttt{above} or \texttt{below} to the value of \texttt{between}. Since $\texttt{above} - \texttt{below}$ is finite, and we reduce it each time, it will eventually not be greater than 1 and we will break out of the loop.
+
+Our desired postcondition, mentioned above, is that the fuction returns a tuple of ordinals $(i, j)$ such that $i \leq j$, $j-i \leq 1$, and $real(float(i, w, p)) \leq R \leq real(float(j, w, p))$. There are two return statements where we need to check this. If we return inside the loop, we can see that $i = j = \texttt{between}$, satisfying the first two parts of the postcondition, and also by negation of the conditionals that $R = \texttt{guess}$, satisfying the last part. If we return outside the loop, then the first part must be true because the loop condition held when we calculated \texttt{between}, so $\texttt{below} < \texttt{between} < \texttt{above}$, and assigning \texttt{above} = \texttt{between} or \texttt{below} = \texttt{between} will not change the relative order. The second part follows from the negation of the loop condition, and the third follows from the loop invariant because we return $(i=\texttt{below}, j=\texttt{above})$.
+
+The complexity of the algorithm is harder to define. Our termination argument is very weak: since it is a binary search, we are actually reducing the space of ordinals to search by half with each iteration, so the number of iterations is $O(\log(u_{max}))$, which is $O(w+p)$, or one iteration for each bit in the representation. Each iteration performs one or two comparisons between real numbers. In theory, all of the comparisons are computable (as one of those real numbers is always rational, since it is represented by some floating point number) but they may be costly if the other number is nontrivial to reason about, such as $\pi$.
+
+\subsection{Correct IEEE 754 rounding}
+
+Binary search will find two floating point numbers that bracket a given real number, but unless they happen to be the same (which implies that the real number is exactly representable) it will not tell us which of the two is closer. Even the definition of ``closer'' is not immediately obvious. The IEEE 754 standard specifies 5 different rounding modes to clarify.
+
+Three rounding modes are very easy to specify: roundTowardsPositive always rounds up to the larger number; roundTowardsNegative always rounds down to the smaller number; and roundTowardsZero always rounds ``down'' to the number with smaller absolute value. As with all IEEE 754 rounding modes, rounding a number less than zero up to zero produces negative zero instead.
+
+The other two modes, roundTiesToEven and roundTiesToAway, try to round to the bracketing floating point number that is nearer in value. They differ only in cases where a real number lies exactly between two floating point numbers: as one might expect, roundTiesToEven rounds to whichever floating point value has $T[0] = 0$, while roundTiesToAway rounds to whicever has greater absolute value. Since there is no way to be nearer to infinity than to any finite value (without actually being infinity), these modes use a cutoff value that is the real equivalent of one half ulp greater than the largest representable finite value as the halfway point instead; this value can be calculated as for a format with given $w$ and $p$ as $\pm 2^{e_{max}} \times (2 - \frac{2^{1-p}}{2})$, where as usual $e_{max} = 2^{w-1} - 1$.
+
+Implementing correct rounding given bracketing ordinals or floating point numbers is not particularly challenging, though roundTiesToEven and roundTiesToAway do require some ability to compare differences between real numbers. We will not include any code here because it is long and relatively uninteresting, but a Python implementation can be found in Titanic's core [TODO: \cite{undefined}].
+
+Another way of thinking about rounding is as a set of ``rounding envelopes'' that cover the real line, including the affine extensions to $-\infty$ and $\infty$. Each rounding envelope corresponds to some floating point number, and is an interval that exactly describes the set real numbers that will round to that number. For a given format, the envelopes for all of that format's floating point numbers are disjoint (i.e. rounding is a deterministic function) and together they cover all real numbers and infinities (i.e. that function is surjective).
+
+\subsection{Floating point arithmetic}
+
+The IEEE 754 standard does not specify in any way how arithmetic should be performed. The operations required by the format include basic arithmetic, specifically addition, subtraction, multiplication, division, and square root, which must be ``correctly rounded,'' which is to say they should provide the same answer as rounding the (real) result of applying the appropriate (real) arithmetic operator to the real values of the operands.
+
+For performance reasons, most implementations of IEEE 754 floating point arithmetic implement these operations as circuits (if they're in hardware) or by using low-level bitvector operations. These implementations are complex; describing them in detail is beyond the scope of this document. However, there is a much simpler way to implement correctly-rounded floating point arithmetic, at least on paper. Just use real numbers.
+
+Converting from floating point to reals is easy: just use the formula from the definition, such as Equation \ref{eq:real4} for implicit triples. Converting from reals back to floating point is also relatively easy: use the algorithm from Figure \ref{fig:binsearch}, then round. Since we know how to perform real arithmetic, we can specify the outcome of any floating point arithmetic operation by taking the (floating point) inputs, converting them to reals, performing the (real) arithmetic operation, and finally converting the result back to floating point. If we have a library of programming environment that knows how to do arithmetic on real numbers in addition to comparing them, then this specification is also an implementation of IEEE 754 floating point---although likely a very slow one.
 
 \section{Conclusion}
 
-\begin{itemize}
- \item We have specified, in math, how to convert back and forth between the members of the set of any IEEE representation and real numbers.
- \item The integer properties of FP numbers are critical to the conversion back from reals, and allow us to consider other useful properties like ulps.
- \item If we have a theory of real arithmetic that we can compute over (and that meets a few other requirements) then we automatically get, for free, a specification of how arithmetic works for IEEE 754 floating point.
- \item Spec is ``infinite precision,'' and the kinds of functions it describes are only limited by the RA theory - could g beyound the required, or even suggested, math functions in the IEEE standard.
-\end{itemize}
+Often we like to think of floating point arithmetic as a discrete problem, specified in terms of bits. But while the inputs and outputs are definitely bits, the relationship between them is really specified in terms of real arithmetic. This becomes particularly apparent with less trivial operations, such as powers, logarithms, and trig functions: discrete implementations of the functions are very complex (and not always accurate!) while the specification in terms of rounded real arithmetic is no different than for addition or subtraction.
 
+From a mathematical standpoint, IEEE 754 floating point is little more than a set of rules for quantizing real numbers at specific points during a calculation. There are a few special cases, such as what to do with negative zero, infinities, and expressions like $\infty - \infty$ and $\frac{1}{0}$, but these are not specific to the discrete nature of a representation based on bits and can be handled by a theory that extends real arithmetic, such as in [TODO: \cite{affinelystuffetc}].
 
+Combined with such a theory, this document should give a complete and formal specification of the output of any expressible floating point computation in any IEEE-754 like binary format. This specification is ``infinite precision,'' as it can be adapted to any output format, and error due to rounding of intermediate results can be avoided simply by removing quantization operations. Beyond the outcomes of computations, it can be used to define other quantities as well, such as real valued error or ulps difference due to rounding of intermediate results.
+
+\subsection{Titanic: guaranteed to float correctly}
+
+This document is just a paper specification: it can't do any computation on its own. To make up for that weakness, we provide a concrete implementation of the specification in Python. We call the implementation Titanic (with appropriate irony), as it is a floating point library ``guaranteed to float correctly.''
+
+Most floating point libraries are designed for performing numerical computations; to that end, they are optimized for performance. Titanic, in contrast, is designed for checking that numerical computations are well behaved; to that end, it is optimized for simplicity and obvious correctness. Titanic uses SymPy [TODO: cite] to perform real arithmetic; the core theory relating floating point numbers and real numbers is implemented exactly as described here. Titanic is available online at [TODO: source and stuff] titanic.uwplse.org.
 
 \bibliographystyle{ieeetr}
 \bibliography{ref}
