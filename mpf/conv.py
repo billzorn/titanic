@@ -217,6 +217,46 @@ def str_to_ord_bv_real(x):
     else:
         return FReal(x)
 
+# custom string parser: discrete representations become implicit triples,
+# continuous representations become FReals, and only single numbers
+# (no expressions with computations inside them) are allowed.
+# mostly useful for sanitizing/cannonicalizing input to a web tool.
+
+# supported formats:
+
+# packed, hex or binary
+
+# ordinal
+
+# triple, implicit or explicit
+
+# z3 triple, binary or hex
+
+# inf
+
+# nan
+
+# fpcore constant
+
+# decimal, standard or scientific
+
+# z3 exponential
+
+# ?? hex or binary fraction ??
+
+# rational
+
+
+def str_to_implicit_or_real(s, w, p):
+    assert isinstance(x, str)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+
+
+
+
 # convenient; mostly equivalent to float(s) but it returns an implicit triple
 def str_to_implicit(s, w, p, rm = core.RNE):
     assert isinstance(s, str)
