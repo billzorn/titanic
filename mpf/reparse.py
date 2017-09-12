@@ -56,7 +56,8 @@ cre_decint = opt(cre_pm) + cre_decnat
 cre_ordpre = r'0n|#n'
 cre_dot = re.escape('.')
 cre_e = re.escape('e')
-cre_ep = re.escape('[ep]')
+cre_p = re.escape('p')
+cre_ep = r'[ep]'
 
 def cre_frac(r_opt, r_nat):
     return cre_any(r_nat + opt(cre_dot),
@@ -124,7 +125,7 @@ re_bin = re.compile(opt(group(cre_pm, name='bin_pm')) +
 re_hex = re.compile(opt(group(cre_pm, name='hex_pm')) +
                     group(cre_hexpre) +
                     group(cre_hexfrac, name='hex_frac') +
-                    opt(group(cre_ep + group(cre_decint, name='hex_e'))),
+                    opt(group(cre_p + group(cre_decint, name='hex_e'))),
                     flags=cf)
 
 re_dec = re.compile(opt(group(cre_pm, name='dec_pm')) +
@@ -188,10 +189,10 @@ class Result(Enum):
     NAN = 0
     INF = 1
     FPC = 2
-    NUM = 4
-    ORD = 5
-    BV = 6
-    TUP = 7
+    NUM = 3
+    ORD = 4
+    BV = 5
+    TUP = 6
 
 # parsing
 
@@ -208,10 +209,14 @@ bv_re = re.compile(cre_any(group(group(cre_binpre) + group(cre_binnat, name='bbv
 
 # this is intended to be called only on something that already matched a cre_xxxfrac
 def parse_frac(s, base):
-    m = frac_re.fullmatch(s.strip('0'))
-    left = m.group('left')
-    right = m.group('right')
-    return int(left + right, base), base ** len(right)
+    m = frac_re.fullmatch(s)
+    left = m.group('left').lstrip('0')
+    right = m.group('right').rstrip('0')
+    x = left + right
+    if len(x) == 0:
+        return 0, 1
+    else:
+        return int(x, base), base ** len(right)
 
 def parse_pm(s):
     if s == '-':
@@ -239,7 +244,18 @@ re_any = re.compile(cre_any(re_inf.pattern,
                             re_tup.pattern),
                     flags=cf)
 
-# the main parsing interface
+# the main parsing interface:
+#   if we cannot parse this string, return (None, (),)
+#   otherwise, return one of:
+#     Result.INF, (the sign of the infinity,)
+#     Result.NAN, (the sign of the NaN, the payload or None if there wasn't one,)
+#     Result.FPC, (the sign of the constant, a sympifyable string representing the constant,)
+#     Result.NUM, (the sign of the number, the unsigned numerator, the nonzero unsigned denominator,
+#                  the base of the exponent or None if this was a num/denom fraction,
+#                  the exponent or None if it was not given explicitly and should be 0,)
+#     Result.BV,  (the unsigned integer value of the BV, the number of bits,)
+#     Result.ORD, (the signed integer ordinal,)
+#     Result.TUP, (as for bitvectors; one pair for each of of S E T or S E C)
 def reparse(s):
     assert isinstance(s, str)
 
@@ -277,7 +293,7 @@ def reparse(s):
         if sign == 1 and exp is None and nodot_re.fullmatch(m.group('bin_frac')):
             return Result.BV, (top, len(m.group('bin_frac')),)
         else:
-            return Result.NUM, (sign * top, bot, base, exp,)
+            return Result.NUM, (sign, top, bot, base, exp,)
 
     elif m.group('hex_frac'):
         sign = parse_pm(m.group('hex_pm'))
@@ -289,7 +305,7 @@ def reparse(s):
         if sign == 1 and exp is None and nodot_re.fullmatch(m.group('hex_frac')):
             return Result.BV, (top, len(m.group('hex_frac')) * 4,)
         else:
-            return Result.NUM, (sign * top, bot, base, exp,)
+            return Result.NUM, (sign, top, bot, base, exp,)
 
     elif m.group('dec_frac'):
         sign = parse_pm(m.group('dec_pm'))
@@ -298,16 +314,16 @@ def reparse(s):
             base, exp = 10, int(m.group('dec_e'))
         else:
             base, exp = 10, None
-        return Result.NUM, (sign * top, bot, base, exp,)
+        return Result.NUM, (sign, top, bot, base, exp,)
 
     elif m.group('exp_frac'):
         sign = parse_pm(m.group('exp_pm'))
-        top, bot = parse_frac(m.group('dec_frac'), 10)
+        top, bot = parse_frac(m.group('exp_frac'), 10)
         if m.group('exp_base'):
             base, exp = int(m.group('exp_base')), int(m.group('exp_e'))
         else:
             base, exp = int(m.group('exp_pbase')), int(m.group('exp_pe'))
-        return Result.NUM, (sign * top, bot, base, exp,)
+        return Result.NUM, (sign, top, bot, base, exp,)
 
     elif m.group('rat_top'):
         top, bot = int(m.group('rat_top')), int(m.group('rat_bot'))
@@ -315,7 +331,7 @@ def reparse(s):
             sign = -1
         else:
             sign = 1
-        return Result.NUM, (sign * abs(top), abs(bot), None, None,)
+        return Result.NUM, (sign, abs(top), abs(bot), None, None,)
 
     elif m.group('ord'):
         sign = parse_pm(m.group('ord_pm'))

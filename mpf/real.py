@@ -15,6 +15,12 @@ import sympy
 Rational = sympy.Rational
 symbolic_zero = sympy.sympify(0)
 
+import reparse
+Result = reparse.Result
+
+math_constants = {k : sympy.sympify(x) for k, x in reparse.fpc_constants.items()}
+math_memo = {x : math_constants[k] for k, x in reparse.fpc_constants.items()}
+
 # It turns out comparing numbers is rather hard.
 
 default_maxn = 1000000
@@ -93,39 +99,6 @@ def decide_order(x, y):
     else:
         raise ValueError('unable to decide order of {} and {}'
                          .format(repr(x), repr(y)))
-
-# Input and parsing.
-
-import re
-
-inf_strs_re = re.compile(r'inf|infinity|oo')
-nan_strs_re = re.compile(r's?nan(([-0-9]+)|\(([-0-9]+)\))?')
-preferred_inf_str = 'inf'
-preferred_nan_str = 'nan'
-
-exp_strs_re = re.compile(r'([0-9.]+)\*(([0-9]+)\*\*([-0-9]+)|\(([0-9]+)\*\*([-0-9]+)\))')
-# >>> exp_str_re.fullmatch('1.015625*(2**-13)').groups()
-# ('1.015625', '(2**-13)', None, None, '2', '-13')
-# >>> exp_str_re.fullmatch('1.015625*2**-13').groups()
-# ('1.015625', '2**-13', '2', '-13', None, None)
-
-# fpcore approved constants
-math_constants = {
-    'e'        : sympy.E,
-    'log2e'    : sympy.log(sympy.E, 2),
-    'log10e'   : sympy.log(sympy.E, 10),
-    'ln2'      : sympy.log(2),
-    'ln10'     : sympy.log(10),
-    'pi'       : sympy.pi,
-    'pi_2'     : sympy.pi / 2,
-    'pi_4'     : sympy.pi / 4,
-    '1_pi'     : 1 / sympy.pi,
-    '2_pi'     : 2 / sympy.pi,
-    '2_sqrtpi' : 2 / sympy.sqrt(sympy.pi),
-    'sqrt2'    : sympy.sqrt(2),
-    'sqrt1_2'  : 1 / sympy.sqrt(2),
-}
-math_strs_re = re.compile(r'|'.join(re.escape(k) for k in math_constants))
 
 # Affinely extended real numbers with signed zero and labeled NaN.
 
@@ -243,7 +216,6 @@ class FReal(object):
     _kw_negative = 'negative'
     _kw_infinite = 'infinite'
     _kw_payload = 'payload'
-
     def __init__(self, x = None, negative = None, infinite = False, payload = 1):
         assert negative is None or negative is True or negative is False
         assert infinite is True or infinite is False
@@ -302,121 +274,93 @@ class FReal(object):
 
             # a string, which we have to parse
             elif isinstance(x, str):
-                # try to get sign from the string
-                s = x.strip().lower()
-                if s.startswith('-'):
-                    str_negative = True
-                    s = s[1:]
-                elif s.startswith('+'):
-                    str_negative = False
-                    s = s[1:]
-                else:
-                    str_negative = False
+                res, xs = reparse.reparse(x)
 
-                # inf
-                if inf_strs_re.fullmatch(s):
+                if res is Result.NAN:
+                    (sign, p,) = xs
                     if negative is None:
-                        self.negative = str_negative
+                        self.negative = bool(sign < 0)
                     else:
-                        assert str_negative is False
+                        assert sign >= 0
+                        self.negative = negative
+                    if p is None:
+                        self.payload = payload
+                    else:
+                        self.payload = p
+                    assert self.payload != 0
+                    self.magnitude = None
+
+                elif res is Result.INF:
+                    (sign,) = xs
+                    if negative is None:
+                        self.negative = bool(sign < 0)
+                    else:
+                        assert sign >= 0
                         self.negative = negative
                     self.magnitude = None
                     self.infinite = True
-                # nan
-                elif nan_strs_re.fullmatch(s):
+
+                elif res is Result.FPC:
+                    (sign, expr,) = xs
                     if negative is None:
-                        self.negative = str_negative
+                        self.negative = bool(sign < 0)
                     else:
-                        assert str_negative is False
+                        assert sign >= 0
                         self.negative = negative
-                    self.magnitude = None
-                    # try to parse a payload from the string
-                    nan_match = nan_strs_re.fullmatch(s)
-                    if nan_match.group(2) is not None:
-                        self.payload = int(nan_match.group(2))
-                    elif nan_match.group(3) is not None:
-                        self.payload = int(nan_match.group(3))
-                    else:
-                        self.payload = payload
-                    assert self.payload != 0
-                # known mathematical constants
-                elif math_strs_re.fullmatch(s):
+                    self.magnitude = math_memo[expr]
+
+                elif res is Result.NUM:
+                    (sign, top, bot, base, exp,) = xs
                     if negative is None:
-                        self.negative = str_negative
+                        self.negative = bool(sign < 0)
                     else:
-                        assert str_negative is False
+                        assert sign >= 0
                         self.negative = negative
-                    self.magnitude = math_constants[s]
-                # z3 exponent notation: '-1.015625*(2**-13)'
-                elif exp_strs_re.fullmatch(s):
+                    frac = Rational(top, bot)
+                    if exp is None:
+                        self.magnitude = frac
+                    else:
+                        self.magnitude = frac * (Rational(base) ** exp)
+
+                elif res is Result.BV:
+                    (v, _,) = xs
                     if negative is None:
-                        self.negative = str_negative
+                        self.negative = False
                     else:
-                        assert str_negative is False
                         self.negative = negative
-                    exp_match = exp_strs_re.fullmatch(s)
-                    c = Rational(exp_match.group(1))
-                    if exp_match.group(3) is not None and exp_match.group(4) is not None:
-                        b = Rational(exp_match.group(3))
-                        e = Rational(exp_match.group(4))
-                    else:
-                        b = Rational(exp_match.group(5))
-                        e = Rational(exp_match.group(6))
-                    self.magnitude = c * (b ** e)
-                # some other kind of string
+                    self.magnitude = Rational(v)
+
+                elif res is Result.ORD or res is Result.TUP:
+                    assert False, 'cannot convert ordinals or bitvector tuples directly to reals'
+
                 else:
-                    try:
-                        # The sign is tricky.
-                        # Traditionally, -0 / 1 is -0, but -0 / -1 is 0.
+                    r = sympy.sympify(x)
+                    r = default_simplify(r)
+                    assert r.is_real or r == sympy.nan
+                    if r == sympy.nan:
+                        str_negative = False
+                    else:
+                        # x might be some weird real number, so we have to be careful when comparing it
+                        str_negative = decide_order(r, symbolic_zero) < 0
 
-                        # we may be missing the leading negation
-                        r = Rational(s)
-                        r_negative = bool(r < 0)
-                        # so refactor it in with a logical xor, to ensure the correct sign for 0.
-                        str_negative = str_negative != r_negative
+                    if negative is None:
+                        self.negative = str_negative
+                    else:
+                        assert str_negative is False
+                        self.negative = negative
 
-                        if negative is None:
-                            self.negative = str_negative
-                            if r_negative:
-                                self.magnitude = -r
-                            else:
-                                self.magnitude = r
+                    if r.is_infinite:
+                        self.magnitude = None
+                        self.infinite = True
+                    elif r == sympy.nan:
+                        self.magnitude = None
+                        self.payload = payload
+                        assert self.payload != 0
+                    else:
+                        if str_negative:
+                            self.magnitude = -r
                         else:
-                            assert str_negative is False
-                            self.negative = negative
                             self.magnitude = r
-
-                    # If parsing as a rational fails, try again with original string.
-                    # Note that sympification will always destroy the sign of 0; it can still
-                    # be passed separately, if the expression is a positive magnitude.
-                    except Exception:
-                        r = sympy.sympify(x)
-                        r = default_simplify(r)
-                        assert r.is_real or r == sympy.nan
-                        if r == sympy.nan:
-                            str_negative = False
-                        else:
-                            # x might be some weird real number, so we have to be careful when comparing it
-                            str_negative = decide_order(r, symbolic_zero) < 0
-
-                        if negative is None:
-                            self.negative = str_negative
-                        else:
-                            assert str_negative is False
-                            self.negative = negative
-
-                        if r.is_infinite:
-                            self.magnitude = None
-                            self.infinite = True
-                        elif r == sympy.nan:
-                            self.magnitude = None
-                            self.payload = payload
-                            assert self.payload != 0
-                        else:
-                            if str_negative:
-                                self.magnitude = -r
-                            else:
-                                self.magnitude = r
 
             # otherwise, it must be some sympy object representing a real number or nan
             else:
@@ -456,9 +400,9 @@ class FReal(object):
             sign_str = ''
 
         if self.isinf:
-            return sign_str + preferred_inf_str
+            return sign_str + reparse.preferred_inf_str
         elif self.isnan:
-            return preferred_nan_str
+            return reparse.preferred_nan_str
         elif self.iszero:
             return sign_str + '0'
         elif self.isrational:

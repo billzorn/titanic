@@ -4,6 +4,7 @@ import re
 import numpy as np
 import sympy
 
+import reparse
 from bv import BV
 import real
 FReal = real.FReal
@@ -463,9 +464,9 @@ def pow10_to_f_str(c, e):
 
     if e is None:
         if c == 0:
-            return real.preferred_nan_str
+            return reparse.preferred_nan_str
         else:
-            return sign_str + real.preferred_inf_str
+            return sign_str + reparse.preferred_inf_str
 
     if e < 0:
         s = str(c)
@@ -496,9 +497,9 @@ def pow10_to_e_str(c, e):
 
     if e is None:
         if c == 0:
-            return real.preferred_nan_str
+            return reparse.preferred_nan_str
         else:
-            return sign_str + real.preferred_inf_str
+            return sign_str + reparse.preferred_inf_str
 
     s = str(c)
     e2 = len(s) - 1
@@ -611,9 +612,9 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
 
     if R.isnan:
         if show_payload:
-            return real.preferred_nan_str + str(R.nan_payload)
+            return reparse.preferred_nan_str + str(R.nan_payload)
         else:
-            return real.preferred_nan_str
+            return reparse.preferred_nan_str
     elif R.isinf or R.iszero:
         return str(R)
     else:
