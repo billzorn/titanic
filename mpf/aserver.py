@@ -11,16 +11,6 @@ import json
 import webcontent
 import describefloat
 
-# main work process for worker pool
-def do_work(w, p, s, show_format):
-    try:
-        s = describefloat.explain_all(s, w, p, show_format=show_format)
-        return True, s
-    except Exception as e:
-        s = ('Caught {} while working.\n\n{}'
-             .format(repr(e), traceback.format_exc()))
-        return False, s
-
 
 # for LRU's circular DLL
 _PREV, _NEXT, _KEY = 0, 1, 2
@@ -134,6 +124,7 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     # interface
 
     server_version = 'aserver/0.0'
+    limit_exp = 200000
 
     def do_HEAD(self):
         self.send_head()
@@ -176,20 +167,20 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     def process_args(self, args):
         try:
             w = int(args['w'])
-            assert w > 2
+            assert 2 <= w <= 20
         except Exception:
             w = 8
 
         try:
             p = int(args['p'])
-            assert p > 2
+            assert 2 <= p < 1024
         except Exception:
             p = 24
 
         try:
-            s = str(args['s'])
+            s = str(args['s'])[:1024]
         except Exception:
-            s = ''
+            s = 'pi'
 
         return w, p, s
 
@@ -206,29 +197,50 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
         # dynamic content protocol
         else:
-            args = self.process_args(raw_args)
+            w, p, s = self.process_args(raw_args)
             show_format = path in {'fmt', 'jfmt'}
             the_pool = type(self).the_pool
 
             if show_format:
                 the_cache = type(self).fmt_cache
-                w, p, s = args
                 kargs = (w, p,)
             else:
                 the_cache = type(self).demo_cache
-                kargs = args
+                discrete, parsed = the_pool.apply(describefloat.parse_input,
+                                                  (s, w, p, type(self).limit_exp, False,))
+                if discrete:
+                    S, E, T = parsed
+                    kargs = (S.uint, E.uint, T.uint, w, p)
+                else:
+                    R = parsed
+                    kargs = (str(R), w, p,)
 
             # get cached content
             cached = the_cache.lookup(kargs)
             if cached is None:
-                success, cached = the_pool.apply(do_work, (*args, show_format))
-                if success:
-                    the_cache.update(kargs, cached)
+                hit = False
+                if show_format:
+                    cached = the_pool.apply(describefloat.process_format,
+                                            (w, p,))
+                else:
+                    cached = the_pool.apply(describefloat.process_parsed_input,
+                                            (s, w, p, discrete, parsed,))
+                the_cache.update(kargs, cached)
+            else:
+                hit = True
 
             # construct page
-            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(*args))
+            if show_format:
+                content = cached
+            else:
+                content = describefloat.explain_input(s, w, p, discrete, parsed, hit=hit) + '\n\n' + cached
+                if discrete:
+                    w = E.n
+                    p = T.n + 1
+
+            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(w, p, s))
             body.replace('\n', '\n' + webcontent.skeleton_indent)
-            body += '\n\n' + webcontent.pre(cached)
+            body += '\n\n' + webcontent.pre(content)
 
             return webcontent.skeletonize(body), 'text/html'
 

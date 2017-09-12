@@ -402,53 +402,19 @@ def describe_float(S, E, T):
         'rounding_info' : rounding_info,
     }
 
-def describe_real(x, w, p):
-    assert isinstance(x, int) or isinstance(x, BV) or isinstance(x, FReal) or isinstance(x, str)
+def describe_real(R, w, p):
+    assert isinstance(R, FReal)
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
     assert p >= 2
 
-    # After the parsing logic, we have the following variables:
-    # input_repr : repr(what was passed to x)
-    #          x : the input x, parsed into an int, BV, or FReal
-    #          R : an FReal with the value of the raw input
-    #      i_below : the ordinal below R
-    #      i_above : the ordinal above R
-
-    # Note that the sign of 0 is missing when only considering i_above/i_below,
-    # but it can be recovered from R.
-
-    # Note also that all of this information can all be determined
-    # without considering a particular rounding mode.
-
-    # Finally, i_below and i_above will be None if the input is NaN.
-
-    # Invoke some custom parsing logic on strings to figure out what they are.
-    # First, generate input_repr since we might reassign here to x.
-    input_repr = repr(x)
-    if isinstance(x, str):
-        x = conv.str_to_ord_bv_real(x)
-
-    # integers are interpreted as ordinals (and never produce -0)
-    if isinstance(x, int):
-        R, i_below, i_above = conv.ordinal_to_bounded_real(x, w, p)
-
-    # bitvectors are interpreted as packed representations
-    elif isinstance(x, BV):
-        R, i_below, i_above = conv.bv_to_bounded_real(x, w, p)
-
-    # reals are just themselves
-    elif isinstance(x, FReal):
-        R, i_below, i_above = conv.real_to_bounded_real(x, w, p)
-
-    # what is this?
+    if R.isnan:
+        i_below, i_above = None, None
     else:
-        raise ValueError('expected an int, BV, or FReal; given {}; parsed to {}'
-                         .format(input_repr, repr(x)))
+        i_below, i_above = core.binsearch_nearest_ordinals(R, w, p)
 
     if i_below is None or i_below == i_above:
-        # what do we do for NaN?
         exact = True
         if i_below is None:
             S, E, T = core.real_to_implicit(R, w, p, core.RNE)
@@ -528,11 +494,7 @@ def describe_real(x, w, p):
         return {
             'w'          : w,
             'p'          : p,
-            'input_repr' : input_repr,
-            'input'      : x,
             'R'          : R,
-            'i_below'    : i_below,
-            'i_above'    : i_above,
             'exact'      : exact,
             'S' : S,
             'E' : E,
@@ -543,17 +505,15 @@ def describe_real(x, w, p):
         return {
             'w'          : w,
             'p'          : p,
-            'input_repr' : input_repr,
-            'input'      : x,
             'R'          : R,
-            'i_below'    : i_below,
-            'i_above'    : i_above,
             'exact'      : exact,
+            'i_below' : i_below,
+            'i_above' : i_above,
             'R_below' : R_below,
             'R_above' : R_above,
             'difference_below' : difference_below,
             'difference_above' : difference_above,
-            'rounding_info' : rounding_info,
+            'rounding_info'    : rounding_info,
         }
 
 def explain_dict(d, indent=0):
@@ -802,21 +762,17 @@ def explain_float(d):
 
     s += 'real value:\n'
     if R.isnan:
-        s += '  {} (with payload: {})'.format(conv.real_to_pretty_string(R),
+        s += '  R = {} (with payload: {})'.format(conv.real_to_pretty_string(R),
                                                   conv.real_to_string(R, show_payload=True))
     elif R.isinf:
-        s += '  {} ({})'.format(conv.real_to_pretty_string(R),
+        s += '  R = {} ({})'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
-        s += '  ' + conv.real_to_string(R) + ''
+        s += '  R = ' + conv.real_to_string(R) + ''
     else:
-        s += '  (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
-        summary_is_approx, R_summary = approx_or_exact(R, prec=prec, spacer=' ')
-        if summary_is_approx:
-            s += '  ' + R_summary + ' = ' + conv.real_to_string(R, prec=prec, exact=True) + '\n'
-            s += '  = ' + str(R)
-        else:
-            s += '  ' + R_summary
+        s += '  R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
+        s += '    ' + summarize_with(R, prec=prec) + '\n'
+        s += '    = ' + str(R)
 
     # number lines
     if not R.isnan or R.isinf:
@@ -826,16 +782,6 @@ def explain_float(d):
     if 'rounding_info' in d:
         for k, r_info in d['rounding_info'].items():
             s += '\n\n' + explain_rm(r_info)
-
-    return s
-
-def explain_input(d):
-    s = 'received input (w={:d}, p={:d}):\n'.format(d['w'], d['p'])
-    s += '  ' + d['input_repr'] + '\n\n'
-
-    pretty_repr = conv.real_to_pretty_string(d['R'])
-    pretty_repr = pretty_repr.replace('\n', '\n  ')
-    s += '  ' + pretty_repr
 
     return s
 
@@ -892,34 +838,84 @@ def explain_real(d):
 
     return s
 
-# anecdotally, for (kinda) acceptable performance we need to limit ourselves to:
-# w <= 20
-# p <= 1024
-# 1024 characters of input
-# scientific notation exponent <= 200000
+def parse_input(s, w, p, limit_exp = None, allow_exprs = True):
+    assert isinstance(s, str)
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+    assert isinstance(limit_exp, int) or limit_exp is None
+    assert limit_exp is None or limit_exp >= 0
+    assert allow_exprs is True or allow_exprs is False
 
-def explain_all(x, w, p, show_format=False):
+    discrete, parsed = conv.str_to_real_or_implicit(s, w, p, limit_exp=limit_exp)
 
-    if show_format:
-        fmt_descr = describe_format(w, p)
-        return explain_format(fmt_descr)
+    if discrete is None:
+        if allow_exprs:
+            discrete = False
+            parsed = FReal(s)
+        else:
+            raise ValueError('unable to parse {}'.format(repr(s)))
 
+    return discrete, parsed
+
+# call after parse_input
+def explain_input(x, w, p, discrete, parsed, hit=False):
+    if discrete:
+        S, E, T = parsed
+        w_prime = E.n
+        p_prime = T.n + 1
     else:
-        r_descr = describe_real(x, w, p)
+        R = parsed
+
+    s = 'received input (w={:d}, p={:d}):'.format(w, p)
+    s += '\n  ' + repr(x)
+    if discrete and (w != w_prime or p != p_prime):
+        s += '\nNOTE: changed format to (w={:d}, p={:d})'.format(w_prime, p_prime)
+
+    s += '\n\ninterpreted as'
+    if discrete:
+        s += ' implicit triple'
+        if hit:
+            s += ' (cached)'
+        s += ':\n  ({}, {}, {})'.format(str(S), str(E), str(T))
+    else:
+        s += ' extended real number'
+        if hit:
+            s += ' (cached)'
+        s += ':\n  ' + str(R)
+
+    if not discrete:
+        pretty_repr = conv.real_to_pretty_string(R)
+        pretty_repr = pretty_repr.replace('\n', '\n  ')
+        s += '\n\n  ' + pretty_repr
+
+    return s
+
+# call after parse_input
+def process_parsed_input(s, w, p, discrete, parsed):
+    if discrete:
+        S, E, T = parsed
+        f_descr = describe_float(S, E, T)
+        return explain_float(f_descr)
+    else:
+        R = parsed
+        r_descr = describe_real(R, w, p)
         if r_descr.get('exact', False):
             S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
             f_descr = describe_float(S, E, T)
+            return explain_float(f_descr)
         else:
-            f_descr = None
+            return explain_real(r_descr)
 
-        s = explain_input(r_descr)
+def process_format(w, p):
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
 
-        if f_descr is None:
-            s += '\n\n' + explain_real(r_descr)
-        else:
-            s += '\n\n' + explain_float(f_descr)
-
-        return s
+    fmt_descr = describe_format(w, p)
+    return explain_format(fmt_descr)
 
 if __name__ == '__main__':
     import argparse
@@ -938,4 +934,10 @@ if __name__ == '__main__':
     if not args.f and args.x is None:
         print('no input string; nothing to do')
     else:
-        print(explain_all(args.x, args.w, args.p, args.f))
+        if args.f:
+            print(process_format(args.w, args.p))
+        else:
+            discrete, parsed = parse_input(args.x, args.w, args.p)
+            print(explain_input(args.x, args.w, args.p, discrete, parsed))
+            print()
+            print(process_parsed_input(args.x, args.w, args.p, discrete, parsed))

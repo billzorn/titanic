@@ -5,6 +5,7 @@ import numpy as np
 import sympy
 
 import reparse
+Result = reparse.Result
 from bv import BV
 import real
 FReal = real.FReal
@@ -131,132 +132,83 @@ def implicit_to_float(S, E, T):
 
     return float(implicit_to_np_float(S, E, T))
 
-# Pre-rounding conversion to bounded reals.
-
-def ordinal_to_bounded_real(i, w, p):
-    assert isinstance(i, int)
-    assert isinstance(w, int)
-    assert w >= 2
-    assert isinstance(p, int)
-    assert p >= 2
-    umax = ((2 ** w) - 1) * (2 ** (p - 1))
-    assert -umax <= i and i <= umax
-
-    below = i
-    above = i
-    S, E, T = core.ordinal_to_implicit(i, w, p)
-    R = core.implicit_to_real(S, E, T)
-    return R, below, above
-
-def bv_to_bounded_real(B, w, p):
-    assert isinstance(B, BV)
-    assert isinstance(w, int)
-    assert w >= 2
-    assert isinstance(p, int)
-    assert p >= 2
-    assert B.n == w + p
-
-    try:
-        below = core.packed_to_ordinal(B, w, p)
-    except core.OrdinalError:
-        below = None
-    above = below
-    S, E, T = core.packed_to_implicit(B, w, p)
-    R = core.implicit_to_real(S, E, T)
-    return R, below, above
-
-def real_to_bounded_real(R, w, p):
-    assert isinstance(R, FReal)
-    assert isinstance(w, int)
-    assert w >= 2
-    assert isinstance(p, int)
-    assert p >= 2
-
-    if R.isnan:
-        return R, None, None
-    else:
-        below, above = core.binsearch_nearest_ordinals(R, w, p)
-        return R, below, above
-
 # Conversions to and from human-readable formats.
 
-# custom string parser for ordinals and bitvectors
-def str_to_ord_bv_real(x):
-    assert isinstance(x, str)
-
-    s = ''.join(x.split()).lower()
-    if s.startswith('-'):
-        sign = -1
-        s = s[1:]
-    elif s.startswith('+'):
-        sign = 1
-        s = s[1:]
-    else:
-        sign = 1
-
-    # ordinal
-    if s.startswith('0i'):
-        s = s[2:]
-        return int(s) * sign
-    # hex bitvector
-    elif s.startswith('0x'):
-        s = s[2:]
-        b = int(s, 16) * sign
-        n = len(s) * 4
-        if s.startswith('-') or s.startswith('+'):
-            n -= 4
-        return BV(b, n)
-    # binary bitvector
-    elif s.startswith('0b'):
-        s = s[2:]
-        b = int(s, 2) * sign
-        n = len(s)
-        if s.startswith('-') or s.startswith('+'):
-            n -= 1
-        return BV(b, n)
-    # see if the FReal constructor can figure it out
-    else:
-        return FReal(x)
-
-# custom string parser: discrete representations become implicit triples,
-# continuous representations become FReals, and only single numbers
-# (no expressions with computations inside them) are allowed.
-# mostly useful for sanitizing/cannonicalizing input to a web tool.
-
-# supported formats:
-
-# packed, hex or binary
-
-# ordinal
-
-# triple, implicit or explicit
-
-# z3 triple, binary or hex
-
-# inf
-
-# nan
-
-# fpcore constant
-
-# decimal, standard or scientific
-
-# z3 exponential
-
-# ?? hex or binary fraction ??
-
-# rational
-
-
-def str_to_implicit_or_real(s, w, p):
-    assert isinstance(x, str)
+# Try to interpret a string as either a number literal, or a discrete fp representation.
+# This will work for anything recognized by the reparse regex parser (i.e. not sympy expressions).
+# If we see a discrete type like an ordinal, triple, or bitvector, we will return an implicit triple
+# S, E, T. If we see a number literal, we will return an FReal. Note that w and p may change, if the literal
+# could be interpreted with different w and p from the ones provided. We assume a tuple is a written implicit
+# triple, unless w and p are exactly right for it to be an explicit triple.
+def str_to_real_or_implicit(s, w, p, limit_exp=None):
+    assert isinstance(s, str)
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
     assert p >= 2
+    assert isinstance(limit_exp, int) or limit_exp is None
+    assert limit_exp is None or limit_exp >= 0
 
+    res, xs = reparse.reparse(s)
 
+    # continuous - return real
 
+    if res is Result.NAN:
+        (sign, p,) = xs
+        return False, FReal(None, negative=sign<0, payload=p)
+
+    elif res is Result.INF:
+        (sign,) = xs
+        return False, FReal(None, negative=sign<0, infinite=True)
+
+    elif res is Result.FPC:
+        # give up and parse again...
+        return False, FReal(s)
+
+    elif res is Result.NUM:
+        (sign, top, bot, base, exp,) = xs
+        if limit_exp and exp is not None:
+            if base == 10:
+                effective_exp = exp
+            else:
+                effective_exp = (FReal(10) / FReal(base)) * FReal(abs(exp))
+            if effective_exp > limit_exp:
+                raise ValueError('effective exponent 10^({}) too large'.format(str(effective_exp)))
+        frac = real.Rational(top, bot)
+        if exp is not None:
+            frac = frac * (real.Rational(base) ** exp)
+        return False, FReal(frac, negative=sign<0)
+
+    # discrete - return implicit triple
+
+    elif res is Result.ORD:
+        (i,) = xs
+        return True, core.ordinal_to_implicit(i, w, p)
+
+    elif res is Result.BV:
+        (v, size,) = xs
+        if size == w + p:
+            return True, core.packed_to_implicit(BV(v, size), w, p)
+        else:
+            w_prime, p_prime = ieee_split_w_p(size)
+            if w_prime is not None and p_prime is not None:
+                return True, core.packed_to_implicit(BV(v, size), w_prime, p_prime)
+            else:
+                raise ValueError('unable to interpret bitvector {} as binary floating point representation with w={:d}, p={:d}'
+                                 .format(repr(s), w, p))
+
+    elif res is Result.TUP:
+        (S_tup, E_tup, TorC_tup,) = xs
+        S = BV(*S_tup)
+        E = BV(*E_tup)
+        TorC = BV(*TorC_tup)
+        if w == E.n and p == TorC.n:
+            return True, core.explicit_to_implicit(S, E, TorC)
+        else:
+            return True, (S, E, TorC,)
+
+    else:
+        return None, None
 
 # convenient; mostly equivalent to float(s) but it returns an implicit triple
 def str_to_implicit(s, w, p, rm = core.RNE):
