@@ -1,5 +1,6 @@
 # aserver: parallel webserver and LRU cache in one file
 
+import sys
 import os
 import threading
 import traceback
@@ -109,11 +110,37 @@ class AsyncCache(object):
         for k, v in jl:
             self.update(tuple(k), v)
 
+ERROR_MESSAGE = '''\
+<html>
+<head>
+<title>%(code)d %(message)s</title>
+</head>
+<body>
 
-            
+
+<center>
+<h1>%(code)d %(message)s</h1>
+<p>{} {}</p>
+</center>
+<hr>
+
+
+<pre>%(explain)s</pre>
+
+
+</body>
+</html>
+'''
+ERROR_CONTENT_TYPE = 'text/html'
+
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     server_version = 'aserver/0.1'
+    sys_version = "Python/" + sys.version.split()[0]
     protocol_version = 'HTTP/1.1'
+    error_message_format = ERROR_MESSAGE.format(server_version, sys_version)
+    error_content_type = ERROR_CONTENT_TYPE
+    traceback_log = True
+    traceback_send = True
 
     # These do not need to be overridden again; they just call send_head.
     def do_HEAD(self):
@@ -132,25 +159,33 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     def send_head(self):
         try:
             response, msg, headers, content = self.construct_content()
-        except Exception as e:
-            s = ('Caught {} while preparing content.\n\n{}'
-                 .format(repr(e), traceback.format_exc()))
-            content = webcontent.skeletonize(webcontent.pre(s))
-            ctype = 'text/html'
 
-        try:
-            if content is None or ctype is None:
-                self.send_error(HTTPStatus.NOT_FOUND, 'Unknown request')
-                return None
-            else:
-                self.send_response(HTTPStatus.OK)
-                self.send_header('Content-Type', ctype)
-                self.send_header('Content-Length', len(content))
-                self.end_headers()
-                return content
-        except:
-            # could do cleanup like closing a file
-            raise
+        except Exception as e:
+            code = HTTPStatus.INTERNAL_SERVER_ERROR
+            message = None
+            explain = None
+
+            if self.traceback_log or self.traceback_send:
+                explain_traceback = ('Caught {} while preparing content.\n\n{}'
+                                     .format(repr(e), traceback.format_exc()))
+                if self.traceback_send:
+                    message = type(e).__name__
+                    explain = explain_traceback
+
+            self.send_error(code, message, explain)
+
+            if self.traceback_log:
+                self.log_message('%s', explain_traceback)
+
+            # send_error already writes the body, so we don't need to return anything
+            return None
+
+        else:
+            self.send_response(response, msg)
+            for k, v in headers:
+                self.send_header(k, v)
+            self.end_headers()
+            return content
 
     # Uses urllib to parse the path of the current request.
     def translate_path(self):
@@ -165,61 +200,54 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     #   content  : the bytes you want to send as the body of this response
     def construct_content(self):
         pr = self.translate_path()
-        
-        
+
+        assert pr.path != '/testing'
+
+        response = HTTPStatus.NOT_FOUND
+        msg = None
+        headers = (
+            ('Content-Type', 'text/html',),
+        )
+        body = (
+            '<!DOCTYPE html>\n'
+            '<html>\n'
+            '  <head>\n'
+            '    <title>404 Nothing Here</title>\n'
+            '  </head>\n'
+            '  <body>\n'
+            '    <h1>There is no content on this server!</h1>\n'
+            '  </body>\n'
+            '</html>\n'
+        )
+
+        return response, msg, headers, bytes(body, encoding='ascii')
 
 class AsyncTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
 
-ncores = os.cpu_count()
-default_pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
-
 if __name__ == '__main__':
-    import sys
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--demo_cache', type=int, default=10000,
-                        help='number of demos to cache')
-    parser.add_argument('--fmt_cache', type=int, default=1000,
-                        help='number formats to cache')
-    parser.add_argument('--workers', type=int, default=default_pool_size,
-                        help='number of worker processes to run in parallel')
-
     parser.add_argument('--host', type=str, default='localhost',
                         help='server host')
     parser.add_argument('--port', type=int, default=8000,
                         help='server port')
     args = parser.parse_args()
 
-    fmt_cache = AsyncCache(args.fmt_cache)
-    demo_cache = AsyncCache(args.demo_cache)
-    with Pool(args.workers, maxtasksperchild=100) as the_pool:
-        class MyHTTPRequestHandler(AsyncHTTPRequestHandler):
-            fmt_cache = fmt_cache
-            demo_cache = demo_cache
-            the_pool = the_pool
+    with AsyncTCPServer((args.host, args.port,), AsyncHTTPRequestHandler) as server:
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
 
-            print('caching {:d} fmt, {:d} demo'.format(args.fmt_cache, args.demo_cache))
-            print('{:d} worker processes'.format(args.workers))
+        print('Server on thread: {}.'.format(server_thread.name))
+        print('Close stdin to stop.')
 
-        with ThreadedTCPServer((args.host, args.port,), MyHTTPRequestHandler) as server:
-            server_thread = threading.Thread(target=server.serve_forever)
-            server_thread.daemon = True
-            server_thread.start()
+        for line in sys.stdin:
+            pass
 
-            print('server on thread:', server_thread.name)
-            print('close stdin to stop.')
-
-            for line in sys.stdin:
-                pass
-
-            print('stdin closed, stopping.')
-            the_pool.close()
-            print('workers closing...')
-            the_pool.join()
-            print('workers joined successfully.')
-            server.shutdown()
-            print('goodbye!')
+        print('Closed stdin, stopping...')
+        server.shutdown()
+        print('Goodbye!')
