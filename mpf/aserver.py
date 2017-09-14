@@ -1,16 +1,12 @@
-from multiprocessing import Pool
-from http.server import BaseHTTPRequestHandler, HTTPStatus
-from socketserver import ThreadingMixIn, TCPServer
+# aserver: parallel webserver and LRU cache in one file
 
 import os
 import threading
 import traceback
 import urllib
 import json
-
-import webcontent
-import describefloat
-
+from http.server import BaseHTTPRequestHandler, HTTPStatus
+from socketserver import ThreadingMixIn, TCPServer
 
 # for LRU's circular DLL
 _PREV, _NEXT, _KEY = 0, 1, 2
@@ -114,140 +110,28 @@ class AsyncCache(object):
             self.update(tuple(k), v)
 
 
+            
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
+    server_version = 'aserver/0.1'
+    protocol_version = 'HTTP/1.1'
 
-    # subclass and overwrite these before using
-    fmt_cache = None
-    demo_cache = None
-    the_pool = None
-
-    # interface
-
-    server_version = 'aserver/0.0'
-    limit_exp = 200000
-
+    # These do not need to be overridden again; they just call send_head.
     def do_HEAD(self):
         self.send_head()
-
     def do_GET(self):
         content = self.send_head()
         if content is not None:
             try:
                 self.wfile.write(content)
-            except Exception:
-                # could try again, but we don't really care that much
-                pass
+            except Exception as e:
+                self.log_error('Caught {} while writing response to GET.\n\n{}',
+                               repr(e), traceback.format_exc())
 
-    # helpers
-
-    def translate_path(self):
-        pr = urllib.parse.urlparse(self.path)
-        path = pr.path.lower()
-        if webcontent.empty_re.fullmatch(path):
-            path = webcontent.root_page
-
-        page_match = webcontent.page_re.fullmatch(path)
-        if page_match:
-            return page_match.group(1), None
-
-        protocol_match = webcontent.protocol_re.fullmatch(path)
-        if protocol_match:
-            args = {}
-            for f in pr.query.split('&'):
-                name_arg = f.split('=')
-                if len(name_arg) == 2:
-                    name = urllib.parse.unquote_plus(name_arg[0].strip())
-                    if len(name) > 0 and name not in args:
-                        arg = urllib.parse.unquote_plus(name_arg[1].strip())
-                        args[name] = arg
-            return protocol_match.group(1), args
-
-        return None, None
-
-    def process_args(self, args):
-        try:
-            w = int(args['w'])
-            assert 2 <= w <= 20
-        except Exception:
-            w = 8
-
-        try:
-            p = int(args['p'])
-            assert 2 <= p < 1024
-        except Exception:
-            p = 24
-
-        try:
-            s = str(args['s'])[:1024]
-        except Exception:
-            s = 'pi'
-
-        return w, p, s
-
-    def construct_content(self):
-        path, raw_args = self.translate_path()
-
-        # no content
-        if path is None:
-            return None, None
-
-        # static page
-        elif raw_args is None:
-            return webcontent.page_content[path]
-
-        # dynamic content protocol
-        else:
-            w, p, s = self.process_args(raw_args)
-            show_format = path in {'fmt', 'jfmt'}
-            the_pool = type(self).the_pool
-
-            if show_format:
-                the_cache = type(self).fmt_cache
-                kargs = (w, p,)
-            else:
-                the_cache = type(self).demo_cache
-                discrete, parsed = the_pool.apply(describefloat.parse_input,
-                                                  (s, w, p, type(self).limit_exp, False,))
-                if discrete:
-                    S, E, T = parsed
-                    kargs = (S.uint, E.uint, T.uint, w, p)
-                else:
-                    R = parsed
-                    kargs = (str(R), w, p,)
-
-            # get cached content
-            cached = the_cache.lookup(kargs)
-            if cached is None:
-                hit = False
-                if show_format:
-                    cached = the_pool.apply(describefloat.process_format,
-                                            (w, p,))
-                else:
-                    cached = the_pool.apply(describefloat.process_parsed_input,
-                                            (s, w, p, discrete, parsed,))
-                the_cache.update(kargs, cached)
-            else:
-                hit = True
-
-            # construct page
-            if show_format:
-                content = cached
-            else:
-                content = describefloat.explain_input(s, w, p, discrete, parsed, hit=hit) + '\n\n' + cached
-                if discrete:
-                    w = E.n
-                    p = T.n + 1
-
-            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(w, p, s))
-            body.replace('\n', '\n' + webcontent.skeleton_indent)
-            body += '\n\n' + webcontent.pre(content)
-
-            return webcontent.skeletonize(body), 'text/html'
-
-    # also returns the content that would have been sent for these headers
+    # This does not need to be overridden again: it just calls self.construct_content().
+    # Override that in subclasses to change the content produced by the handler.
     def send_head(self):
         try:
-            content, ctype = self.construct_content()
+            response, msg, headers, content = self.construct_content()
         except Exception as e:
             s = ('Caught {} while preparing content.\n\n{}'
                  .format(repr(e), traceback.format_exc()))
@@ -268,8 +152,23 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
             # could do cleanup like closing a file
             raise
 
+    # Uses urllib to parse the path of the current request.
+    def translate_path(self):
+        return urllib.parse.urlparse(self.path)
 
-class ThreadedTCPServer(ThreadingMixIn, TCPServer):
+    # Override this to change the content produced by the handler. Returns a tuple of:
+    #   response : the http response code, such as HTTPStatus.OK
+    #   msg      : the message to send at the end of the http response line (or None for a default message)
+    #   headers  : a list of tuples to send as MIME headers: (keyword, value)
+    #              NOTE: do not put Content-Length in here, it is generated automatically in send_head
+    #              NOTE: however, do put Content-Type in here if you want to send it!
+    #   content  : the bytes you want to send as the body of this response
+    def construct_content(self):
+        pr = self.translate_path()
+        
+        
+
+class AsyncTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 

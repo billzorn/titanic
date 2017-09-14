@@ -1,128 +1,119 @@
 #!/usr/bin/env python
 
-# Quick and dirty web demo of symbolic floating point.
-
-from http.server import BaseHTTPRequestHandler, HTTPStatus
-import urllib
-import socketserver
-
 import describefloat
+import webcontent
+from aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
 
-version = '0.0'
+class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
+    
+    # subclass and overwrite these before using
+    fmt_cache = None
+    demo_cache = None
+    the_pool = None
 
-HOST = 'localhost'
-PORT = 8001
+    # configuration
+    limit_exp = 200000
 
-max_w = 20
-max_p = 1024
-max_chars = 1000
+    def translate_path(self):
+        pr = urllib.parse.urlparse(self.path)
+        path = pr.path.lower()
+        if webcontent.empty_re.fullmatch(path):
+            path = webcontent.root_page
 
-default_w = '8'
-default_p = '24'
-default_chars = 'PI'
+        page_match = webcontent.page_re.fullmatch(path)
+        if page_match:
+            return page_match.group(1), None
 
-page = '''<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>SymFP</title>
-  </head>
+        protocol_match = webcontent.protocol_re.fullmatch(path)
+        if protocol_match:
+            args = {}
+            for f in pr.query.split('&'):
+                name_arg = f.split('=')
+                if len(name_arg) == 2:
+                    name = urllib.parse.unquote_plus(name_arg[0].strip())
+                    if len(name) > 0 and name not in args:
+                        arg = urllib.parse.unquote_plus(name_arg[1].strip())
+                        args[name] = arg
+            return protocol_match.group(1), args
 
-  <body>
-    <header>
-      <h1>SymFP</h1>
-      <aside>Symbolic (infinite precision!) floating point</aside>
-    </header>
+        return None, None
 
-    <br>
-
-    <form action="/demo" method="get">
-      w: <input type="number" name="w" value="{{}}" min="2" max="{}">
-      p: <input type="number" name="p" value="{{}}" min="2" max="{}">
-      <input type="text" name="s" value="{{}}" maxlength="{}">
-      <input type="submit" value="Submit">
-    </form>
-{{}}
-  </body>
-</html>
-'''.format(str(max_w), str(max_p), str(max_chars))
-
-homepage = page.format(
-    default_w,
-    default_p,
-    default_chars,
-    ''
-)
-
-content = '''<br>
-<pre>
-{}
-</pre>
-'''
-
-def ghetto_arguments(s):
-    fields = s.split('&')
-    args = {}
-    for f in fields:
-        name_arg = f.split('=')
-        if len(name_arg) == 2 and len(name_arg[0]) > 0:
-            args[name_arg[0].strip()] = urllib.parse.unquote_plus(name_arg[1].strip())
-    return args
-
-class DemoHTTPRequestHandler(BaseHTTPRequestHandler):
-
-    server_version = 'SymfpDemoHTTP/' + version
-
-    def do_GET(self):
-        f = self.send_head()
-        if f:
-            self.wfile.write(f.encode('utf-8'))
-            self.wfile.write('\n'.encode('utf-8'))
-            self.wfile.flush()
-
-    def do_HEAD(self):
-        self.send_head()
-
-    # also constructs the html to send
-    def send_head(self):
-        args = self.translate_path(self.path)
-        print(repr(args))
-        if args is None:
-            f = homepage
-        else:
-            # actually run a query
-            data = describefloat.explain_all(
-                args.get('s', default_chars),
-                int(args.get('w', default_w)),
-                int(args.get('p', default_p))
-            )
-            data_content = content.format(data)
-            f = page.format(
-                args.get('w', default_w),
-                args.get('p', default_p),
-                args.get('s', default_chars),
-                data_content
-            )
-        ctype = 'text/html'
+    def process_args(self, args):
         try:
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-type", ctype)
-            self.send_header("Content-Length", len(f))
-            self.end_headers()
-            return f
-        except:
-            # could do cleanup like closing a file
-            raise
+            w = int(args['w'])
+            assert 2 <= w <= 20
+        except Exception:
+            w = webcontent.default_w
 
-    def translate_path(self, path):
-        pr = urllib.parse.urlparse(path)
-        if pr.path == '/demo':
-            return ghetto_arguments(pr.query)
+        try:
+            p = int(args['p'])
+            assert 2 <= p < 1024
+        except Exception:
+            p = webcontent.default_p
+
+        try:
+            s = str(args['s'])[:1536]
+        except Exception:
+            s = webcontent.default_s
+
+        return w, p, s
+
+    def construct_content(self):
+        path, raw_args = self.translate_path()
+
+        # no content
+        if path is None:
+            return None, None
+
+        # static page
+        elif raw_args is None:
+            return webcontent.page_content[path]
+
+        # dynamic content protocol
         else:
-            return None
+            w, p, s = self.process_args(raw_args)
+            show_format = path in {'fmt', 'jfmt'}
+            the_pool = type(self).the_pool
 
-Handler = DemoHTTPRequestHandler
+            if show_format:
+                the_cache = type(self).fmt_cache
+                kargs = (w, p,)
+            else:
+                the_cache = type(self).demo_cache
+                discrete, parsed = the_pool.apply(describefloat.parse_input,
+                                                  (s, w, p, type(self).limit_exp, False,))
+                if discrete:
+                    S, E, T = parsed
+                    kargs = (S.uint, E.uint, T.uint, w, p)
+                else:
+                    R = parsed
+                    kargs = (str(R), w, p,)
 
-with socketserver.TCPServer((HOST, PORT), Handler) as httpd:
-    print('serving at port', PORT)
-    httpd.serve_forever()
+            # get cached content
+            cached = the_cache.lookup(kargs)
+            if cached is None:
+                hit = False
+                if show_format:
+                    cached = the_pool.apply(describefloat.process_format,
+                                            (w, p,))
+                else:
+                    cached = the_pool.apply(describefloat.process_parsed_input,
+                                            (s, w, p, discrete, parsed,))
+                the_cache.update(kargs, cached)
+            else:
+                hit = True
+
+            # construct page
+            if show_format:
+                content = cached
+            else:
+                content = describefloat.explain_input(s, w, p, discrete, parsed, hit=hit) + '\n\n' + cached
+                if discrete:
+                    w = E.n
+                    p = T.n + 1
+
+            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(w, p, s))
+            body.replace('\n', '\n' + webcontent.skeleton_indent)
+            body += '\n\n' + webcontent.pre(content)
+
+            return webcontent.skeletonize(body), 'text/html'
