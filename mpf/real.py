@@ -330,7 +330,7 @@ class FReal(object):
                         self.negative = negative
                     self.magnitude = Rational(v)
 
-                elif res is Result.ORD or res is Result.TUP:
+                elif res is Result.ORD or res is Result.ITUP or res is Result.ETUP:
                     assert False, 'cannot convert ordinals or bitvector tuples directly to reals'
 
                 else:

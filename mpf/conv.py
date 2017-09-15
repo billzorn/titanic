@@ -173,7 +173,7 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
             else:
                 effective_exp = (FReal(10) / FReal(base)) * FReal(abs(exp))
             if effective_exp > limit_exp:
-                raise ValueError('effective exponent 10^({}) too large'.format(str(effective_exp)))
+                return None, 'Effective exponent 10**({}) must be less than {}.'.format(str(effective_exp), str(limit_exp))
         frac = real.Rational(top, bot)
         if exp is not None:
             frac = frac * (real.Rational(base) ** exp)
@@ -194,18 +194,24 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
             if w_prime is not None and p_prime is not None:
                 return True, core.packed_to_implicit(BV(v, size), w_prime, p_prime)
             else:
-                raise ValueError('unable to interpret bitvector {} as binary floating point representation with w={:d}, p={:d}'
-                                 .format(repr(s), w, p))
+                return None, ('Unable to interpret bitvector {} as binary floating point representation with w={:d}, p={:d}.'
+                              .format(repr(s), w, p))
 
-    elif res is Result.TUP:
-        (S_tup, E_tup, TorC_tup,) = xs
+    elif res is Result.ITUP:
+        (S_tup, E_tup, T_tup,) = xs
         S = BV(*S_tup)
         E = BV(*E_tup)
-        TorC = BV(*TorC_tup)
-        if w == E.n and p == TorC.n:
-            return True, core.explicit_to_implicit(S, E, TorC)
-        else:
-            return True, (S, E, TorC,)
+        T = BV(*T_tup)
+        return True, (S, E, T,)
+
+    elif res is Result.ETUP:
+        (S_tup, E_tup, ibit_tup, T_tup,) = xs
+        S = BV(*S_tup)
+        E = BV(*E_tup)
+        ibit = BV(*ibit_tup)
+        T = BV(*T_tup)
+        C = core.concat(ibit, T)
+        return True, core.explicit_to_implicit(S, E, C)
 
     else:
         return None, None

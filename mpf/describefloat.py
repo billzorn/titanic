@@ -771,8 +771,9 @@ def explain_float(d):
         s += '  R = ' + conv.real_to_string(R) + ''
     else:
         s += '  R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
-        s += '    ' + summarize_with(R, prec=prec) + '\n'
-        s += '    = ' + str(R)
+        s += '    ' + summarize_with(R, prec=prec)
+        if R.isrational and R.rational_denominator != 1:
+            s += '\n    = ' + str(R)
 
     # number lines
     if not R.isnan or R.isinf:
@@ -850,12 +851,14 @@ def parse_input(s, w, p, limit_exp = None, allow_exprs = True):
 
     discrete, parsed = conv.str_to_real_or_implicit(s, w, p, limit_exp=limit_exp)
 
-    if discrete is None:
+    if parsed is None:
         if allow_exprs:
             discrete = False
             parsed = FReal(s)
         else:
-            raise ValueError('unable to parse {}'.format(repr(s)))
+            discrete = None
+            parsed = ('Unable to parse {} as real number literal or binary floating point representation.'
+                      .format(repr(s)))
 
     return discrete, parsed
 
@@ -938,6 +941,10 @@ if __name__ == '__main__':
             print(process_format(args.w, args.p))
         else:
             discrete, parsed = parse_input(args.x, args.w, args.p)
-            print(explain_input(args.x, args.w, args.p, discrete, parsed))
-            print()
-            print(process_parsed_input(args.x, args.w, args.p, discrete, parsed))
+            if discrete is None:
+                # parsing failed, so the value is an error string
+                print(parsed)
+            else:
+                print(explain_input(args.x, args.w, args.p, discrete, parsed))
+                print()
+                print(process_parsed_input(args.x, args.w, args.p, discrete, parsed))

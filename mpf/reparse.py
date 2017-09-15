@@ -161,27 +161,52 @@ re_rat = re.compile(cre_ws(group(cre_decint, name='rat_top'),
 
 # bitvectors and structured triples
 
-cre_bin1 = r'0b0|0b1|#b0|#b1'
+cre_0 = re.escape('0')
+cre_1 = re.escape('1')
+cre_01 = cre_any(cre_0, cre_1)
+cre_bin01 = cre_any(group(cre_binpre) + cre_0, group(cre_binpre) + cre_1)
+cre_1bit = cre_any(cre_01, cre_bin01)
 cre_csep = r'[,\s]'
 cre_bv = cre_any(group(cre_binpre) + cre_binnat, group(cre_hexpre) + cre_hexnat)
 
 re_bv  = re.compile(group(cre_bv, name='bv'), flags=cf)
 
-re_tup = re.compile(cre_any(cre_ws(opt(group(cre_ws('fp',
-                                                    cre_csep))),
-                                   group(cre_bin1, name='tup0'),
-                                   cre_csep,
-                                   group(cre_bv, name='tup1'),
-                                   cre_csep,
-                                   group(cre_bv, name='tup2')),
-                            cre_parens(cre_ws(opt(group(cre_ws('fp',
-                                                               cre_csep))),
-                                              group(cre_bin1, name='ptup0'),
-                                              cre_csep,
-                                              group(cre_bv, name='ptup1'),
-                                              cre_csep,
-                                              group(cre_bv, name='ptup2')))),
-                    flags=cf)
+re_tup3 = re.compile(cre_any(cre_ws(opt(group(cre_ws('fp',
+                                                     cre_csep))),
+                                    group(cre_1bit, name='tup3_0'),
+                                    cre_csep,
+                                    group(cre_bv, name='tup3_1'),
+                                    cre_csep,
+                                    group(cre_bv, name='tup3_2')),
+                             cre_parens(cre_ws(opt(group(cre_ws('fp',
+                                                                cre_csep))),
+                                               group(cre_1bit, name='ptup3_0'),
+                                               cre_csep,
+                                               group(cre_bv, name='ptup3_1'),
+                                               cre_csep,
+                                               group(cre_bv, name='ptup3_2')))),
+                     flags=cf)
+
+re_tup4 = re.compile(cre_any(cre_ws(opt(group(cre_ws('fp',
+                                                     cre_csep))),
+                                    group(cre_1bit, name='tup4_0'),
+                                    cre_csep,
+                                    group(cre_bv, name='tup4_1'),
+                                    cre_csep,
+                                    group(cre_1bit, name='tup4_2'),
+                                    cre_csep,
+                                    group(cre_bv, name='tup4_3')),
+                             cre_parens(cre_ws(opt(group(cre_ws('fp',
+                                                                cre_csep))),
+                                               group(cre_1bit, name='ptup4_0'),
+                                               cre_csep,
+                                               group(cre_bv, name='ptup4_1'),
+                                               cre_csep,
+                                               group(cre_1bit, name='ptup4_2'),
+                                               cre_csep,
+                                               group(cre_bv, name='ptup4_3')))),
+                     flags=cf)
+
 
 # enum to define results
 
@@ -192,7 +217,8 @@ class Result(Enum):
     NUM = 3
     ORD = 4
     BV = 5
-    TUP = 6
+    ITUP = 6
+    ETUP = 7
 
 # parsing
 
@@ -203,8 +229,9 @@ frac_re = re.compile(group(r'[^.]*', name='left') +
 
 nodot_re = re.compile(r'[^.]*', flags=cf)
 
-bv_re = re.compile(cre_any(group(group(cre_binpre) + group(cre_binnat, name='bbv')),
-                           group(group(cre_hexpre) + group(cre_hexnat, name='hbv'))),
+bv_re = re.compile(cre_any(group(cre_01, name='bv1'),
+                           group(cre_binpre) + group(cre_binnat, name='bbv'),
+                           group(cre_hexpre) + group(cre_hexnat, name='hbv')),
                    flags=cf)
 
 # this is intended to be called only on something that already matched a cre_xxxfrac
@@ -227,7 +254,9 @@ def parse_pm(s):
 # this is intended to be called only on something that already matched re_bv
 def parse_bv(s):
     m = bv_re.fullmatch(s)
-    if m.group('bbv'):
+    if m.group('bv1'):
+        return int(m.group('bv1'), 2), 1
+    elif m.group('bbv'):
         return int(m.group('bbv'), 2), len(m.group('bbv'))
     else:
         return int(m.group('hbv'), 16), len(m.group('hbv')) * 4
@@ -241,7 +270,8 @@ re_any = re.compile(cre_any(re_inf.pattern,
                             re_ord.pattern,
                             re_exp.pattern,
                             re_rat.pattern,
-                            re_tup.pattern),
+                            re_tup3.pattern,
+                            re_tup4.pattern,),
                     flags=cf)
 
 # the main parsing interface:
@@ -337,15 +367,27 @@ def reparse(s):
         sign = parse_pm(m.group('ord_pm'))
         return Result.ORD, (sign * int(m.group('ord')),)
 
-    elif m.group('tup0'):
-        return Result.TUP, (parse_bv(m.group('tup0')),
-                            parse_bv(m.group('tup1')),
-                            parse_bv(m.group('tup2')),)
+    elif m.group('tup3_0'):
+        return Result.ITUP, (parse_bv(m.group('tup3_0')),
+                             parse_bv(m.group('tup3_1')),
+                             parse_bv(m.group('tup3_2')),)
 
-    elif m.group('ptup0'):
-        return Result.TUP, (parse_bv(m.group('ptup0')),
-                            parse_bv(m.group('ptup1')),
-                            parse_bv(m.group('ptup2')),)
+    elif m.group('ptup3_0'):
+        return Result.ITUP, (parse_bv(m.group('ptup3_0')),
+                             parse_bv(m.group('ptup3_1')),
+                             parse_bv(m.group('ptup3_2')),)
+
+    elif m.group('tup4_0'):
+        return Result.ETUP, (parse_bv(m.group('tup4_0')),
+                             parse_bv(m.group('tup4_1')),
+                             parse_bv(m.group('tup4_2')),
+                             parse_bv(m.group('tup4_3')),)
+
+    elif m.group('ptup4_0'):
+        return Result.ETUP, (parse_bv(m.group('ptup4_0')),
+                             parse_bv(m.group('ptup4_1')),
+                             parse_bv(m.group('ptup4_2')),
+                             parse_bv(m.group('ptup4_3')),)
 
     else:
         raise ValueError('failed to parse matching input {}'.format(repr(s)))

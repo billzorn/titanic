@@ -6,6 +6,7 @@ import threading
 import traceback
 import urllib
 import json
+from multiprocessing import Pool
 from http.server import BaseHTTPRequestHandler, HTTPStatus
 from socketserver import ThreadingMixIn, TCPServer
 
@@ -134,6 +135,8 @@ ERROR_MESSAGE = '''\
 ERROR_CONTENT_TYPE = 'text/html'
 
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
+
+    # configuration
     server_version = 'aserver/0.1'
     sys_version = "Python/" + sys.version.split()[0]
     protocol_version = 'HTTP/1.0'
@@ -141,6 +144,31 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     error_content_type = ERROR_CONTENT_TYPE
     traceback_log = True
     traceback_send = True
+
+    # subclass and override to use caching
+    the_cache = None
+
+    # subclass and override to process requests in parallel
+    the_pool = None
+
+    # async calls and caching
+    def apply(self, fn, args):
+        if self.the_pool is None:
+            return fn(*args)
+        else:
+            return self.the_pool.apply(fn, args)
+    def apply_cached(self, key, fn, args):
+        if self.the_cache is None:
+            return False, self.apply(fn, args)
+        else:
+            try:
+                hit = True
+                result = self.the_cache.lookup(key)
+            except KeyError:
+                hit = False
+                result = self.apply(fn, args)
+                self.the_cache.update(key, result)
+            return hit, result
 
     # These do not need to be overridden again; they just call send_head.
     def do_HEAD(self):

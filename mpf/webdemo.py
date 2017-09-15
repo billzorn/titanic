@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import sys
+import os
 import threading
 import html
 import urllib
@@ -23,31 +23,8 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
 
     # configuration
     limit_exp = 200000
-
-    # subclass and override to use caching
-    the_cache = None
-
-    # subclass and override to process requests in parallel
-    the_pool = None
-
-    def apply(self, fn, args):
-        if self.the_pool is None:
-            return fn(*args)
-        else:
-            return self.the_pool.apply(fn, args)
-
-    def apply_cached(self, key, fn, args):
-        if self.the_cache is None:
-            return False, self.apply(fn, args)
-        else:
-            try:
-                hit = True
-                result = self.the_cache.lookup(key)
-            except KeyError:
-                hit = False
-                result = self.apply(fn, args)
-                self.the_cache.update(key, result)
-            return hit, result
+    traceback_log = True
+    traceback_send = False
 
     def process_path(self):
         pr = self.translate_path()
@@ -165,6 +142,16 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
             prefix_results = True
             discrete, parsed = self.apply(describefloat.parse_input,
                                           (s, w, p, self.limit_exp, False,))
+
+            if discrete is None:
+                err_complaints = 'bad input:\n  ' + parsed
+
+                response = HTTPStatus.OK
+                msg = None
+                headers, content = webcontent.protocol_headers_body(s, w, p, err_complaints)
+
+                return response, msg, headers, content
+
             work_fn = describefloat.process_parsed_input
             work_args = s, w, p, discrete, parsed
             if discrete:
@@ -172,7 +159,7 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
                 cache_key = _DISCRETE, S.uint, E.uint, T.uint, w, p
             else:
                 R = parsed
-                cache_key = _REAL, str(R), w, p
+                cache_key = _REAL, repr(R), w, p
         else:
             raise ValueError('unknown protocol {}'.format(repr(protocol)))
 
@@ -216,8 +203,8 @@ if __name__ == '__main__':
             the_cache = cache
             the_pool = pool
 
-            print('caching {:d} requests'.format(args.cache))
-            print('{:d} worker processes'.format(args.workers))
+        print('caching {:d} requests'.format(args.cache))
+        print('{:d} worker processes'.format(args.workers))
 
         with AsyncTCPServer((args.host, args.port,), CustomHTTPRequestHandler) as server:
             server_thread = threading.Thread(target=server.serve_forever)
