@@ -2,7 +2,7 @@
   <table border="1">
     <tr>
       <td>
-	<input type="text" name="s" value="{}" maxlength="1024"
+	<input type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
 	       style="font-family:Consolas,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New,monospace;width:100%;box-sizing:border-box;">
       </td>
       <td>
@@ -11,8 +11,8 @@
     </tr>
     <tr>
       <td>
-	w (exponent bits): <input type="number" name="w" value="{}" min="2" max="20">
-	p (significand bits, plus one): <input type="number" name="p" value="{}" min="2" max="1024">
+	w (exponent bits): <input type="number" name="w" value="{w:d}" min="2" max="{maxw:d}">
+	p (significand bits, plus one): <input type="number" name="p" value="{p:d}" min="2" max="{maxp:d}">
       </td>
       <td>
 	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>

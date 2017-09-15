@@ -1,119 +1,239 @@
 #!/usr/bin/env python
 
+import os
+import sys
+import threading
+import html
+import urllib
+from multiprocessing import Pool
+from http.server import HTTPStatus
+
 import describefloat
 import webcontent
 from aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
 
+def get_first(d, k, default):
+    x = d.get(k, (default,))
+    return x[0]
+
+# to distinguish different kinds of things in the cache
+_FMT, _REAL, _DISCRETE = 0, 1, 2
+
 class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
-    
-    # subclass and overwrite these before using
-    fmt_cache = None
-    demo_cache = None
-    the_pool = None
 
     # configuration
     limit_exp = 200000
 
-    def translate_path(self):
-        pr = urllib.parse.urlparse(self.path)
-        path = pr.path.lower()
-        if webcontent.empty_re.fullmatch(path):
+    # subclass and override to use caching
+    the_cache = None
+
+    # subclass and override to process requests in parallel
+    the_pool = None
+
+    def apply(self, fn, args):
+        if self.the_pool is None:
+            return fn(*args)
+        else:
+            return self.the_pool.apply(fn, args)
+
+    def apply_cached(self, key, fn, args):
+        if self.the_cache is None:
+            return False, self.apply(fn, args)
+        else:
+            try:
+                hit = True
+                result = self.the_cache.lookup(key)
+            except KeyError:
+                hit = False
+                result = self.apply(fn, args)
+                self.the_cache.update(key, result)
+            return hit, result
+
+    def process_path(self):
+        pr = self.translate_path()
+        err, path, args = None, None, None
+
+        pr_path = pr.path
+
+        # empty path --> root page
+        if webcontent.empty_re.fullmatch(pr_path):
             path = webcontent.root_page
 
-        page_match = webcontent.page_re.fullmatch(path)
-        if page_match:
-            return page_match.group(1), None
+        # static path
+        if path is None:
+            m = webcontent.page_re.fullmatch(pr_path)
+            if m:
+                path = m.group(1)
 
-        protocol_match = webcontent.protocol_re.fullmatch(path)
-        if protocol_match:
-            args = {}
-            for f in pr.query.split('&'):
-                name_arg = f.split('=')
-                if len(name_arg) == 2:
-                    name = urllib.parse.unquote_plus(name_arg[0].strip())
-                    if len(name) > 0 and name not in args:
-                        arg = urllib.parse.unquote_plus(name_arg[1].strip())
-                        args[name] = arg
-            return protocol_match.group(1), args
+        # dynamic content by protocol
+        if path is None:
+            m = webcontent.protocol_re.fullmatch(pr_path)
+            if m:
+                path = m.group(1)
+                args = urllib.parse.parse_qs(pr.query)
 
-        return None, None
+        # signal an error
+        if path is None:
+            err_title = 'Unknown Request'
+            err_message = ('The requested path "{}" does not exist on the server.'
+                           .format(html.escape(pr.path, quote=False)))
+
+            response = HTTPStatus.NOT_FOUND
+            msg = err_title
+            headers = (
+                ('Content-Type', 'text/html',),
+            )
+            body = webcontent.skeletonize(webcontent.create_error(err_title, err_message),
+                                          ind=True)
+
+            err = response, msg, headers, webcontent.webencode(body)
+
+        return err, path, args
 
     def process_args(self, args):
-        try:
-            w = int(args['w'])
-            assert 2 <= w <= 20
-        except Exception:
-            w = webcontent.default_w
+        complaints = []
+        err, s, w, p = None, None, None, None
 
-        try:
-            p = int(args['p'])
-            assert 2 <= p < 1024
-        except Exception:
-            p = webcontent.default_p
+        s = get_first(args, 's', webcontent.default_s)
+        if len(s) > webcontent.maxlen:
+            s = s[:webcontent.maxlen]
+            complaints.append('Can only input at most {:d} characters.'.format(webcontent.maxlen))
 
-        try:
-            s = str(args['s'])[:1536]
-        except Exception:
-            s = webcontent.default_s
+        w = get_first(args, 'w', webcontent.default_w)
+        if not isinstance(p, int):
+            try:
+                w = int(w)
+            except Exception:
+                complaints.append('w must be an integer.')
+                w = webcontent.default_w
+        if not (2 <= w <= webcontent.maxw):
+            complaints.append('w must be between 2 and {:d}.'.format(webcontent.maxw))
 
-        return w, p, s
+        p = get_first(args, 'p', webcontent.default_p)
+        if not isinstance(p, int):
+            try:
+                p = int(p)
+            except Exception:
+                complaints.append('p must be an integer.')
+                p = webcontent.default_p
+        if not (2 <= p <= webcontent.maxp):
+            complaints.append('p must be between 2 and {:d}.'.format(webcontent.maxp))
+
+        if complaints:
+            err_complaints = 'bad input:\n  ' + '\n  '.join(complaints)
+
+            response = HTTPStatus.OK
+            msg = None
+            headers, content = webcontent.protocol_headers_body(s, w, p, err_complaints)
+
+            err = response, msg, headers, content
+
+        return err, s, w, p
 
     def construct_content(self):
-        path, raw_args = self.translate_path()
-
-        # no content
-        if path is None:
-            return None, None
+        err, path, args = self.process_path()
+        if err is not None:
+            return err
 
         # static page
-        elif raw_args is None:
-            return webcontent.page_content[path]
+        if args is None:
+            data, ctype = webcontent.page_content[path]
 
-        # dynamic content protocol
+            response = HTTPStatus.OK
+            msg = None
+            # could do something more clever, for caching etc.
+            headers = (
+                ('Content-Type', ctype,),
+            )
+            content = data
+
+            return response, msg, headers, content
+
+        err, s, w, p = self.process_args(args)
+        if err is not None:
+            return err
+
+        # dynamic protocol
+        protocol = path
+
+        if protocol == 'fmt':
+            prefix_results = False
+            work_fn = describefloat.process_format
+            work_args = w, p
+            cache_key = _FMT, w, p
+        elif protocol == 'demo':
+            prefix_results = True
+            discrete, parsed = self.apply(describefloat.parse_input,
+                                          (s, w, p, self.limit_exp, False,))
+            work_fn = describefloat.process_parsed_input
+            work_args = s, w, p, discrete, parsed
+            if discrete:
+                S, E, T = parsed
+                cache_key = _DISCRETE, S.uint, E.uint, T.uint, w, p
+            else:
+                R = parsed
+                cache_key = _REAL, str(R), w, p
         else:
-            w, p, s = self.process_args(raw_args)
-            show_format = path in {'fmt', 'jfmt'}
-            the_pool = type(self).the_pool
+            raise ValueError('unknown protocol {}'.format(repr(protocol)))
 
-            if show_format:
-                the_cache = type(self).fmt_cache
-                kargs = (w, p,)
-            else:
-                the_cache = type(self).demo_cache
-                discrete, parsed = the_pool.apply(describefloat.parse_input,
-                                                  (s, w, p, type(self).limit_exp, False,))
-                if discrete:
-                    S, E, T = parsed
-                    kargs = (S.uint, E.uint, T.uint, w, p)
-                else:
-                    R = parsed
-                    kargs = (str(R), w, p,)
+        cache_hit, result = self.apply_cached(cache_key, work_fn, work_args)
 
-            # get cached content
-            cached = the_cache.lookup(kargs)
-            if cached is None:
-                hit = False
-                if show_format:
-                    cached = the_pool.apply(describefloat.process_format,
-                                            (w, p,))
-                else:
-                    cached = the_pool.apply(describefloat.process_parsed_input,
-                                            (s, w, p, discrete, parsed,))
-                the_cache.update(kargs, cached)
-            else:
-                hit = True
+        if prefix_results:
+            prefix = describefloat.explain_input(s, w, p, discrete, parsed, hit=cache_hit) + '\n\n'
+            if discrete:
+                w = E.n
+                p = T.n + 1
+        else:
+            prefix = ''
 
-            # construct page
-            if show_format:
-                content = cached
-            else:
-                content = describefloat.explain_input(s, w, p, discrete, parsed, hit=hit) + '\n\n' + cached
-                if discrete:
-                    w = E.n
-                    p = T.n + 1
+        response = HTTPStatus.OK
+        msg = None
+        headers, content = webcontent.protocol_headers_body(s, w, p, prefix + result)
 
-            body = (webcontent.skeleton_indent + '{}\n\n<br>').format(webcontent.create_webform(w, p, s))
-            body.replace('\n', '\n' + webcontent.skeleton_indent)
-            body += '\n\n' + webcontent.pre(content)
+        return response, msg, headers, content
 
-            return webcontent.skeletonize(body), 'text/html'
+
+if __name__ == '__main__':
+    import argparse
+
+    ncores = os.cpu_count()
+    default_pool_size = max(1, min(ncores - 1, (ncores // 2) + 1))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cache', type=int, default=10000,
+                        help='number of requests to cache')
+    parser.add_argument('--workers', type=int, default=default_pool_size,
+                        help='number of worker processes to run in parallel')
+    parser.add_argument('--host', type=str, default='localhost',
+                        help='server host')
+    parser.add_argument('--port', type=int, default=8000,
+                        help='server port')
+    args = parser.parse_args()
+
+    cache = AsyncCache(args.cache)
+    with Pool(args.workers, maxtasksperchild=100) as pool:
+        class CustomHTTPRequestHandler(TitanicHTTPRequestHandler):
+            the_cache = cache
+            the_pool = pool
+
+            print('caching {:d} requests'.format(args.cache))
+            print('{:d} worker processes'.format(args.workers))
+
+        with AsyncTCPServer((args.host, args.port,), CustomHTTPRequestHandler) as server:
+            server_thread = threading.Thread(target=server.serve_forever)
+            server_thread.daemon = True
+            server_thread.start()
+
+            print('server on thread:', server_thread.name)
+            print('close stdin to stop.')
+
+            for line in sys.stdin:
+                pass
+
+            print('stdin closed, stopping.')
+            pool.close()
+            print('workers closing...')
+            pool.join()
+            print('workers joined successfully.')
+            server.shutdown()
+            print('goodbye!')

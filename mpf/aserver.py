@@ -52,7 +52,7 @@ class AsyncCache(object):
             record = self.cache.get(k, None)
             if record is None:
                 # cache doesn't have it
-                return None
+                raise KeyError(k)
             else:
                 v, link = record
                 self._move_to_front(link)
@@ -136,7 +136,7 @@ ERROR_CONTENT_TYPE = 'text/html'
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     server_version = 'aserver/0.1'
     sys_version = "Python/" + sys.version.split()[0]
-    protocol_version = 'HTTP/1.1'
+    protocol_version = 'HTTP/1.0'
     error_message_format = ERROR_MESSAGE.format(server_version, sys_version)
     error_content_type = ERROR_CONTENT_TYPE
     traceback_log = True

@@ -7,20 +7,26 @@ webenc = 'utf-8'
 skeleton = 'www/skeleton.html'
 skeleton_indent = '    '
 
+maxlen = 1536
 default_s = 'pi'
+maxw = 20
 default_w = 8
+maxp = 1024
 default_p = 24
 
-def format_webform(form, s = default_s, w = default_w, p = default_p,):
-    return form.format(str(s), str(w), str(p))
+def format_webform(form, s = default_s, w = default_w, p = default_p):
+    return form.format(s=s, w=w, p=p,
+                       maxlen=maxlen, maxw=maxw, maxp=maxp)
 
 # content directory listing
 
 root_page = 'index'
 web_form = '$form$'
+err_body = '$err$'
 
 assets = {
     web_form : ('www/form.html', format_webform,),
+    err_body : ('www/error.html', None,),
 }
 pages = {
     root_page : ('www/index.html', 'text/html',),
@@ -31,7 +37,6 @@ pages = {
     'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
 
-#protocols = {'demo', 'json', 'text', 'fmt', 'jfmt'}
 protocols = {'demo', 'fmt'}
 
 with open(skeleton, encoding=webenc, mode='r') as f:
@@ -51,8 +56,11 @@ def indent(s, indent_by):
     else:
         return s
 
-def pre(s):
-    return '<pre>\n' + s.strip() + '\n</pre>'
+def pre(s, nl=True):
+    if nl:
+        return '<pre>\n' + s.rstrip() + '\n</pre>'
+    else:
+        return '<pre>' + s.rstrip() + '\n</pre>'
 
 def skeletonize(s, ind=False):
     s = s.strip()
@@ -63,7 +71,7 @@ def skeletonize(s, ind=False):
 def webencode(s):
     return bytes(s, webenc)
 
-# custom, add-hoc html rewriting
+# shared assets
 
 cre_assets = r'|'.join(re.escape(k) for k in assets.keys())
 re_split_assets = re.compile(r'(.*)(' + cre_assets + r')',
@@ -72,15 +80,32 @@ re_indent_assets = re.compile(r'^([^\S\n]*)\Z',
                               flags=re.MULTILINE|re.DOTALL)
 
 def import_asset(path, formatter):
-    with open(path, encoding=webenc, mode='r') as f:
+    with open(path, encoding=webenc, mode='rt') as f:
         s = f.read()
     return s.strip(), formatter
 
 asset_content = {name : import_asset(path, formatter) for name, (path, formatter,) in assets.items()}
 
 def create_webform(s, w, p):
-    form, _ = asset_content[web_form]
-    return format_webform(form, s, w, p)
+    asset, _ = asset_content[web_form]
+    return format_webform(asset, s, w, p)
+
+def create_error(err, msg):
+    asset, _ = asset_content[err_body]
+    return asset.format(err=err, msg=msg)
+
+def protocol_headers_body(s, w, p, content):
+    form_body = indent(create_webform(s, w, p), skeleton_indent)
+    content_body = pre(content)
+
+    headers = (
+        ('Content-Type', 'text/html',),
+    )
+    body = skeletonize(form_body + '\n\n' + content_body, ind=False)
+
+    return headers, webencode(body)
+
+# custom, ad-hoc html rewriting
 
 def process_assets(s):
     asset_groups = re_split_assets.findall(s)
@@ -90,7 +115,10 @@ def process_assets(s):
         asset_indent = re_indent_assets.search(s_pre)
         asset, formatter = asset_content[name]
         segments.append(s_pre[:asset_indent.start(1)])
-        segments.append(indent(formatter(asset), asset_indent.group(1)))
+        if formatter is None:
+            segments.append(indent(asset, asset_indent.group(1)))
+        else:
+            segments.append(indent(formatter(asset), asset_indent.group(1)))
         last_idx += len(s_pre) + len(name)
     segments.append(s[last_idx:])
     return ''.join(segments)
@@ -104,7 +132,7 @@ def import_page(path, ctype):
     if re_bin_ctypes.fullmatch(ctype):
         with open(path, mode='rb') as f:
             data = f.read()
-        return data
+        return data, ctype
     else:
         with open(path, encoding=webenc, mode='rt') as f:
             s = f.read()
@@ -123,8 +151,6 @@ cre_empty = r'/*'
 empty_re = re.compile(cre_empty)
 page_re = re.compile(cre_empty +
                      r'(' + r'|'.join(re.escape(k) for k in pages.keys()) + r')' +
-                     r'([.]html?)?' +
-                     cre_empty)
+                     r'([.]html?)?')
 protocol_re = re.compile(cre_empty +
-                         r'(' + r'|'.join(re.escape(k) for k in protocols) + r')' +
-                         cre_empty)
+                         r'(' + r'|'.join(re.escape(k) for k in protocols) + r')')
