@@ -4,6 +4,7 @@ import sys
 import os
 import threading
 import traceback
+import html
 import urllib
 import json
 from multiprocessing import Pool
@@ -134,6 +135,34 @@ ERROR_MESSAGE = '''\
 '''
 ERROR_CONTENT_TYPE = 'text/html'
 
+# quick demo
+WEBPAGE_MESSAGE = '''\
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{title:s}</title>
+  </head>
+  <body>
+<pre>
+{body:s}
+<pre>
+  </body>
+</html>
+'''
+WEBPAGE_CONTENT_TYPE = 'text/html'
+def test_worker_parse(qs):
+    # diagnostic info
+    ppid = os.getppid()
+    pid = os.getpid()
+    active_threads = threading.active_count()
+    current_thread = threading.current_thread()
+    # do some work
+    query_list = urllib.parse.parse_qsl(qs)
+    return (ppid, pid, active_threads, current_thread.name,), query_list
+def test_worker_cached(query_list):
+    # do some other work
+    return repr(sorted(query_list))
+
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # configuration
@@ -229,26 +258,53 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
     def construct_content(self):
         pr = self.translate_path()
 
-        assert pr.path != '/testing'
+        assert pr.path != '/crash'
 
-        response = HTTPStatus.NOT_FOUND
-        msg = None
-        headers = (
-            ('Content-Type', 'text/html',),
-        )
-        body = (
-            '<!DOCTYPE html>\n'
-            '<html>\n'
-            '  <head>\n'
-            '    <title>404 Nothing Here</title>\n'
-            '  </head>\n'
-            '  <body>\n'
-            '    <h1>There is no content on this server!</h1>\n'
-            '  </body>\n'
-            '</html>\n'
-        )
+        if pr.path.startswith('/test'):
+            # diagnostic info
+            ppid = os.getppid()
+            pid = os.getpid()
+            active_threads = threading.active_count()
+            current_thread = threading.current_thread()
+            handler_diag = ppid, pid, active_threads, current_thread.name
 
-        return response, msg, headers, bytes(body, encoding='ascii')
+            # parse the query (a)synchronously
+            worker_diag, parsed = self.apply(test_worker_parse, (pr.query,))
+
+            # do something with the query, and (possibly) cache it
+            cache_key = (pr.path,)
+            cache_hit, result = self.apply_cached(cache_key, test_worker_cached, (parsed,))
+
+            # spit it all out
+            diag_format = '{}\n  ppid: {:d}\n  pid: {:d}\n  active threads: {:d}\n  current thread: {}'
+            body_text = ('{}\n\n{}\n\npath: {}\nquery: {}\ncache hit? {}\n first sorted query on this path:\n  {}'
+                         .format(diag_format.format('Handler:', *handler_diag),
+                                 diag_format.format('Parser worker:', *worker_diag),
+                                 repr(pr.path),
+                                 repr(parsed),
+                                 repr(cache_hit),
+                                 result))
+
+            response = HTTPStatus.OK
+            msg = None
+            headers = (
+                ('Content-Type', WEBPAGE_CONTENT_TYPE,),
+            )
+            body = WEBPAGE_MESSAGE.format(title=html.escape('aserver test', quote=False),
+                                          body=html.escape(body_text, quote=False))
+
+            return response, msg, headers, bytes(body, encoding='ascii')
+
+        else:
+            response = HTTPStatus.NOT_FOUND
+            msg = None
+            headers = (
+                ('Content-Type', WEBPAGE_CONTENT_TYPE,),
+            )
+            body = WEBPAGE_MESSAGE.format(title=html.escape('404 Nothing Here', quote=False),
+                                          body=html.escape('There is no content on this server!', quote=False))
+
+            return response, msg, headers, bytes(body, encoding='ascii')
 
 class AsyncTCPServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
@@ -263,19 +319,33 @@ if __name__ == '__main__':
                         help='server host')
     parser.add_argument('--port', type=int, default=8000,
                         help='server port')
+    parser.add_argument('--cache', type=int, default=4,
+                        help='number of requests to cache')
+    parser.add_argument('--workers', type=int, default=2,
+                        help='number of worker processes to run in parallel')
     args = parser.parse_args()
 
-    with AsyncTCPServer((args.host, args.port,), AsyncHTTPRequestHandler) as server:
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = True
-        server_thread.start()
 
-        print('Server on thread: {}.'.format(server_thread.name))
-        print('Close stdin to stop.')
+    cache = AsyncCache(args.cache)
+    with Pool(args.workers) as pool:
+        class CustomHTTPRequestHandler(AsyncHTTPRequestHandler):
+            the_cache = cache
+            the_pool = pool
 
-        for line in sys.stdin:
-            pass
+        print('Caching {:d} requests.'.format(args.cache))
+        print('{:d} worker processes.'.format(args.workers))
 
-        print('Closed stdin, stopping...')
-        server.shutdown()
-        print('Goodbye!')
+        with AsyncTCPServer((args.host, args.port,), CustomHTTPRequestHandler) as server:
+            server_thread = threading.Thread(target=server.serve_forever)
+            server_thread.daemon = True
+            server_thread.start()
+
+            print('Server on thread: {}.'.format(server_thread.name))
+            print('Close stdin to stop.')
+
+            for line in sys.stdin:
+                pass
+
+            print('Closed stdin, stopping...')
+            server.shutdown()
+            print('Goodbye!')
