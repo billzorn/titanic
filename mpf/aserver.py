@@ -166,7 +166,7 @@ def test_worker_cached(query_list):
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # configuration
-    server_version = 'aserver/0.1'
+    server_version = 'aserver/0.2'
     sys_version = "Python/" + sys.version.split()[0]
     protocol_version = 'HTTP/1.0'
     error_message_format = ERROR_MESSAGE.format(server_version, sys_version)

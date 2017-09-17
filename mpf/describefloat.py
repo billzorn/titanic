@@ -6,6 +6,7 @@ from bv import BV
 from real import FReal
 import core
 import conv
+import webcontent
 
 def strlink(s, s_link, w, p):
     href = '"/demo?s={}&w={:d}&p={:d}"'.format(s_link, w, p)
@@ -24,6 +25,7 @@ ieee_rm_names = {
     core.RNE : 'roundTiesToEven',
     core.RNA : 'roundTiesToAway',
 }
+ieee_rm_longest = max(len(name) for name in ieee_rm_names.values())
 
 def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
     R_approx = conv.real_to_string(R, prec=prec, exact=False)
@@ -66,7 +68,7 @@ def unicode_fbits(R, S, E, T, C, ibit, prec=12):
     if not (R.isinf or R.isnan):
         Rm = FReal(c) * (FReal(2)**(1-p))
         s += '\n\n'
-        s += ' ' + ' '*len(E_str) + 'c = {:d} + (2**{:d})\n'.format(c_prime, 1-p)
+        s += ' ' + ' '*len(E_str) + 'c = {:d} + (2**{:d})\n'.format(c_prime, p-1)
         s += ' ' + ' '*len(E_str) + '  = {:d}\n'.format(c)
         s += ' ' + ' '*len(E_str) + 'm = {:d} * (2**{:d})\n'.format(c, (1-p))
         s += ' ' + ' '*len(E_str) + '  ' + summarize_with(Rm, prec, spacer1=' ') + '\n'
@@ -732,55 +734,68 @@ def explain_float(d):
     R = d['R']
     prec = conv.bdb_round_trip_prec(p) + 1
 
-    s = 'floating point representation:\n  '
-    s += unicode_fbits(R, d['S'], d['E'], d['T'], d['C'], d['implicit_bit'], prec=prec).replace('\n', '\n  ')
-    s += '\n\n'
+    s = 'floating point representation:\n'
+    s += webcontent.indent(unicode_fbits(R, d['S'], d['E'], d['T'], d['C'], d['implicit_bit'], prec=prec), '  ')
 
-    s += 'IEEE 754 class:\n  '
-    s += explain_class(R, d['ieee_class']).replace('\n', '\n  ')
-    s += '\n\n'
+    s += '\n\nIEEE 754 class:\n'
+    s += webcontent.indent(explain_class(R, d['ieee_class']), '  ')
 
-    s += 'IEEE 754 binary representation:\n'
+    s += '\n\nIEEE 754 binary representation:'
     B = d['B']
-    s += '  ' + str(B) + '\n'
+    s += '\n  ' + str(B)
     k = w + p
     if conv.ieee_split_w_p(k) == (w, p):
-        s += ('  {:#0' + str((k//4)+2) + 'x}\n').format(B.uint)
-    s += '\n'
+        s += ('\n  {:#0' + str((k//4)+2) + 'x}').format(B.uint)
 
-    s += 'SMTLIB2 notation (compatible with Z3):\n'
-    s += '  (fp #b{} #b{} #b{})'.format(
+    s += '\n\nSMTLIB2 notation (compatible with Z3):'
+    s += '\n  (fp #b{} #b{} #b{})'.format(
         str(d['S']).lower().replace('0b',''),
         str(d['E']).lower().replace('0b',''),
         str(d['T']).lower().replace('0b','')
     )
-    s += '\n\n'
 
     if not R.isnan:
-        s += 'ordinal (ulps away from zero):\n'
-        s += '  ' + str(d['i']) + '\n\n'
+        s += '\n\nordinal (ulps away from zero):'
+        s += '\n  ' + str(d['i'])
 
-    s += 'real value:\n'
+    s += '\n\nreal value:'
     if R.isnan:
-        s += '  R = {} (with payload: {})'.format(conv.real_to_pretty_string(R),
+        s += '\n  R = {} (with payload: {})'.format(conv.real_to_pretty_string(R),
                                                   conv.real_to_string(R, show_payload=True))
     elif R.isinf:
-        s += '  R = {} ({})'.format(conv.real_to_pretty_string(R),
+        s += '\n  R = {} ({})'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
-        s += '  R = ' + conv.real_to_string(R) + ''
+        s += '\n  R = ' + conv.real_to_string(R)
     else:
-        s += '  R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})\n'.format(d['s'], d['e'], d['c'], 1-d['p'])
-        s += '    ' + summarize_with(R, prec=prec)
+        s += '\n  R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})'.format(d['s'], d['e'], d['c'], 1-d['p'])
+        s += '\n    ' + summarize_with(R, prec=prec)
         if R.isrational and R.rational_denominator != 1:
             s += '\n    = ' + str(R)
 
+        # nearest decimal approximations
+        if 'rounding_info' in d:
+            s += '\n\nclosest, shortest decimal approximations:'
+            for k, r_info in d['rounding_info'].items():
+                rm = ieee_rm_names[r_info['rm']]
+                midlo_c = r_info['midlo_c']
+                midlo_e = r_info['midlo_e']
+                midhi_c = r_info['midhi_c']
+                midhi_e = r_info['midhi_e']
+
+                label = rm + ':' + ' '*(ieee_rm_longest - len(rm) + 1)
+
+                s += '\n  ' + label + conv.pow10_to_str(midhi_c, midhi_e)
+                if midlo_c != midhi_c or midlo_e != midhi_e:
+                    s += '\n  ' + len(label) + conv.pow10_to_str(midlo_c, midlo_e)
+
     # number lines
     if not R.isnan or R.isinf:
-        s += '\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'], fprec=prec)
+        s += '\n\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'], fprec=prec)
 
     # rounding envelopes
     if 'rounding_info' in d:
+        s += '\n'
         for k, r_info in d['rounding_info'].items():
             s += '\n\n' + explain_rm(r_info)
 
@@ -802,23 +817,14 @@ def explain_real(d):
 
         prec = conv.bdb_round_trip_prec(p) + 1
 
-        s = 'nearby floating point values:\n'
-        #s += '  ordinal ' + strlink(str(i_above), '0i' + str(i_above), w, p) + '\n'
-        s += '  ordinal ' + str(i_above) + '\n'
-        s += '       above ' + summarize_with(R_above, prec) + '\n'
-        s += '  difference ' + summarize_with(diff_above, prec) + '\n'
-        s += '           R ' + summarize_with(R, prec) + '\n'
-        s += '  difference ' + summarize_with(diff_below, prec) + '\n'
-        s += '       below ' + summarize_with(R_below, prec) + '\n'
-        #s += '  ordinal ' + strlink(str(i_below), '0i' + str(i_below), w, p) + '\n\n'
-        s += '  ordinal ' + str(i_below) + '\n\n'
-
-        if diff_above < diff_below:
-            s += 'relative position: (linear scale, above is closer)\n'
-        elif diff_above == diff_below:
-            s += 'relative position: (linear scale, exactly between)\n'
-        else:
-            s += 'relative position: (linear scale, below is closer)\n'
+        s = 'nearby floating point values:'
+        s += '\n     ordinal ' + str(i_above)
+        s += '\n       above ' + summarize_with(R_above, prec)
+        s += '\n  difference ' + summarize_with(diff_above, prec)
+        s += '\n           R ' + summarize_with(R, prec)
+        s += '\n  difference ' + summarize_with(diff_below, prec)
+        s += '\n       below ' + summarize_with(R_below, prec)
+        s += '\n     ordinal ' + str(i_below)
 
         Sb, Eb, Tb = core.ordinal_to_implicit(i_below, w, p)
         if R_below.iszero and R_below.sign == -1:
@@ -830,10 +836,17 @@ def explain_real(d):
         RSET_below = (R_below, Sb, Eb, Tb,)
         RSET_above = (R_above, Sa, Ea, Ta,)
 
+        if diff_above < diff_below:
+            s += '\n\n\nrelative position: (linear scale, R is closer to above)\n'
+        elif diff_above == diff_below:
+            s += '\n\n\nrelative position: (linear scale, R is exactly between above and below)\n'
+        else:
+            s += '\n\n\nrelative position: (linear scale, R is closer to below)\n'
         s += unicode_horizontal_nl(RSET_below, R, RSET_above, 100, note='R=', prec=prec)
 
         # rounding envelopes
         if 'rounding_info' in d:
+            s += '\n'
             for k, r_info in d['rounding_info'].items():
                 s += '\n\n' + explain_rm(r_info)
 
