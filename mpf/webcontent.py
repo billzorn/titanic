@@ -31,8 +31,10 @@ assets = {
 pages = {
     root_page : ('www/index.html', 'text/html',),
     'about'   : ('www/about.html', 'text/html',),
+    'titanic.css' : ('www/titanic.css', 'text/css',),
     'favicon.ico'  : ('www/favicon.ico', 'image/x-icon',),
     'piceberg.png' : ('www/piceberg.png', 'image/png',),
+    'piceberg_round.png' : ('www/piceberg_round.png', 'image/png',),
     'reals.pdf' : ('www/reals.pdf', 'application/pdf',),
     'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
