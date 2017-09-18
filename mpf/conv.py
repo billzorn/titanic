@@ -157,6 +157,8 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
         (sign, p,) = xs
         if p is None:
             return False, FReal(None, negative=sign<0)
+        elif p == 0:
+            return None, 'NaN payload must not be 0 (that would be an infinity!).'
         else:
             return False, FReal(None, negative=sign<0, payload=p)
 

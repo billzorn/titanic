@@ -7,7 +7,7 @@ webenc = 'utf-8'
 skeleton = 'www/skeleton.html'
 skeleton_indent = '    '
 
-maxlen = 1536
+maxlen = 8192
 default_s = 'pi'
 maxw = 20
 default_w = 8

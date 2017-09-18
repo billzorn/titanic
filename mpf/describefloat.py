@@ -20,6 +20,9 @@ def weblink(s, S, E, T):
     return strlink(s, Bs, w, p)
 
 # new
+def stup(S, E, T):
+    return '({}, {}, {})'.format(str(S), str(E), str(T))
+
 def permalink(s_link, w, p, text='link'):
     return webcontent.link(text, s_link, w, p)
 
@@ -40,8 +43,11 @@ def approx_or_exact(R, prec = conv.default_prec, spacer = '', exact_str = '='):
     else:
         return isapprox, exact_str + spacer + R_approx
 
-def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' ', exact_str = '='):
+def summarize_with(R, prec = conv.default_prec, spacer1 = ' ', spacer2 = ' ', exact_str = '=', linkdata = None):
     is_approx, R_approx = approx_or_exact(R, prec=prec, spacer=spacer1, exact_str=exact_str)
+    if linkdata is not None:
+        s_link, w, p = linkdata
+        R_approx = permalink(s_link, w, p, text=R_approx)
     if is_approx:
         return R_approx + spacer2 + '=' + spacer2 + conv.real_to_string(R, prec=prec, exact=True)
     else:
@@ -73,8 +79,11 @@ def unicode_fbits(R, S, E, T, C, ibit, prec=12):
     if not (R.isinf or R.isnan):
         Rm = FReal(c) * (FReal(2)**(1-p))
         s += '\n\n'
-        s += ' ' + ' '*len(E_str) + 'c = {:d} + (2**{:d})\n'.format(c_prime, p-1)
-        s += ' ' + ' '*len(E_str) + '  = {:d}\n'.format(c)
+        if ibit == 1:
+            s += ' ' + ' '*len(E_str) + 'c = {:d} + (2**{:d})\n'.format(c_prime, p-1)
+            s += ' ' + ' '*len(E_str) + '  = {:d}\n'.format(c)
+        else:
+            s += ' ' + ' '*len(E_str) + 'c = {:d}\n'.format(c_prime)
         s += ' ' + ' '*len(E_str) + 'm = {:d} * (2**{:d})\n'.format(c, (1-p))
         s += ' ' + ' '*len(E_str) + '  ' + summarize_with(Rm, prec, spacer1=' ') + '\n'
         s += ' ' + ' '*len(E_str) + '  = 0b{}.{}'.format(ibit_str, T_str)
@@ -189,13 +198,13 @@ def unicode_horizontal_nl(left, R, right, width,
     assert isinstance(right, FReal) or isinstance(right, tuple)
 
     if isinstance(left, tuple):
-        left, Sl, El, Tl = left
+        left, left_s, left_w, left_p = left
         link_left = True
     else:
         link_left = False
 
     if isinstance(right, tuple):
-        right, Sr, Er, Tr = right
+        right, right_s, right_w, right_p = right
         link_right = True
     else:
         link_right = False
@@ -234,7 +243,7 @@ def unicode_horizontal_nl(left, R, right, width,
         left_label = conv.real_to_string(left, prec=prec, exact=False)
         len_left_label = len(left_label)
         if link_left:
-            left_label = weblink(left_label, Sl, El, Tl)
+            left_label = permalink(left_s, left_w, left_p, text=left_label)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if right == R:
@@ -245,7 +254,7 @@ def unicode_horizontal_nl(left, R, right, width,
         right_label = conv.real_to_string(right, prec=prec, exact=False)
         len_right_label = len(right_label)
         if link_right:
-            right_label = weblink(right_label, Sr, Er, Tr)
+            right_label = permalink(right_s, right_w, right_p, text=right_label)
         mid_label = note + conv.real_to_string(R, exact=True)
 
     if mid_at_left is not None:
@@ -562,6 +571,7 @@ def explain_rm(d, link = False):
         R_spacer = ' '
         R_exact = '='
     else:
+        # TODO might want to improve this and always label R for consistency
         R = d['R_center']
         R_label = ''
         R_spacer = ''
@@ -619,11 +629,14 @@ def explain_rm(d, link = False):
     # - lower (could be =center or =prev)
     # - prev
     lnl = [
-        (R_next,   '',      '', weblink(summarize_with(R_next, prec+1, spacer1='', exact_str=''), Sn, En, Tn), 1,),
-        (upper,    '',      '', summarize_with(upper, prec+1, spacer1='', exact_str=''),                       0,),
-        (R_center, larrow, '', weblink(summarize_with(R_center, prec+1, spacer1='', exact_str=''), S, E, T),  1,),
-        (lower,    '',      '', summarize_with(lower, prec+1, spacer1='', exact_str=''),                       0,),
-        (R_prev,   '',      '', weblink(summarize_with(R_prev, prec+1, spacer1='', exact_str=''), Sp, Ep, Tp), 1,),
+        (R_next,   '',      '', summarize_with(R_next, prec+1, spacer1='', exact_str='',
+                                               linkdata=(stup(Sn, En, Tn), w, p)),         1,),
+        (upper,    '',      '', summarize_with(upper, prec+1, spacer1='', exact_str=''),   0,),
+        (R_center, larrow,  '', summarize_with(R_center, prec+1, spacer1='', exact_str='',
+                                              linkdata=(stup(S, E, T), w, p)),             1,),
+        (lower,    '',      '', summarize_with(lower, prec+1, spacer1='', exact_str=''),   0,),
+        (R_prev,   '',      '', summarize_with(R_prev, prec+1, spacer1='', exact_str='',
+                                               linkdata=(stup(Sp, Ep, Tp), w, p)),         1,),
     ]
 
     # right number line: (could all be equal, R could be anywhere in this ordering)
@@ -699,28 +712,50 @@ def explain_nl(R, S, E, w, p, fwidth = 100, ewidth = 80, enote = '', fprec = 12,
     eprec = conv.ndig(emax) + 1
 
     if R.iszero:
-        R_left = core.implicit_to_real(BV(1,1), E, BV(-1,p-1))
-        R_right = core.implicit_to_real(BV(0,1), E, BV(-1,p-1))
+        Sl, El, Tl = BV(1,1), E, BV(-1,p-1)
+        Sr, Er, Tr = BV(0,1), E, BV(-1,p-1)
+        R_left = core.implicit_to_real(Sl, El, Tl)
+        R_right = core.implicit_to_real(Sr, Er, Tr)
+        if link:
+            R_left = (R_left, stup(Sl, El, Tl), w, p,)
+            R_right = (R_right, stup(Sr, Er, Tr), w, p,)
         mirror = False
         mirror_str = ''
     elif R.sign > 0:
         if e > emax:
-            fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
-            R_left = fmax
+            fmax_scale =  (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+            R_left = fmax_scale * (FReal(2) ** emax)
             R_right = FReal(infinite=True, negative=False)
+            if link:
+                R_left = (R_left, conv.real_to_string(fmax_scale, exact=True) + ' * 2**{:d}'.format(emax), w, p,)
+                R_right = (R_right, conv.real_to_string(R_right, exact=True), w, p,)
         else:
-            R_left = core.implicit_to_real(S, E, BV(0,p-1))
-            R_right = core.implicit_to_real(S, E, BV(-1,p-1))
+            Sl, El, Tl = S, E, BV(0,p-1)
+            Sr, Er, Tr = S, E, BV(-1,p-1)
+            R_left = core.implicit_to_real(Sl, El, Tl)
+            R_right = core.implicit_to_real(Sr, Er, Tr)
+            if link:
+                R_left = (R_left, stup(Sl, El, Tl), w, p,)
+                R_right = (R_right, stup(Sr, Er, Tr), w, p,)
         mirror = False
         mirror_str = ''
     else: # R.sign < 0
         if e > emax:
-            fmax = (FReal(2) ** emax) * (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
+            fmax_scale = (FReal(2) - ((FReal(2) ** (1 - p)) / FReal(2)))
             R_left = FReal(infinite=True, negative=True)
-            R_right = -fmax
+            R_right = (-fmax_scale) * (FReal(2) ** emax)
+            if link:
+                R_left = (R_left, conv.real_to_string(R_left, exact=True), w, p,)
+                R_right = (R_right, conv.real_to_string(-fmax_scale, exact=True) + ' * 2**{:d}'.format(emax), w, p,)
         else:
-            R_left = core.implicit_to_real(S, E, BV(-1,p-1))
-            R_right = core.implicit_to_real(S, E, BV(0,p-1))
+            Sl, El, Tl = S, E, BV(-1,p-1)
+            Sr, Er, Tr = S, E, BV(0,p-1)
+            R_left = core.implicit_to_real(Sl, El, Tl)
+            R_right = core.implicit_to_real(Sr, Er, Tr)
+            if link:
+                R_left = (R_left, stup(Sl, El, Tl), w, p,)
+                R_right = (R_right, stup(Sr, Er, Tr), w, p,)
+
         mirror = True
         mirror_str = ', mirrored'
 
@@ -739,7 +774,22 @@ def explain_float(d, link = False):
     R = d['R']
     prec = conv.bdb_round_trip_prec(p) + 1
 
-    s = 'floating point representation:\n'
+    s = ''
+
+    if link and not R.isnan:
+        # TODO: use a nextUp implementation from core
+        ordinal = d['i']
+        umax = ((2 ** w) - 1) * (2 ** (p - 1))
+        Sp, Ep, Tp = core.ordinal_to_implicit(max(-umax, ordinal-1), w, p)
+        Sn, En, Tn = core.ordinal_to_implicit(min(umax, ordinal+1), w, p)
+        # -0 compliant nextafter behavior
+        if ordinal+1 == 0:
+            Sn = BV(1, 1)
+        s += '  ' + permalink(stup(Sp, Ep, Tp), w, p, text='nextDown')
+        s += ' : ' + permalink(stup(d['S'], d['E'], d['T']), w, p, text='this number') + ' : '
+        s += permalink(stup(Sn, En, Tn), w, p, text='nextUp') + '\n\n'
+
+    s += 'binary floating point representation:\n\n'
     s += webcontent.indent(unicode_fbits(R, d['S'], d['E'], d['T'], d['C'], d['implicit_bit'], prec=prec), '  ')
 
     s += '\n\nIEEE 754 class:\n'
@@ -864,15 +914,6 @@ def explain_real(d, link = False):
 
         prec = conv.bdb_round_trip_prec(p) + 1
 
-        s = 'nearby floating point values:'
-        s += '\n     ordinal ' + str(i_above)
-        s += '\n       above ' + summarize_with(R_above, prec)
-        s += '\n  difference ' + summarize_with(diff_above, prec)
-        s += '\n           R ' + summarize_with(R, prec)
-        s += '\n  difference ' + summarize_with(diff_below, prec)
-        s += '\n       below ' + summarize_with(R_below, prec)
-        s += '\n     ordinal ' + str(i_below)
-
         Sb, Eb, Tb = core.ordinal_to_implicit(i_below, w, p)
         if R_below.iszero and R_below.sign == -1:
             Sb = BV(1, 1)
@@ -880,16 +921,54 @@ def explain_real(d, link = False):
         if R_above.iszero and R_above.sign == -1:
             Sa = BV(1, 1)
 
-        RSET_below = (R_below, Sb, Eb, Tb,)
-        RSET_above = (R_above, Sa, Ea, Ta,)
+        s = 'nearby floating point values:'
+
+        s += '\n     '
+        if link:
+            s += permalink('0n'+str(i_above), w, p, text='ordinal')
+        else:
+            s += 'ordinal'
+        s += ' ' + str(i_above)
+
+        s += '\n       '
+        if link:
+            s += permalink(stup(Sa, Ea, Ta), w, p, text='above')
+        else:
+            s += 'above'
+        s += ' ' + summarize_with(R_above, prec)
+
+        s += '\n  difference ' + summarize_with(diff_above, prec)
+        s += '\n           R ' + summarize_with(R, prec)
+        s += '\n  difference ' + summarize_with(diff_below, prec)
+
+        s += '\n       '
+        if link:
+            s += permalink(stup(Sb, Eb, Tb), w, p, text='below')
+        else:
+            s += 'below'
+        s += ' ' + summarize_with(R_below, prec)
+
+        s += '\n     '
+        if link:
+            s += permalink('0n'+str(i_below), w, p, text='ordinal')
+        else:
+            s += 'ordinal'
+        s += ' ' + str(i_below)
+
+        if link:
+            Rswp_below = (R_below, stup(Sb, Eb, Tb), w, p,)
+            Rswp_above = (R_above, stup(Sa, Ea, Ta), w, p,)
+        else:
+            Rswp_below = R_below
+            Rswp_above = R_above
 
         if diff_above < diff_below:
-            s += '\n\n\nrelative position: (linear scale, R is closer to above)\n'
+            s += '\n\nrelative position: (linear scale, R is closer to above)\n'
         elif diff_above == diff_below:
-            s += '\n\n\nrelative position: (linear scale, R is exactly between above and below)\n'
+            s += '\n\nrelative position: (linear scale, R is exactly between above and below)\n'
         else:
-            s += '\n\n\nrelative position: (linear scale, R is closer to below)\n'
-        s += unicode_horizontal_nl(RSET_below, R, RSET_above, 100, note='R=', prec=prec)
+            s += '\n\nrelative position: (linear scale, R is closer to below)\n'
+        s += unicode_horizontal_nl(Rswp_below, R, Rswp_above, 100, note='R=', prec=prec)
 
         # rounding envelopes
         if 'rounding_info' in d:
@@ -947,7 +1026,7 @@ def explain_input(x, w, p, discrete, parsed, hit = False, link = False):
         if hit:
             s += ' (cached)'
         s += ':\n  '
-        s_tup = '({}, {}, {})'.format(str(S), str(E), str(T))
+        s_tup = stup(S, E, T)
         if link:
             s += '{} '.format(permalink(s_tup, w_prime, p_prime))
         s += s_tup
@@ -961,7 +1040,7 @@ def explain_input(x, w, p, discrete, parsed, hit = False, link = False):
             if R.isnan:
                 R_str += str(R.nan_payload)
             s += '{} '.format(permalink(R_str, w_prime, p_prime))
-        s += str(R)
+        s += R_str
 
     if not discrete:
         pretty_repr = webcontent.indent(conv.real_to_pretty_string(R), '  ')
