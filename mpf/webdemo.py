@@ -136,7 +136,7 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
         if protocol == 'fmt':
             prefix_results = False
             work_fn = describefloat.process_format
-            work_args = w, p
+            work_args = w, p, True
             cache_key = _FMT, w, p
         elif protocol == 'demo':
             prefix_results = True
@@ -153,7 +153,7 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
                 return response, msg, headers, content
 
             work_fn = describefloat.process_parsed_input
-            work_args = s, w, p, discrete, parsed
+            work_args = s, w, p, discrete, parsed, True
             if discrete:
                 S, E, T = parsed
                 cache_key = _DISCRETE, S.uint, E.uint, T.uint, w, p
@@ -166,7 +166,7 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
         cache_hit, result = self.apply_cached(cache_key, work_fn, work_args)
 
         if prefix_results:
-            prefix = describefloat.explain_input(s, w, p, discrete, parsed, hit=cache_hit) + '\n\n'
+            prefix = describefloat.explain_input(s, w, p, discrete, parsed, hit=cache_hit, link=True) + '\n\n'
             if discrete:
                 w = E.n
                 p = T.n + 1

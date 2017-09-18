@@ -199,7 +199,7 @@ class FReal(object):
         else:
             # nan
             if self.magnitude is None:
-                assert self.payload != 0
+                assert isinstance(self.payload, int) and self.payload != 0
             # real
             else:
                 # magnitude is always positive

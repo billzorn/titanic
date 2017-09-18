@@ -155,7 +155,10 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
 
     if res is Result.NAN:
         (sign, p,) = xs
-        return False, FReal(None, negative=sign<0, payload=p)
+        if p is None:
+            return False, FReal(None, negative=sign<0)
+        else:
+            return False, FReal(None, negative=sign<0, payload=p)
 
     elif res is Result.INF:
         (sign,) = xs
@@ -611,19 +614,19 @@ def real_to_string(R, prec = default_prec, exact = True, exp = None, show_payloa
 
 # Produce a unicode rendering with sympy.pretty. This is probably
 # not able to be parsed back in.
-def real_to_pretty_string(R):
+def real_to_pretty_string(R, num_columns = 100):
     assert isinstance(R, FReal)
 
     if R.isnan:
         return 'NaN'
     elif R.isinf:
-        return sympy.pretty(sympy.oo * R.sign)
+        return sympy.pretty(sympy.oo * R.sign, num_columns=num_columns)
     elif R.iszero:
         return str(R)
     else:
         c, e = real_to_pow10(R)
         if c is None or e is None:
-            return sympy.pretty(R.symbolic_value)
+            return sympy.pretty(R.symbolic_value, num_columns=num_columns)
         else:
             sprec = prec_of(c, e)
             eprec = prec_of(c)
@@ -632,7 +635,7 @@ def real_to_pretty_string(R):
             elif eprec <= default_prec:
                 return pow10_to_e_str(c, e)
             else:
-                return sympy.pretty(R.symbolic_value)
+                return sympy.pretty(R.symbolic_value, num_columns=num_columns)
 
 # The "rounding envelope" of some F = (S, E, T) under rm.
 # return lower, lower_inclusive, upper, upper_inclusive,

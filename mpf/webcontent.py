@@ -45,7 +45,7 @@ with open(skeleton, encoding=webenc, mode='r') as f:
 # html formatting helpers
 
 def link(s, s_link, w, p):
-    href = '/demo?s={}&w={:d}&p={:d}'.format(urllib.quote_plus(s_link), w, p)
+    href = '/demo?s={}&w={:d}&p={:d}'.format(urllib.parse.quote_plus(s_link), w, p)
     return '<a href="{}">{}</a>'.format(href, s)
 
 re_indent_match = re.compile(r'(\s*\n)([^\n])')

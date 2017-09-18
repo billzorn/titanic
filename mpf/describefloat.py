@@ -8,6 +8,7 @@ import core
 import conv
 import webcontent
 
+# old
 def strlink(s, s_link, w, p):
     href = '"/demo?s={}&w={:d}&p={:d}"'.format(s_link, w, p)
     return '<a href={}>{}</a>'.format(href, s)
@@ -17,6 +18,10 @@ def weblink(s, S, E, T):
     p = T.n + 1
     Bs = str(core.implicit_to_packed(S, E, T))
     return strlink(s, Bs, w, p)
+
+# new
+def permalink(s_link, w, p, text='link'):
+    return webcontent.link(text, s_link, w, p)
 
 ieee_rm_names = {
     core.RTN : 'roundTowardNegative',
@@ -529,7 +534,7 @@ def explain_dict(d, indent=0):
             s += ' '*indent + repr(k) + ' : ' + repr(x) + '\n'
     return s
 
-def explain_format(d):
+def explain_format(d, link = False):
     w = d['w']
     p = d['p']
     k = w + p
@@ -549,7 +554,7 @@ def explain_format(d):
 
     return s
 
-def explain_rm(d):
+def explain_rm(d, link = False):
     prec = d['prec']
     if 'R' in d:
         R = d['R']
@@ -687,7 +692,7 @@ def explain_rm(d):
                                     rtop=envtop, rbot=envbot)
     return s
 
-def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = '', fprec=12):
+def explain_nl(R, S, E, w, p, fwidth = 100, ewidth = 80, enote = '', fprec = 12, link = False):
     emax = (2 ** (w - 1)) - 1
     emin = 1 - emax
     e = max(E.uint - emax, emin)
@@ -728,7 +733,7 @@ def explain_nl(R, S, E, w, p, fwidth=100, ewidth=80, enote = '', fprec=12):
                                note='e=', prec=eprec, mirror=mirror)
     return s
 
-def explain_float(d):
+def explain_float(d, link = False):
     w = d['w']
     p = d['p']
     R = d['R']
@@ -742,36 +747,70 @@ def explain_float(d):
 
     s += '\n\nIEEE 754 binary representation:'
     B = d['B']
-    s += '\n  ' + str(B)
+    s += '\n  '
+    if link:
+        s += '{} '.format(permalink(str(B), w, p))
+    s += str(B)
     k = w + p
     if conv.ieee_split_w_p(k) == (w, p):
-        s += ('\n  {:#0' + str((k//4)+2) + 'x}').format(B.uint)
+        hex_str = ('{:#0' + str((k//4)+2) + 'x}').format(B.uint)
+        s += ('\n  ')
+        if link:
+            s += '{} '.format(permalink(hex_str, w, p))
+            s += hex_str
 
     s += '\n\nSMTLIB2 notation (compatible with Z3):'
-    s += '\n  (fp #b{} #b{} #b{})'.format(
+    smtlib2_str = '(fp #b{} #b{} #b{})'.format(
         str(d['S']).lower().replace('0b',''),
         str(d['E']).lower().replace('0b',''),
         str(d['T']).lower().replace('0b','')
     )
+    s += '\n  '
+    if link:
+        s += '{} '.format(permalink(smtlib2_str, w, p))
+    s += smtlib2_str
 
     if not R.isnan:
         s += '\n\nordinal (ulps away from zero):'
-        s += '\n  ' + str(d['i'])
+        ord_str = str(d['i'])
+        s += '\n  '
+        if link:
+            s += '{} '.format(permalink('0n' + ord_str, w, p))
+        s += ord_str
 
     s += '\n\nreal value:'
+    s += '\n  '
+    if link:
+        indent = '     '
+        R_str = str(R)
+        # TODO: "default" nan payload is hardcoded
+        if R.isnan and R.nan_payload != 1:
+            R_str += str(R.nan_payload)
+        R_link = '{} '.format(permalink(R_str, w, p))
+    else:
+        indent = ''
+        R_link = ''
+
     if R.isnan:
-        s += '\n  R = {} (with payload: {})'.format(conv.real_to_pretty_string(R),
-                                                  conv.real_to_string(R, show_payload=True))
+        s += R_link
+        s += 'R = {} (with payload: {})'.format(conv.real_to_pretty_string(R),
+                                                    conv.real_to_string(R, show_payload=True))
     elif R.isinf:
-        s += '\n  R = {} ({})'.format(conv.real_to_pretty_string(R),
+        s += R_link
+        s += 'R = {} ({})'.format(conv.real_to_pretty_string(R),
                                       conv.real_to_string(R))
     elif R.iszero:
-        s += '\n  R = ' + conv.real_to_string(R)
+        s += R_link
+        s += 'R = ' + conv.real_to_string(R)
     else:
-        s += '\n  R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})'.format(d['s'], d['e'], d['c'], 1-d['p'])
-        s += '\n    ' + summarize_with(R, prec=prec)
+        s += indent + 'R = (-1)**{:d} * 2**{:d} * ({:d} * 2**{:d})'.format(d['s'], d['e'], d['c'], 1-d['p'])
+        s += '\n  '
+        if link:
+            dec_str = conv.real_to_string(R, exact=True)
+            s += '{} '.format(permalink(dec_str, w, p))
+        s += '  ' + summarize_with(R, prec=prec)
         if R.isrational and R.rational_denominator != 1:
-            s += '\n    = ' + str(R)
+            s += '\n  ' + R_link + '  = ' + str(R)
 
         # nearest decimal approximations
         if 'rounding_info' in d:
@@ -785,23 +824,31 @@ def explain_float(d):
 
                 label = rm + ':' + ' '*(ieee_rm_longest - len(rm) + 1)
 
-                s += '\n  ' + label + conv.pow10_to_str(midhi_c, midhi_e)
+                midhi_str = conv.pow10_to_str(midhi_c, midhi_e)
+                s += '\n  ' + label
+                if link:
+                    s += '{} '.format(permalink(midhi_str, w, p))
+                s += midhi_str
                 if midlo_c != midhi_c or midlo_e != midhi_e:
-                    s += '\n  ' + len(label) + conv.pow10_to_str(midlo_c, midlo_e)
+                    midlo_str = conv.pow10_to_str(midlo_c, midlo_e)
+                    s += '\n  ' + ' '*len(label)
+                    if link:
+                        s += '{} '.format(permalink(midlo_str, w, p))
+                        s += midlo_str
 
     # number lines
     if not R.isnan or R.isinf:
-        s += '\n\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'], fprec=prec)
+        s += '\n\n\n' + explain_nl(R, d['S'], d['E'], d['w'], d['p'], fprec=prec, link=link)
 
     # rounding envelopes
     if 'rounding_info' in d:
         s += '\n'
         for k, r_info in d['rounding_info'].items():
-            s += '\n\n' + explain_rm(r_info)
+            s += '\n\n' + explain_rm(r_info, link=link)
 
     return s
 
-def explain_real(d):
+def explain_real(d, link = False):
     R = d['R']
     if R.isnan or d['exact']:
         s = 'this real value has an exact floating point representation'
@@ -848,7 +895,7 @@ def explain_real(d):
         if 'rounding_info' in d:
             s += '\n'
             for k, r_info in d['rounding_info'].items():
-                s += '\n\n' + explain_rm(r_info)
+                s += '\n\n' + explain_rm(r_info, link=link)
 
     return s
 
@@ -876,16 +923,21 @@ def parse_input(s, w, p, limit_exp = None, allow_exprs = True):
     return discrete, parsed
 
 # call after parse_input
-def explain_input(x, w, p, discrete, parsed, hit=False):
+def explain_input(x, w, p, discrete, parsed, hit = False, link = False):
     if discrete:
         S, E, T = parsed
         w_prime = E.n
         p_prime = T.n + 1
     else:
         R = parsed
+        w_prime = w
+        p_prime = p
 
     s = 'received input (w={:d}, p={:d}):'.format(w, p)
-    s += '\n  ' + repr(x)
+    s += '\n  '
+    if link:
+        s += '{} '.format(permalink(x, w_prime, p_prime))
+    s += repr(x)
     if discrete and (w != w_prime or p != p_prime):
         s += '\nNOTE: changed format to (w={:d}, p={:d})'.format(w_prime, p_prime)
 
@@ -894,44 +946,53 @@ def explain_input(x, w, p, discrete, parsed, hit=False):
         s += ' implicit triple'
         if hit:
             s += ' (cached)'
-        s += ':\n  ({}, {}, {})'.format(str(S), str(E), str(T))
+        s += ':\n  '
+        s_tup = '({}, {}, {})'.format(str(S), str(E), str(T))
+        if link:
+            s += '{} '.format(permalink(s_tup, w_prime, p_prime))
+        s += s_tup
     else:
         s += ' extended real number'
         if hit:
             s += ' (cached)'
-        s += ':\n  ' + str(R)
+        s += ':\n  '
+        if link:
+            R_str = str(R)
+            if R.isnan:
+                R_str += str(R.nan_payload)
+            s += '{} '.format(permalink(R_str, w_prime, p_prime))
+        s += str(R)
 
     if not discrete:
-        pretty_repr = conv.real_to_pretty_string(R)
-        pretty_repr = pretty_repr.replace('\n', '\n  ')
-        s += '\n\n  ' + pretty_repr
+        pretty_repr = webcontent.indent(conv.real_to_pretty_string(R), '  ')
+        s += '\n\n' + pretty_repr
 
     return s
 
 # call after parse_input
-def process_parsed_input(s, w, p, discrete, parsed):
+def process_parsed_input(s, w, p, discrete, parsed, link = False):
     if discrete:
         S, E, T = parsed
         f_descr = describe_float(S, E, T)
-        return explain_float(f_descr)
+        return explain_float(f_descr, link=link)
     else:
         R = parsed
         r_descr = describe_real(R, w, p)
         if r_descr.get('exact', False):
             S, E, T = r_descr['S'], r_descr['E'], r_descr['T']
             f_descr = describe_float(S, E, T)
-            return explain_float(f_descr)
+            return explain_float(f_descr, link=link)
         else:
-            return explain_real(r_descr)
+            return explain_real(r_descr, link=link)
 
-def process_format(w, p):
+def process_format(w, p, link = False):
     assert isinstance(w, int)
     assert w >= 2
     assert isinstance(p, int)
     assert p >= 2
 
     fmt_descr = describe_format(w, p)
-    return explain_format(fmt_descr)
+    return explain_format(fmt_descr, link=link)
 
 if __name__ == '__main__':
     import argparse
