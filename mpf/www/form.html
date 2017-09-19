@@ -1,5 +1,5 @@
 <form method="get">
-  <table border="1">
+  <table>
     <tr>
       <td>
 	<input type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
@@ -11,8 +11,8 @@
     </tr>
     <tr>
       <td>
-	w (exponent bits): <input type="number" name="w" value="{w:d}" min="2" max="{maxw:d}">
-	p (significand bits, plus one): <input type="number" name="p" value="{p:d}" min="2" max="{maxp:d}">
+	w (exponent bits): <input style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}">
+	p (significand bits, plus one): <input style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}">
       </td>
       <td>
 	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>

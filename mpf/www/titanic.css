@@ -1,4 +1,21 @@
-body { font-family: Helvetica, Arial, sans; font-size: 18px }
-input { font-family: mono; font-size: 16px }
-button { font-family: Helvetica, Arial, sans; font-size: 16px }
-pre { font-family: mono; font-size: 16px }
+body { font-family: Helvetica, Arial, sans; font-size: 18px; }
+input { font-family: mono; font-size: 16px; }
+button { font-family: Helvetica, Arial, sans; font-size: 16px; }
+/* stolen from GitHub */
+pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
+p { margin: 8px; }
+
+/* stolen from FPBench - thanks Pavel */
+a { color: #3465a4; text-decoration: none; }
+a:hover { color: #204a87; text-decoration: underline; }
+a:visited { color: #5c3566 }
+a:active { color: #4e9a06 }
+
+header { overflow: auto; display: block; }
+header img { float: left; margin-right: 48px; }
+header h1 { font-size: 64px; margin: 0; padding-top: 52px; }
+
+table {
+    border: solid 2px;
+    border-radius: 4px 4px 4px 4px;
+}
