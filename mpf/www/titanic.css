@@ -1,5 +1,5 @@
 body { font-family: Helvetica, Arial, sans; font-size: 18px; }
-input { font-family: mono; font-size: 16px; }
+input { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
 button { font-family: Helvetica, Arial, sans; font-size: 16px; }
 /* stolen from GitHub */
 pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
@@ -17,5 +17,5 @@ header h1 { font-size: 64px; margin: 0; padding-top: 52px; }
 
 table {
     border: solid 2px;
-    border-radius: 4px 4px 4px 4px;
+    border-radius: 3px 3px 3px 3px;
 }

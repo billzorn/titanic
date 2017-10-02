@@ -7,15 +7,50 @@
 
 <p style="font-size:24px;color:red;">Work in Progress: This vessel is not yet seaworthy!</p>
 
-<p>Titanic takes in real numbers, and tells you everything you could possibly want to know about how they will be represented in IEEE 754 standard compliant floating point formats. You can give it any real number you can specify, and any number of bits you fancy, and it will either give you correct or information or exhaust its available compute resources and fail. It is guaranteed to float correctly.</p>
+<p>Titanic is an implementation of <a href="https://en.wikipedia.org/wiki/IEEE_754">IEEE 754</a>
+  floating point arithmetic in terms of real numbers. It is suitable as a reference; though it is
+  much slower than numerical libraries such as <a href="https://gmplib.org/">GMP</a> and
+  <a href="http://www.numpy.org/">NumPy</a>, Titanic has a very simple implementation
+  and is naturally immune to quantization error due to floating point rounding.</p>
 
-<p>Titanic is implemented in Python and uses the <a href="http://www.sympy.org/en/index.html">SymPy</a> library.</p>
+<p>Typical numerical libraries use a binary implementation of floating point for maximum
+  performance. However, the IEEE 754 standard is specified in terms of real numbers. Ensuring
+  that the behavior of a discrete program lines up with this continuous specification can be
+  difficult.</p>
 
-<p>Currently, Titanic is in the prototype phase, and it may suffer from bugs, particularly in the way information is dispayed. If something seems wrong, it may be prudent to check it with a tool such as <a href="https://www.wolframalpha.com/">Wolfram Alpha</a>.</p>
+<p>One way of thinking about a specific IEEE 754 floating point format with some precision is as a map from
+  bit patterns to a set of real numbers. But it is also a map from a set of intervals that
+  cover the real line, or "rounding envelopes," to the single representative number chosen
+  for each interval.</p>
 
-<p>For the curious, here are some very early drafts of the theories upon which Titanic is based.</p>
+<p>Given a number, Titanic can efficiently find the interval in some floating point format
+  that contains that number. Given a computation, Titanic can find the interval
+  that contains the real value of the result. Because it uses real numbers, Titanic can implement
+  the IEEE 754 specification directly, without having to reason about the behavior of a binary
+  representation.</p>
 
-<p><a href="/reals.pdf">The variation of real arithmetic used by Titanic</a></p>
-<p><a href="/ulps.pdf">A formalization of the relationship between floating point representations and real numbers</a></p>
+<p>Titanic is effectively an "infinite precision" floating point implementation: given any
+  computation and any floating point format, it will either produce a correctly rounded answer
+  or exhaust its available computing resources and report that it has failed. It is guaranteed
+  to float correctly.</p>
+
+<h2 id="constants">floating point constants</h2>
+
+<p>Titanic will tell you everything you could possibly want to know about a number
+  in an IEEE 754 floating point format of any precision, or about how any real number
+  would be represented in such a format.</p>
+
+<h3 id="input">providing input to Titanic</h3>
+
+<p>Titanic needs two kinds of input: some representation of a number, and the precision of the
+  IEEE 754 floating point format that number will be represented in.</p>
+
+<p style="font-size:24px;color:red;">WIP</p>
+
+<h3 id="output">undertanding Titanic's output</h3>
+
+<p>Depending on the input, Titanic will provide a range of information.</p>
+
+<p style="font-size:24px;color:red;">WIP</p>
 
 </div>
