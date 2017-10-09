@@ -76,23 +76,37 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
             s = s[:webcontent.maxlen]
             complaints.append('Can only input at most {:d} characters.'.format(webcontent.maxlen))
 
-        w = get_first(args, 'w', webcontent.default_w)
+        fmt = get_first(args, 'fmt', webcontent.default_fmt)
+        if fmt == 'binary16':
+            default_w = 5
+            default_p = 11
+        elif fmt == 'binary32':
+            default_w = 8
+            default_p = 24
+        elif fmt == 'binary64':
+            default_w = 11
+            default_p = 53
+        else:
+            default_w = webcontent.default_w
+            default_p = webcontent.default_p
+
+        w = get_first(args, 'w', default_w)
         if not isinstance(p, int):
             try:
                 w = int(w)
             except Exception:
                 complaints.append('w must be an integer.')
-                w = webcontent.default_w
+                w = default_w
         if not (2 <= w <= webcontent.maxw):
             complaints.append('w must be between 2 and {:d}.'.format(webcontent.maxw))
 
-        p = get_first(args, 'p', webcontent.default_p)
+        p = get_first(args, 'p', default_p)
         if not isinstance(p, int):
             try:
                 p = int(p)
             except Exception:
                 complaints.append('p must be an integer.')
-                p = webcontent.default_p
+                p = default_p
         if not (2 <= p <= webcontent.maxp):
             complaints.append('p must be between 2 and {:d}.'.format(webcontent.maxp))
 

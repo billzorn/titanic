@@ -13,6 +13,7 @@ maxw = 20
 default_w = 8
 maxp = 1024
 default_p = 24
+default_fmt = 'custom'
 
 def format_webform(form, s = default_s, w = default_w, p = default_p):
     return form.format(s=s, w=w, p=p,
@@ -32,7 +33,7 @@ pages = {
     root_page : ('www/index.html', 'text/html',),
     'about'   : ('www/about.html', 'text/html',),
     'titanic.css' : ('www/titanic.css', 'text/css',),
-    #'titanic.js' : ('www/titanic.js', 'text/javascript',),
+    'titanic.js' : ('www/titanic.js', 'text/javascript',),
     'favicon.ico'  : ('www/favicon.ico', 'image/x-icon',),
     'piceberg.png' : ('www/piceberg.png', 'image/png',),
     'piceberg_round.png' : ('www/piceberg_round.png', 'image/png',),

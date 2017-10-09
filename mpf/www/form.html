@@ -2,7 +2,7 @@
   <table>
     <tr>
       <td>
-	<input type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
+	<input id="sExpr" type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
 	       style="width:100%;box-sizing:border-box;">
       </td>
       <td>
@@ -11,12 +11,23 @@
     </tr>
     <tr>
       <td>
-	w (exponent bits): <input style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}">
-	p (significand bits, plus one): <input style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}">
+	w (exponent bits): <input id="wBits" style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}" onchange="onWP()">
+	p (significand bits, plus one): <input id="pBits" style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}" onchange="onWP()">
       </td>
       <td>
 	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>
       </td>
     </tr>
   </table>
+  <div>
+    <input id="fmtBinary16" type="radio" name="fmt" value="binary16" onchange="onFormat(16)">
+    <label for="fmtBinary16">binary16 "half"</label>
+    <input id="fmtBinary32" type="radio" name="fmt" value="binary32" onchange="onFormat(32)">
+    <label for="fmtBinary32">binary32 "single"</label>
+    <input id="fmtBinary64" type="radio" name="fmt" value="binary64" onchange="onFormat(64)">
+    <label for="fmtBinary64">binary64 "double"</label>
+    <input id="fmtCustom" type="radio" name="fmt" value="custom" onchange="onFormat(0)">
+    <label for="fmtCustom">custom</label>
+  </div>
 </form>
+<script>onWP();</script>
