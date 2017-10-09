@@ -26,6 +26,9 @@ function fmtCustom() {
     const e = document.getElementById("fmtCustom");
     return e;
 }
+function onText() {
+    console.log(sExpr().value);
+}
 function onWP() {
     const ew = wBits();
     const ep = pBits();
