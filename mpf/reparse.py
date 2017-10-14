@@ -60,8 +60,8 @@ cre_p = re.escape('p')
 cre_ep = r'[ep]'
 
 def cre_frac(r_opt, r_nat):
-    return cre_any(r_nat + opt(cre_dot),
-                   r_opt + cre_dot + r_nat)
+    return cre_any(r_opt + cre_dot + r_nat,
+                   r_nat + opt(cre_dot))
 
 cre_binfrac = cre_frac(cre_binopt, cre_binnat)
 cre_hexfrac = cre_frac(cre_hexopt, cre_hexnat)
