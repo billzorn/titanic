@@ -1,25 +1,26 @@
 <form method="get">
-  <table>
+  <table style="width:700px">
     <tr>
       <td>
 	<input id="sExpr" type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
 	       style="width:100%;box-sizing:border-box;" oninput="onText();">
       </td>
-      <td>
-	<button type="submit" formaction="/demo" style="width:100%;">Float!</button>
+      <td id="sLabel" style="width:1%;white-space:nowrap;">(mathematical constant)</td>
+      <td style="width:120px">
+	<button id="demoButton" type="submit" formaction="/demo" style="width:100%;">Float!</button>
       </td>
     </tr>
     <tr>
-      <td>
+      <td colspan="2">
 	w (exponent bits): <input id="wBits" style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}" oninput="onWP();">
 	p (significand bits, plus one): <input id="pBits" style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}" oninput="onWP();">
       </td>
-      <td>
+      <td style="width:120px">
 	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>
       </td>
     </tr>
   </table>
-  <div>
+  <div style="padding-top:4px;">
     <input id="fmtBinary16" type="radio" name="fmt" value="binary16" onchange="onFormat(16);">
     <label for="fmtBinary16">binary16 "half"</label>
     <input id="fmtBinary32" type="radio" name="fmt" value="binary32" onchange="onFormat(32);">
