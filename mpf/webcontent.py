@@ -19,15 +19,20 @@ def format_webform(form, s = default_s, w = default_w, p = default_p):
     return form.format(s=s, w=w, p=p,
                        maxlen=maxlen, maxw=maxw, maxp=maxp)
 
+def format_coreform(form, core='', w=5, p=11, args=''):
+    return form.format(core=core, w=w, p=p, args=args)
+
 # content directory listing
 
 root_page = 'index'
 web_form = '$form$'
 err_body = '$err$'
+core_form = '$core$'
 
 assets = {
     web_form : ('www/form.html', format_webform,),
     err_body : ('www/error.html', None,),
+    core_form : ('www/coreform.html', format_coreform,),
 }
 pages = {
     root_page : ('www/index.html', 'text/html',),
@@ -41,7 +46,7 @@ pages = {
     'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
 
-protocols = {'demo', 'fmt'}
+protocols = {'demo', 'fmt', 'core'}
 
 with open(skeleton, encoding=webenc, mode='r') as f:
     skeleton_content = f.read().strip() + '\n'
@@ -98,8 +103,23 @@ def create_error(err, msg):
     asset, _ = asset_content[err_body]
     return asset.format(err=err, msg=msg)
 
+def create_coreform(core, w, p, args):
+    asset, _ = asset_content[core_form]
+    return format_coreform(asset, core, w, p, args)
+
 def protocol_headers_body(s, w, p, content):
     form_body = indent(create_webform(s, w, p), skeleton_indent)
+    content_body = pre(content)
+
+    headers = (
+        ('Content-Type', 'text/html',),
+    )
+    body = skeletonize(form_body + '\n\n' + content_body, ind=False)
+
+    return headers, webencode(body)
+
+def core_headers_body(core, w, p, args, content):
+    form_body = create_coreform(core, w, p, args)
     content_body = pre(content)
 
     headers = (

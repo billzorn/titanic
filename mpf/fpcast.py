@@ -49,11 +49,13 @@ def real_sort(sort):
         return sort
 
 def round_real(unrounded, sort, rm):
-        if sort:
-            w, p = real_sort(sort)
-            return core.implicit_to_real(*core.real_to_implicit(unrounded, w, p, rm))
-        else:
-            return unrounded
+    if isinstance(unrounded, bool):
+        return unrounded
+    elif sort:
+        w, p = real_sort(sort)
+        return core.implicit_to_real(*core.real_to_implicit(unrounded, w, p, rm))
+    else:
+        return unrounded
 
 # main expression classes
 
@@ -198,6 +200,7 @@ class Sqrt(ExprRM):
 class Neg(Expr):
     name = 'neg'
     nargs = 1
+    op = operator.neg
     op_z3 = z3.fpNeg
 
 # comparison

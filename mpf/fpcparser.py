@@ -118,6 +118,11 @@ def parse(s):
     parse_tree = parser.parse()
     return parser, parse_tree
 
+def compile(s):
+    parser, tree = parse(s)
+    visitor = Visitor()
+    return visitor.visit(tree)
+
 if __name__ == '__main__':
     import sys
     parser, tree = parse(sys.stdin.read())

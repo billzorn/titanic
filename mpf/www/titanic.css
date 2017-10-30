@@ -1,5 +1,6 @@
 body { font-family: Helvetica, Arial, sans; font-size: 18px; }
 input { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
+textarea { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
 button { font-family: Helvetica, Arial, sans; font-size: 16px; }
 /* stolen from GitHub */
 pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }

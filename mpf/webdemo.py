@@ -3,12 +3,14 @@
 import sys
 import os
 import threading
+import traceback
 import html
 import urllib
 from multiprocessing import Pool
 from http.server import HTTPStatus
 
 import describefloat
+import fpcparser
 import webcontent
 from aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
 
@@ -126,6 +128,9 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
         if err is not None:
             return err
 
+        if path == 'core':
+            return self.hacked_process_core(args)
+
         # static page
         if args is None:
             data, ctype = webcontent.page_content[path]
@@ -190,6 +195,47 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
         response = HTTPStatus.OK
         msg = None
         headers, content = webcontent.protocol_headers_body(s, w, p, prefix + result)
+
+        return response, msg, headers, content
+
+    def hacked_process_core(self, args):
+        core_str = get_first(args, 'core', '').strip()
+        w = int(get_first(args, 'w', '5').strip())
+        p = int(get_first(args, 'p', '11').strip())
+        args_str = get_first(args, 'args', '').strip()
+
+        if core_str:
+            try:
+                cores = fpcparser.compile(core_str)
+                coreobj = cores[0]
+
+                arg_strs = args_str.split(';')
+                args_dict = {coreobj.args[i] : arg_strs[i].strip() for i in range(len(coreobj.args))}
+
+                content_str = str(coreobj)
+                content_str += '\n\n' + repr(args_dict)
+
+                content_str += '\n\nwith w={:d}, p={:d}'.format(w,p)
+                if coreobj.pre:
+                    content_str += '\n  pre: ' + str(coreobj.pre.apply_real(args_dict, (w, p), 'RNE'))
+                content_str += '\n  ' + str(coreobj.e.apply_real(args_dict, (w, p), 'RNE'))
+
+                content_str += '\n\nreal value:'
+                if coreobj.pre:
+                    content_str += '\n  pre: ' + str(coreobj.pre.apply_real(args_dict, None, None))
+                real_answer = coreobj.e.apply_real(args_dict, None, None)
+                content_str += '\n  ' + str(real_answer)
+                content_str += '\n  ' + str(real_answer.numeric_value(10, abort_incomparables=False))
+
+            except Exception as e:
+                content_str = 'bad core or arguments:\n\n'
+                content_str += traceback.format_exc()
+        else:
+            content_str = ''
+
+        response = HTTPStatus.OK
+        msg = None
+        headers, content = webcontent.core_headers_body(core_str, w, p, args_str, content_str)
 
         return response, msg, headers, content
 
