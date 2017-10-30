@@ -625,8 +625,11 @@ class FReal(object):
         if x.isinteger:
             i = int(x.magnitude) * x.sign
             return self.pown(i)
+        elif x.isrational and x.rational_numerator == 1:
+            i = x.rational_denominator
+            return self.rootn(i)
         else:
-            raise ValueError('only integer powers are supported; got: {}'.format(repr(x)))
+            raise ValueError('only integer powers and roots are supported; got: {}'.format(repr(x)))
 
     def __rpow__(self, y):
         if not isinstance(y, FReal):
@@ -663,6 +666,34 @@ class FReal(object):
                     return FReal(negative=negative, infinite=True)
             else:
                 return FReal(self.magnitude ** i, negative=negative)
+
+    def rootn(self, i):
+        assert isinstance(i, int)
+
+        # invalid operation
+        if i == 0:
+            # PARAM: sign and payload for x**(1/0)?
+            return FReal(None, payload=1)
+        elif self.isnan:
+            return self
+        elif self.iszero:
+            # odd roots of 0 retain sign
+            if i % 2 != 0:
+                negative = self.negative
+            # even roots of 0 are positive
+            else:
+                negative = False
+
+            if i < 0:
+                return FReal(negative=negative, infinite=True)
+            else:
+                return FReal(0, negative=negative)
+        # invalid operation
+        elif self.negative and i % 2 == 0:
+            # PARAM: sign and payload for even integral root of negative number?
+            return FReal(None, negative=self.negative, payload=1)
+        else:
+            return FReal(sympy.root(self.magnitude, i), negative=self.negative)
 
     # comparison
 
@@ -735,3 +766,10 @@ class FReal(object):
     def __gt__(self, x):
         comp = self.compareto(x)
         return comp is not None and 0 < comp
+
+
+# useful things
+def sqrt(x):
+    if not isinstance(x, FReal):
+        x = FReal(x)
+    return x.rootn(2)
