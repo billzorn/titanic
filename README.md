@@ -1,4 +1,4 @@
-# ![Image](../master/www/piceberg_full.png?raw=true)
+# ![Image](../master/www/piceberg.png?raw=true)
 
 # Titanic
 
