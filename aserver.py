@@ -166,7 +166,7 @@ def test_worker_cached(query_list):
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # configuration
-    server_version = 'aserver/0.2'
+    server_version = 'aserver/0.3'
     sys_version = "Python/" + sys.version.split()[0]
     protocol_version = 'HTTP/1.0'
     error_message_format = ERROR_MESSAGE.format(server_version, sys_version)
@@ -276,14 +276,17 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
             cache_hit, result = self.apply_cached(cache_key, test_worker_cached, (parsed,))
 
             # spit it all out
+            req_format = 'raw request:\n{}\n\ncommand: {}\npath:    {}\nversion: {}\n\nheaders:\n{}'
             diag_format = '{}\n  ppid: {:d}\n  pid: {:d}\n  active threads: {:d}\n  current thread: {}'
-            body_text = ('{}\n\n{}\n\npath: {}\nquery: {}\ncache hit? {}\n first sorted query on this path:\n  {}'
-                         .format(diag_format.format('Handler:', *handler_diag),
-                                 diag_format.format('Parser worker:', *worker_diag),
-                                 repr(pr.path),
-                                 repr(parsed),
-                                 repr(cache_hit),
-                                 result))
+            body_text = ('{}\n\n{}\n\n{}\n\npath: {}\nquery: {}\ncache hit? {}\n first sorted query on this path:\n  {}'
+                         .format(
+                             req_format.format(self.raw_requestline, self.command, self.path, self.request_version, self.headers),
+                             diag_format.format('Handler:', *handler_diag),
+                             diag_format.format('Parser worker:', *worker_diag),
+                             repr(pr.path),
+                             repr(parsed),
+                             repr(cache_hit),
+                             result))
 
             response = HTTPStatus.OK
             msg = None
