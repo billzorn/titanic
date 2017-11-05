@@ -133,15 +133,31 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
 
         # static page
         if args is None:
-            data, ctype = webcontent.page_content[path]
+            data, ctype, etag = webcontent.page_content[path]
+            quoted_etag = '"' + etag + '"'
+            cache_time = webcontent.cache_time(ctype)
 
-            response = HTTPStatus.OK
-            msg = None
-            # could do something more clever, for caching etc.
-            headers = (
-                ('Content-Type', ctype,),
-            )
-            content = data
+            ci_headers = {k.lower() : v for k, v in self.headers.items()}
+            client_etag = ci_headers.get('if-none-match', None)
+
+            if client_etag == quoted_etag:
+                response = HTTPStatus.NOT_MODIFIED
+                msg = None
+                headers = (
+                    ('Cache-Control', 'public, max-age={:d}'.format(cache_time),),
+                    ('ETag', quoted_etag,),
+                )
+                content = None
+
+            else:
+                response = HTTPStatus.OK
+                msg = None
+                headers = (
+                    ('Content-Type', ctype,),
+                    ('Cache-Control', 'public, max-age={:d}'.format(cache_time),),
+                    ('ETag', quoted_etag,),
+                )
+                content = data
 
             return response, msg, headers, content
 

@@ -1,5 +1,6 @@
 import re
 import urllib
+import hashlib
 
 # defaults
 
@@ -42,8 +43,10 @@ pages = {
     'favicon.ico'  : ('www/favicon.ico', 'image/x-icon',),
     'piceberg.png' : ('www/piceberg.png', 'image/png',),
     'piceberg_round.png' : ('www/piceberg_round.png', 'image/png',),
-    'reals.pdf' : ('www/reals.pdf', 'application/pdf',),
-    'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
+    'eiceberg.png' : ('www/eiceberg.png', 'image/png',),
+    'eiceberg_round.png' : ('www/eiceberg_round.png', 'image/png',),
+    # 'reals.pdf' : ('www/reals.pdf', 'application/pdf',),
+    # 'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
 
 # protocols = {'demo', 'fmt', 'core'}
@@ -157,18 +160,29 @@ def import_page(path, ctype):
     if re_bin_ctypes.fullmatch(ctype):
         with open(path, mode='rb') as f:
             data = f.read()
-        return data, ctype
+        etag = hashlib.sha256(data).hexdigest()
+        return data, ctype, etag
     else:
         with open(path, encoding=webenc, mode='rt') as f:
             s = f.read()
         if re_proc_ctypes.fullmatch(ctype):
             s = process_assets(s)
             s = skeletonize(s, ind=True)
-        return webencode(s), ctype
+        data = webencode(s)
+        etag = hashlib.sha256(data).hexdigest()
+        return data, ctype, etag
 
 # preloaded static pages
 
 page_content = {name : import_page(path, ctype) for name, (path, ctype,) in pages.items()}
+
+def cache_time(ctype):
+    if ctype.startswith('text'):
+        return 3600
+    elif ctype.startswith('image'):
+        return 86400
+    else:
+        return 10
 
 # path recognition regexes
 
