@@ -39,7 +39,7 @@ pages = {
     root_page : ('www/index.html', 'text/html',),
     'about'   : ('www/about.html', 'text/html',),
     'titanic.css' : ('www/titanic.css', 'text/css',),
-    'titanic.js' : ('www/titanic.js', 'text/javascript',),
+    'titanic.min.js' : ('www/titanic.min.js', 'text/javascript',),
     'favicon.ico'  : ('www/favicon.ico', 'image/x-icon',),
     'piceberg.png' : ('www/piceberg.png', 'image/png',),
     'piceberg_round.png' : ('www/piceberg_round.png', 'image/png',),

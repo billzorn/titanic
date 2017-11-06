@@ -3,7 +3,7 @@
     <tr>
       <td>
 	<input id="sExpr" type="text" name="s" value="{s:s}" maxlength="{maxlen:d}"
-	       style="width:100%;box-sizing:border-box;" oninput="onText();">
+	       style="width:100%;box-sizing:border-box;" oninput="titanic.onText();">
       </td>
       <td id="sLabel" style="width:1%;white-space:nowrap;">(mathematical constant)</td>
       <td style="width:120px">
@@ -12,8 +12,8 @@
     </tr>
     <tr>
       <td colspan="2">
-	w (exponent bits): <input id="wBits" style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}" oninput="onWP();">
-	p (significand bits, plus one): <input id="pBits" style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}" oninput="onWP();">
+	w (exponent bits): <input id="wBits" style="width:3em;" type="number" name="w" value="{w:d}" min="2" max="{maxw:d}" oninput="titanic.onWP();">
+	p (significand bits, plus one): <input id="pBits" style="width:5em;" type="number" name="p" value="{p:d}" min="2" max="{maxp:d}" oninput="titanic.onWP();">
       </td>
       <td style="width:120px">
 	<button type="submit" formaction="/fmt" style="width:100%;">View Format</button>
@@ -21,14 +21,14 @@
     </tr>
   </table>
   <div style="padding-top:4px;">
-    <input id="fmtBinary16" type="radio" name="fmt" value="binary16" onchange="onFormat(16);">
+    <input id="fmtBinary16" type="radio" name="fmt" value="binary16" onchange="titanic.onFormat(16);">
     <label for="fmtBinary16">binary16 "half"</label>
-    <input id="fmtBinary32" type="radio" name="fmt" value="binary32" onchange="onFormat(32);">
+    <input id="fmtBinary32" type="radio" name="fmt" value="binary32" onchange="titanic.onFormat(32);">
     <label for="fmtBinary32">binary32 "single"</label>
-    <input id="fmtBinary64" type="radio" name="fmt" value="binary64" onchange="onFormat(64);">
+    <input id="fmtBinary64" type="radio" name="fmt" value="binary64" onchange="titanic.onFormat(64);">
     <label for="fmtBinary64">binary64 "double"</label>
-    <input id="fmtCustom" type="radio" name="fmt" value="custom" onchange="onFormat(0);">
+    <input id="fmtCustom" type="radio" name="fmt" value="custom" onchange="titanic.onFormat(0);">
     <label for="fmtCustom">custom</label>
   </div>
 </form>
-<script>onWP();</script>
+<script>titanic.onWP();</script>

@@ -1,40 +1,40 @@
 function sExpr() {
-    const e : any = document.getElementById("sExpr");
+    const e: any = document.getElementById("sExpr");
     return e;
 }
 function sLabel() {
-    const e : any = document.getElementById("sLabel");
+    const e: any = document.getElementById("sLabel");
     return e;
 }
 
 function demoButton() {
-    const e : any = document.getElementById("demoButton");
+    const e: any = document.getElementById("demoButton");
     return e;
 }
 
 function wBits() {
-    const e : any = document.getElementById("wBits");
+    const e: any = document.getElementById("wBits");
     return e;
 }
 function pBits() {
-    const e : any = document.getElementById("pBits");
+    const e: any = document.getElementById("pBits");
     return e;
 }
 
 function fmtBinary16() {
-    const e : any = document.getElementById("fmtBinary16");
+    const e: any = document.getElementById("fmtBinary16");
     return e;
 }
 function fmtBinary32() {
-    const e : any = document.getElementById("fmtBinary32");
+    const e: any = document.getElementById("fmtBinary32");
     return e;
 }
 function fmtBinary64() {
-    const e : any = document.getElementById("fmtBinary64");
+    const e: any = document.getElementById("fmtBinary64");
     return e;
 }
 function fmtCustom() {
-    const e : any = document.getElementById("fmtCustom");
+    const e: any = document.getElementById("fmtCustom");
     return e;
 }
 
@@ -84,7 +84,7 @@ const input_re = new RegExp(
         + ")\\s*$", "i");
 
 function explainInput(explanation: string, valid: boolean) {
-    let label = sLabel();
+    const label = sLabel();
     label.innerHTML = "(" + explanation + ")";
     if (valid) {
         label.style.color = "Green";
@@ -100,34 +100,36 @@ const ieee_w_p = {
     32: [8, 24, "binary32"],
     64: [11, 53, "binary64"],
     128: [15, 113, "binary128"],
-    256: [19, 237, "binary256"]
-}
+    256: [19, 237, "binary256"],
+};
 
 function explainBV(size: number) {
     const ew = wBits();
     const ep = pBits();
-    const wIn : number = parseInt(ew.value, 10);
-    const pIn : number = parseInt(ep.value, 10);
+    const wIn: number = parseInt(ew.value, 10);
+    const pIn: number = parseInt(ep.value, 10);
     const w_p = ieee_w_p[size];
-    if (wIn + pIn == size) {
+    if (wIn + pIn === size) {
         if (w_p) {
             const [w, p, name] = w_p;
-            if (w == wIn && p == pIn)
+            if (w === wIn && p === pIn) {
                 explainInput("packed " + name, true);
-            else
+            } else {
                 explainInput("packed bitvector", true);
-        } else
+            }
+        } else {
             explainInput("packed bitvector", true);
+        }
     } else if (w_p) {
         const [w, p, name] = w_p;
         explainInput("packed " + name, true);
-    } else
+    } else {
         explainInput("bitvector: bad w and p", false);
+    }
 }
 
 function bvsize(s: string): number {
     const m = bv_re.exec(s);
-    console.log(m);
     if (!m) {
         return null;
     } else if (m[1]) {
@@ -150,15 +152,17 @@ function onText() {
     } else if (m[8]) {
         explainInput("mathematical constant", true);
     } else if (m[10]) {
-        if (!m[9] && !m[11] && nodot_re.test(m[10]))
+        if (!m[9] && !m[11] && nodot_re.test(m[10])) {
             explainBV(m[10].length);
-        else
+        } else {
             explainInput("binary number", true);
+        }
     } else if (m[13]) {
-        if (!m[12] && !m[14] && nodot_re.test(m[13]))
+        if (!m[12] && !m[14] && nodot_re.test(m[13])) {
             explainBV(m[13].length * 4);
-        else
+        } else {
             explainInput("hexadecimal number", true);
+        }
     } else if (m[16]) {
         explainInput("decimal number", true);
     } else if (m[19]) {
@@ -171,20 +175,17 @@ function onText() {
         const w = bvsize(m[29]);
         const p = bvsize(m[30]) + 1;
         explainInput("implicit triple: w=" + w + ", p=" + p, true);
-    }
-    else if (m[31]) {
+    } else if (m[31]) {
         const w = bvsize(m[32]);
         const p = bvsize(m[33]) + 1;
         explainInput("implicit triple: w=" + w + ", p=" + p, true);
-    }
-    else if (m[34]) {
+    } else if (m[34]) {
         const w = bvsize(m[35]);
         const p = bvsize(m[37]) + 1;
         explainInput("explicit triple: w=" + w + ", p=" + p, true);
-    }
-    else if (m[38]) {
-        const w = bvsize(m[35]);
-        const p = bvsize(m[37]) + 1;
+    } else if (m[38]) {
+        const w = bvsize(m[39]);
+        const p = bvsize(m[41]) + 1;
         explainInput("explicit triple: w=" + w + ", p=" + p, true);
     } else {
         explainInput("mystery format", true);
@@ -194,11 +195,11 @@ function onText() {
 function onWP() {
     const ew = wBits();
     const ep = pBits();
-    if (ew.value == 5 && ep.value == 11) {
+    if (ew.value === 5 && ep.value === 11) {
         fmtBinary16().checked = true;
-    } else if (ew.value == 8 && ep.value == 24) {
+    } else if (ew.value === 8 && ep.value === 24) {
         fmtBinary32().checked = true;
-    } else if (ew.value == 11 && ep.value == 53) {
+    } else if (ew.value === 11 && ep.value === 53) {
         fmtBinary64().checked = true;
     } else {
         fmtCustom().checked = true;
@@ -206,17 +207,21 @@ function onWP() {
     onText();
 }
 
-function onFormat(x : number) {
+function onFormat(x: number) {
     const ew = wBits();
     const ep = pBits();
-    if (x == 16) {
+    if (x === 16) {
         ew.value = "5";
         ep.value = "11";
-    } else if (x == 32) {
+    } else if (x === 32) {
         ew.value = "8";
         ep.value = "24";
-    } else if (x == 64) {
+    } else if (x === 64) {
         ew.value = "11";
         ep.value = "53";
     }
 }
+
+exports.onText = onText;
+exports.onWP = onWP;
+exports.onFormat = onFormat;
