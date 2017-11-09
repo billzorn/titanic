@@ -207,7 +207,10 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
         S = BV(*S_tup)
         E = BV(*E_tup)
         T = BV(*T_tup)
-        return True, (S, E, T,)
+        if E.n < 2:
+            return None, 'Exponent must have at least 2 bits'
+        else:
+            return True, (S, E, T,)
 
     elif res is Result.ETUP:
         (S_tup, E_tup, ibit_tup, T_tup,) = xs
@@ -216,7 +219,10 @@ def str_to_real_or_implicit(s, w, p, limit_exp=None):
         ibit = BV(*ibit_tup)
         T = BV(*T_tup)
         C = core.concat(ibit, T)
-        return True, core.explicit_to_implicit(S, E, C)
+        if E.n < 2:
+            return None, 'Exponent must have at least 2 bits'
+        else:
+            return True, core.explicit_to_implicit(S, E, C)
 
     else:
         return None, None

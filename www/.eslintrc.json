@@ -1,0 +1,12 @@
+{
+    "extends": "google",
+    "parserOptions": {
+        "ecmaVersion": 6
+    },
+    "rules": {
+        "quotes": ["error", "double"],
+        "camelcase": "off",
+        "max-len": "off",
+        "require-jsdoc": "off"
+    }
+}

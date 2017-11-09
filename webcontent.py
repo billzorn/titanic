@@ -178,7 +178,7 @@ page_content = {name : import_page(path, ctype) for name, (path, ctype,) in page
 
 def cache_time(ctype):
     if ctype.startswith('text'):
-        return 3600
+        return 10
     elif ctype.startswith('image'):
         return 86400
     else:
