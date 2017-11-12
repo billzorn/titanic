@@ -1,11 +1,39 @@
-const antlr4 = require('antlr4');
-const FPCoreLexer = require('./gen/FPCoreLexer').FPCoreLexer;
-const FPCoreParser = require('./gen/FPCoreParser').FPCoreParser;
-const FPCoreVisitor = require('./gen/FPCoreVisitor').FPCoreVisitor;
+const antlr4 = require("antlr4");
+const FPCoreLexer = require("./gen/FPCoreLexer.js").FPCoreLexer;
+const FPCoreParser = require("./gen/FPCoreParser.js").FPCoreParser;
+const FPCoreVisitor = require("./gen/FPCoreVisitor.js").FPCoreVisitor;
+const ast = require("./fpcast.js");
+
+const operations = {
+    ast.Add.name : ast.Add,
+    ast.Sub.name : ast.Sub,
+    ast.Mul.name : ast.Mul,
+    ast.Div.name : ast.Div,
+    ast.Sqrt.name : ast.Sqrt,
+    ast.Neg.name : ast.Neg,
+    ast.LT.name : ast.LT,
+    ast.GT.name : ast.GT,
+    ast.LEQ.name : ast.LEQ,
+    ast.GEQ.name : ast.GEQ,
+    ast.EQ.name : ast.EQ,
+    ast.NEQ.name : ast.NEQ,
+    ast.And.name : ast.And,
+    ast.Or.name : ast.Or,
+    ast.Not.name : ast.Not,
+}
 
 // ES6
 
+
+
 class Visitor extends FPCoreVisitor {
+
+    visitParse(self, ctx) {
+        const cores = [];
+        for (const child of ctx.getChildren())
+    }
+    
+    
     visitExprNum(ctx) {
         console.log("number: " + ctx.c.text);
     }
