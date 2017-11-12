@@ -3,77 +3,112 @@ const FPCoreLexer = require("./gen/FPCoreLexer.js").FPCoreLexer;
 const FPCoreParser = require("./gen/FPCoreParser.js").FPCoreParser;
 const FPCoreVisitor = require("./gen/FPCoreVisitor.js").FPCoreVisitor;
 const ast = require("./fpcast.js");
-
-const operations = {
-    ast.Add.name : ast.Add,
-    ast.Sub.name : ast.Sub,
-    ast.Mul.name : ast.Mul,
-    ast.Div.name : ast.Div,
-    ast.Sqrt.name : ast.Sqrt,
-    ast.Neg.name : ast.Neg,
-    ast.LT.name : ast.LT,
-    ast.GT.name : ast.GT,
-    ast.LEQ.name : ast.LEQ,
-    ast.GEQ.name : ast.GEQ,
-    ast.EQ.name : ast.EQ,
-    ast.NEQ.name : ast.NEQ,
-    ast.And.name : ast.And,
-    ast.Or.name : ast.Or,
-    ast.Not.name : ast.Not,
-}
-
-// ES6
-
-
+const ops = ast.operations;
 
 class Visitor extends FPCoreVisitor {
-
-    visitParse(self, ctx) {
+    visitParse(ctx) {
         const cores = [];
-        for (const child of ctx.getChildren())
+        for (const child of ctx.children) {
+            const parsed = child.accept(this);
+            if (parsed) {
+                cores.push(parsed);
+            }
+        }
+        return cores;
     }
-    
-    
+
+    visitFpcore(ctx) {
+        const input_vars = ctx.inputs.map(x => x.text);
+        const props = {};
+        for (const child of ctx.props) {
+            const [name, x] = child.accept(this);
+            props[name] = x;
+        }
+        const e = ctx.e.accept(this);
+        const core = {
+            args: input_vars,
+            properties: props,
+            name: props[":name"],
+            pre: props[":pre"],
+            e: e,
+        };
+        return core;
+    }
+
+    visitFpimp(ctx) {
+        throw new Error("unsupported: FPImp");
+    }
+
     visitExprNum(ctx) {
-        console.log("number: " + ctx.c.text);
+        return new ast.Val(ctx.c.text);
     }
 
     visitExprConst(ctx) {
-        console.log("constant: " + ctx.c.text);
+        return new ast.Val(ctx.c.text);
     }
 
     visitExprVar(ctx) {
-        console.log("variable: " + ctx.x.text);
+        return new ast.Var(ctx.x.text);
+    }
+
+    visitExprUnop(ctx) {
+        const op = ctx.op.getText();
+        if (op === "-") {
+            return new ops["neg"](ctx.arg0.accept(this));
+        } else {
+            return new ops[op](ctx.arg0.accept(this));
+        }
+    }
+
+    visitExprBinop(ctx) {
+        const op = ctx.op.getText();
+        return new ops[op](ctx.arg0.accept(this), ctx.arg1.accept(this));
+    }
+
+    visitExprComp(ctx) {
+        const op = ctx.op.getText();
+        const visitor = this;
+        return new ops[op](...(function*() {
+            for (const e of ctx.args) {
+                yield e.accept(visitor);
+            }
+        })());
+    }
+
+    visitExprLogical(ctx) {
+        const op = ctx.op.getText();
+        const visitor = this;
+        return new ops[op](...(function*() {
+            for (const e of ctx.args) {
+                yield e.accept(visitor);
+            }
+        })());
+    }
+
+    visitExprIf(ctx) {
+        throw new Error("unsupported: If");
+    }
+
+    visitExprLet(ctx) {
+        throw new Error("unsupported: Let");
+    }
+
+    visitExprWhile(ctx) {
+        throw new Error("unsupported: While");
+    }
+
+    visitPropStr(ctx) {
+        return [ctx.name.text, ctx.s.text.slice(1, -1)];
+    }
+
+    visitPropList(ctx) {
+        return [ctx.name.text, ctx.syms.map(x => x.text)];
+    }
+
+    visitPropExpr(ctx) {
+        return [ctx.name.text, ctx.e.accept(this)];
     }
 }
-
-// Object.setPrototypeOf(Visitor.prototype, FPCoreVisitor);
-
-
-
-
-// classic
-
-// function Visitor() {
-//     FPCoreVisitor.call(this);
-//     return this;
-// }
-
-// Visitor.prototype = Object.create(FPCoreVisitor.prototype);
-// Visitor.prototype.constructor = Visitor;
-
-// Visitor.prototype.visitExprNum = function(ctx) {
-//     console.log("number: " + ctx.c.text);
-// }
-// Visitor.prototype.visitExprConst = function(ctx) {
-//     console.log("constant: " + ctx.c.text);
-// }
-// Visitor.prototype.visitExprVar = function(ctx) {
-//     console.log("variable: " + ctx.x.text);
-// }
-
-
-
 
 function parse(input) {
     const input_stream = new antlr4.InputStream(input);
@@ -93,18 +128,20 @@ function compile(input) {
 exports.compile = compile;
 
 
-// testing
-// let inputDoc = "";
+//testing
+let inputDoc = "";
 
-// process.stdin.setEncoding("utf8");
+process.stdin.setEncoding("utf8");
 
-// process.stdin.on("readable", () => {
-//     const chunk = process.stdin.read();
-//     if (chunk) {
-//         inputDoc += chunk;
-//     }
-// });
+process.stdin.on("readable", () => {
+    const chunk = process.stdin.read();
+    if (chunk) {
+        inputDoc += chunk;
+    }
+});
 
-// process.stdin.on("end", () => {
-//     console.log(compile(inputDoc).toString());
-// });
+process.stdin.on("end", () => {
+    const cores = compile(inputDoc);
+    console.log(cores[0]);
+    console.log(cores[0].e.apply({"x": 0.125}));
+});

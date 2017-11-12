@@ -57,6 +57,30 @@ def round_real(unrounded, sort, rm):
     else:
         return unrounded
 
+# pairwise implementations of n-ary comparisons
+
+def impl_by_pairs(op, conj):
+    def impl(*args):
+        if len(args) > 2:
+            return conj(*(op(args[i], args[i+1]) for i in range(len(args)-1)))
+        else:
+            return op(*args)
+    return impl
+
+def impl_all_pairs(op, conj):
+    def impl(*args):
+        if len(args) > 2:
+            return conj(*(op(args[i], args[j]) for i in range(len(args)-1) for j in range(i+1,len(args))))
+        else:
+            return op(*args)
+    return impl
+
+def all_star(*args):
+    return all(args)
+
+def any_star(*args):
+    return any(args)
+
 # main expression classes
 
 class Expr(object):
@@ -78,6 +102,9 @@ class Expr(object):
 
     def __str__(self):
         return ('(' + type(self).name + ' {}'*len(self.data) + ')').format(*self.data)
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.data)) + ')'
 
     def __call__(self, argctx):
         return type(self).op(*(child(argctx) for child in self.data))
@@ -102,7 +129,7 @@ class ExprRM(Expr):
         operation = type(self).op_z3 if type(self).op_z3 else type(self).op
         return operation(rm, *(child.apply_z3(argctx, sort, rm) for child in self.data))
 
-# base case values
+# base case values and variables
 
 class Val(Expr):
     name = 'Val'
@@ -118,6 +145,9 @@ class Val(Expr):
 
     def __str__(self):
         return self.data
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.data) + ')'
 
     def __call__(self, argctx):
         return type(self).op(self.data)
@@ -207,47 +237,35 @@ class Neg(Expr):
 
 class LT(Expr):
     name = '<'
-    nargs = 2
-    op = operator.lt
-    op_z3 = z3.fpLT
+    op = impl_by_pairs(operator.lt, all_star)
+    op_z3 = impl_by_pairs(z3.fpLT, z3.And)
 
 class GT(Expr):
     name = '>'
-    nargs = 2
-    op = operator.gt
-    op_z3 = z3.fpGT
+    op = impl_by_pairs(operator.gt, all_star)
+    op_z3 = impl_by_pairs(z3.fpGT, z3.And)
 
 class LEQ(Expr):
     name = '<='
-    nargs = 2
-    op = operator.le
-    op_z3 = z3.fpLEQ
+    op = impl_by_pairs(operator.le, all_star)
+    op_z3 = impl_by_pairs(z3.fpLEQ, z3.And)
 
 class GEQ(Expr):
     name = '>='
-    nargs = 2
-    op = operator.ge
-    op_z3 = z3.fpGEQ
+    op = impl_by_pairs(operator.ge, all_star)
+    op_z3 = impl_by_pairs(z3.fpGEQ, z3.And)
 
 class EQ(Expr):
     name = '=='
-    nargs = 2
-    op = operator.eq
-    op_z3 = z3.fpEQ
+    op = impl_by_pairs(operator.eq, all_star)
+    op_z3 = impl_by_pairs(z3.fpEQ, z3.And)
 
 class NEQ(Expr):
     name = '!='
-    nargs = 2
-    op = operator.ne
-    op_z3 = z3.fpNEQ
+    op = impl_all_pairs(operator.ne, all_star)
+    op_z3 = impl_all_pairs(z3.fpNEQ, z3.And)
 
 # logic
-
-def all_star(*args):
-    return all(args)
-
-def any_star(*args):
-    return any(args)
 
 class And(Expr):
     name = 'and'
@@ -264,6 +282,26 @@ class Not(Expr):
     nargs = 1
     op = operator.not_
     op_z3 = z3.Not
+
+# table of operations for the parser
+operations = {
+    Add.name  : Add,
+    Sub.name  : Sub,
+    Mul.name  : Mul,
+    Div.name  : Div,
+    Sqrt.name : Sqrt,
+    Neg.name  : Neg,
+    LT.name   : LT,
+    GT.name   : GT,
+    LEQ.name  : LEQ,
+    GEQ.name  : GEQ,
+    EQ.name   : EQ,
+    NEQ.name  : NEQ,
+    And.name  : And,
+    Or.name   : Or,
+    Not.name  : Not,
+}
+
 
 if __name__ == '__main__':
     rm = 'RNE'

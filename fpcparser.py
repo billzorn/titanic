@@ -4,6 +4,15 @@ from gen.FPCoreParser import FPCoreParser
 from gen.FPCoreVisitor import FPCoreVisitor
 
 import fpcast as ast
+ops = ast.operations
+
+def propToSexp(p):
+    if isinstance(p, str):
+        return '"' + p + '"'
+    elif isinstance(p, list):
+        return '(' + ' '.join(p) + ')'
+    else:
+        return str(p)
 
 class FPCoreObject(object):
     def __init__(self, input_vars, props, e):
@@ -18,44 +27,15 @@ class FPCoreObject(object):
             ' '.join(self.args), self.name, self.pre, self.e)
 
     def __repr__(self):
+        return 'FPCoreObject(\n  {},\n  {},\n  {}\n)'.format(
+            repr(self.args), repr(self.properties), repr(self.e))
+
+    def _sexp(self):
         return '(FPCore ({}) {} {})'.format(
             ' '.join(self.args),
-            ' '.join(name + ' ' + repr(prop) for name, prop in self.properties.items()),
-            repr(self.e))
-
-def impl_by_pairs(op, conj):
-    def impl(*args):
-        if len(args) > 2:
-            return conj(*(op(args[i], args[i+1]) for i in range(len(args)-1)))
-        else:
-            return op(*args)
-    return impl
-
-def impl_all_pairs(op, conj):
-    def impl(*args):
-        if len(args) > 2:
-            return conj(*(op(args[i], args[j]) for i in range(len(args)-1) for j in range(i+1,len(args))))
-        else:
-            return op(*args)
-    return impl
-
-operations = {
-    ast.Add.name : ast.Add,
-    ast.Sub.name : ast.Sub,
-    ast.Mul.name : ast.Mul,
-    ast.Div.name : ast.Div,
-    ast.Sqrt.name : ast.Sqrt,
-    ast.Neg.name : ast.Neg,
-    ast.LT.name : impl_by_pairs(ast.LT, ast.And),
-    ast.GT.name : impl_by_pairs(ast.GT, ast.And),
-    ast.LEQ.name : impl_by_pairs(ast.LEQ, ast.And),
-    ast.GEQ.name : impl_by_pairs(ast.GEQ, ast.And),
-    ast.EQ.name : impl_by_pairs(ast.EQ, ast.And),
-    ast.NEQ.name : impl_all_pairs(ast.NEQ, ast.And),
-    ast.And.name : ast.And,
-    ast.Or.name : ast.Or,
-    ast.Not.name : ast.Not,
-}
+            ' '.join(name + ' ' + propToSexp(prop) for name, prop in self.properties.items()),
+            str(self.e))
+    sexp = property(_sexp)
 
 class Visitor(FPCoreVisitor):
     def visitParse(self, ctx):
@@ -84,13 +64,25 @@ class Visitor(FPCoreVisitor):
     def visitExprVar(self, ctx):
         return ast.Var(ctx.x.text)
 
-    def visitExprOp(self, ctx):
+    def visitExprUnop(self, ctx):
         op = ctx.op.getText()
         # special case unary negation
-        if op == '-' and len(ctx.args) == 1:
-            return ast.Neg(*(e.accept(self) for e in ctx.args))
+        if op == '-':
+            return ops['neg'](ctx.arg0.accept(self))
         else:
-            return operations[op](*(e.accept(self) for e in ctx.args))
+            return ops[op](ctx.arg0.accept(self))
+
+    def visitExprBinop(self, ctx):
+        op = ctx.op.getText()
+        return ops[op](ctx.arg0.accept(self), ctx.arg1.accept(self))
+
+    def visitExprComp(self, ctx):
+        op = ctx.op.getText()
+        return ops[op](*(e.accept(self) for e in ctx.args))
+
+    def visitExprLogical(self, ctx):
+        op = ctx.op.getText()
+        return ops[op](*(e.accept(self) for e in ctx.args))
 
     def visitExprIf(self, ctx):
         raise ValueError('unsupported: If')
@@ -131,3 +123,10 @@ if __name__ == '__main__':
     results = visitor.visit(tree)
     for x in results:
         print(str(x))
+        print()
+        print(repr(x))
+        print()
+        print(x.sexp)
+
+    print(results[0].e({'x': 0.125}));
+        

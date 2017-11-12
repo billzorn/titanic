@@ -14,7 +14,10 @@ expr
     : c=NUMBER   # ExprNum
     | c=constant # ExprConst
     | x=SYMBOL   # ExprVar
-    | '(' op=operation (args+=expr)+ ')'                            # ExprOp
+    | '(' op=unop arg0=expr ')'                                     # ExprUnop
+    | '(' op=binop arg0=expr arg1=expr ')'                          # ExprBinop
+    | '(' op=comp args+=expr (args+=expr)+ ')'                      # ExprComp
+    | '(' op=logical (args+=expr)+ ')'                              # ExprLogical
     | '(' 'if' expr expr expr ')'                                   # ExprIf
     | '(' 'let' '(' ('[' SYMBOL expr ']')* ')' expr ')'             # ExprLet
     | '(' 'while' expr '(' ('[' SYMBOL expr expr ']')* ')' expr ')' # ExprWhile
@@ -26,21 +29,31 @@ prop
     | name=SYMBOL e=expr                  # PropExpr
     ;
 
-operation
+unop
+    : '-'
+    | 'sqrt'
+    | 'not'
+    ;
+
+binop
     : '+'
     | '-'
     | '*'
     | '/'
-    | 'sqrt'
-    | '<'
+    ;
+
+comp
+    : '<'
     | '>'
     | '<='
     | '>='
     | '=='
     | '!='
-    | 'and'
+    ;
+
+logical
+    : 'and'
     | 'or'
-    | 'not'
     ;
 
 constant
