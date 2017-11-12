@@ -106,6 +106,8 @@ fpc_constants = {
     'pi'       : 'pi',
     'pi_2'     : 'pi/2',
     'pi_4'     : 'pi/4',
+    '1_pi'     : '1/pi',
+    '2_pi'     : '2/pi',
     '2_sqrtpi' : '2/sqrt(pi)',
     'sqrt2'    : 'sqrt(2)',
     'sqrt1_2'  : '1/sqrt(2)',

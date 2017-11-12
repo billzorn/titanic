@@ -1040,7 +1040,7 @@ def explain_input(x, w, p, discrete, parsed, hit = False, link = False):
             if R.isnan:
                 R_str += str(R.nan_payload)
             s += '{} '.format(permalink(R_str, w_prime, p_prime))
-        s += R_str
+            s += R_str
 
     if not discrete:
         pretty_repr = webcontent.indent(conv.real_to_pretty_string(R), '  ')

@@ -5,7 +5,7 @@ const re_inf = "([-+])?(inf|infinity|oo)";
 //  3
 const re_nan = "([-+])?(nan|snan)(?:([-+]?[0-9]+)|\\(\\s*([-+]?[0-9]+)\\s*\\))";
 //  7
-const re_fpc = "([-+])?(e|log2e|log10e|ln2|ln10|pi|pi_2|pi_4|2_sqrtpi|sqrt2|sqrt1_2)";
+const re_fpc = "([-+])?(e|log2e|log10e|ln2|ln10|pi|pi_2|pi_4|1_pi|2_pi|2_sqrtpi|sqrt2|sqrt1_2)";
 //  9
 const re_bin = "([-+])?(?:0b|\\#b)([0-1]*\\.[0-1]+|[0-1]+\\.?)(?:[ep]([-+]?[0-9]+))?";
 // 12
