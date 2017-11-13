@@ -99,7 +99,7 @@ class Expr {
     }
 
     toString() {
-        return "(" + this.type + this.data.map(e => e.toString()).join(" ") + ")";
+        return "(" + this.constructor.type + " " + this.data.map(e => e.toString()).join(" ") + ")";
     }
 }
 Expr.type = "Expr";

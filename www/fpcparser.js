@@ -1,3 +1,4 @@
+const $ = require("jquery");
 const antlr4 = require("antlr4");
 const FPCoreLexer = require("./gen/FPCoreLexer.js").FPCoreLexer;
 const FPCoreParser = require("./gen/FPCoreParser.js").FPCoreParser;
@@ -125,23 +126,72 @@ function compile(input) {
     return visitor.visit(tree);
 }
 
-exports.compile = compile;
+// web interface
+
+function onCore() {
+    const root = parentForm(this);
+    const userCore = $(".incore", root).val();
+    if (userCore) {
+        const compiledCore = compile(userCore)[0];
+        let coreStr = compiledCore.e.toString();
+        if (compiledCore.pre) {
+            coreStr = "pre: " + compiledCore.pre.toString() + "\n" + coreStr;
+        }
+        coreStr = "FPCore (" + compiledCore.args.join(" ") + ")\n" + coreStr;
+        $(".outcore", root).html(coreStr);
+        root.data("core", compiledCore);
+        onArgs.call(this);
+    }
+}
+
+function onArgs() {
+    const root = parentForm(this);
+    const compiledCore = root.data("core");
+    if (compiledCore) {
+        const userArgs = $(".arguments", root).val();
+        const args = userArgs.split(";").map(x => x.trim());
+        const ctx = {};
+        for (let i = 0; i < compiledCore.args.length; i++) {
+            ctx[compiledCore.args[i]] = args[i];
+        }
+        let resultStr = "result: " + compiledCore.e.apply(ctx);
+        if (compiledCore.pre) {
+            resultStr = "pre: " + compiledCore.pre.apply(ctx) + "\n" + resultStr;
+        }
+        $(".outval", root).html(resultStr);
+    }
+}
+
+// set up the web interface
+
+function parentForm(element) {
+    return $(element).closest(".fpc");
+}
+
+function setupCore(rootClass) {
+    const root = $(rootClass);
+    $(".incore", root).on("input", onCore);
+    $(".arguments", root).on("input", onArgs);
+    onCore.call($(".incore", root).get(0));
+}
+
+exports.setupCore = setupCore;
 
 
 //testing
-let inputDoc = "";
+// let inputDoc = "";
 
-process.stdin.setEncoding("utf8");
+// process.stdin.setEncoding("utf8");
 
-process.stdin.on("readable", () => {
-    const chunk = process.stdin.read();
-    if (chunk) {
-        inputDoc += chunk;
-    }
-});
+// process.stdin.on("readable", () => {
+//     const chunk = process.stdin.read();
+//     if (chunk) {
+//         inputDoc += chunk;
+//     }
+// });
 
-process.stdin.on("end", () => {
-    const cores = compile(inputDoc);
-    console.log(cores[0]);
-    console.log(cores[0].e.apply({"x": 0.125}));
-});
+// process.stdin.on("end", () => {
+//     const cores = compile(inputDoc);
+//     console.log(cores[0]);
+//     console.log(cores[0].e.apply({"x": 0.125}));
+// });

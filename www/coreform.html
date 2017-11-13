@@ -1,14 +1,22 @@
-<form method="get">
-  <textarea name="core"
+<form class="fpc" method="get">
+  <textarea class="incore" name="core"
             rows="10" cols="80">{core:s}</textarea>
+  <br>
+  <div>
+    <pre class="outcore"></pre>
+  </div>
   <br>
   <div>
     w: <input type="number" name="w" value="{w:d}">
     p: <input type="number" name="w" value="{p:d}">
   </div>
   <br>
-  <input type="text" name="args" value="{args:s}"
-         style="width:100%;box-sizing:border-box;">
+  <div>args: <input class="arguments" type="text" name="args" value="{args:s}" style="width:100%;box-sizing:border-box;"></div>
+  <br>
+  <div>
+    result: <pre class="outval"></pre>
+  </div>
   <br>
   <button type="submit" formaction="/core">submit</button>
 </form>
+<script>titanic.setupCore(".fpc");</script>

@@ -15,6 +15,7 @@
         "uglifyify": "^4.0.4"
     },
     "scripts": {
-        "build": "browserify -t uglifyify titanic.js --standalone titanic | uglifyjs -c > titanic.min.js"
+        "build": "browserify -t uglifyify titanic.js --standalone titanic | uglifyjs -c > titanic.min.js",
+        "build-debug": "browserify titanic.js --standalone titanic > titanic.min.js"
     }
 }

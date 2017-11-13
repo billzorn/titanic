@@ -116,6 +116,8 @@ STRING : '"' ([\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [\u0022\u005c])+?
 
 WS : [ \t\n\r]+ -> skip ;
 
+UNK : . ;
+
 // fragment A : [aA] ;
 // fragment B : [bB] ;
 // fragment C : [cC] ;

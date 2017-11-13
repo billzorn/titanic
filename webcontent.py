@@ -49,8 +49,8 @@ pages = {
     # 'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
 
-# protocols = {'demo', 'fmt', 'core'}
-protocols = {'demo', 'fmt'}
+protocols = {'demo', 'fmt', 'core'}
+# protocols = {'demo', 'fmt'}
 
 with open(skeleton, encoding=webenc, mode='r') as f:
     skeleton_content = f.read().strip() + '\n'
@@ -178,7 +178,7 @@ page_content = {name : import_page(path, ctype) for name, (path, ctype,) in page
 
 def cache_time(ctype):
     if ctype.startswith('text'):
-        return 10
+        return 0
     elif ctype.startswith('image'):
         return 86400
     else:
