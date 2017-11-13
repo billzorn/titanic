@@ -163,7 +163,11 @@ Sqrt.type = "sqrt";
 Sqrt.nargs = 1;
 Sqrt.op = (x) => Math.sqrt(x);
 
-class Neg extends Expr {}
+class Neg extends Expr {
+    toString() {
+        return "(- " + this.data.map(e => e.toString()).join(" ") + ")";
+    }
+}
 Neg.type = "neg";
 Neg.nargs = 1;
 Neg.op = (x) => -x;

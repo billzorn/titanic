@@ -10,6 +10,7 @@ from multiprocessing import Pool
 from http.server import HTTPStatus
 
 import describefloat
+import fpcast
 import fpcparser
 import webcontent
 from aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
@@ -233,16 +234,8 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
 
                 content_str += '\n\nwith w={:d}, p={:d}'.format(w,p)
                 if coreobj.pre:
-                    content_str += '\n  pre: ' + str(coreobj.pre.apply_real(args_dict, (w, p), 'RNE'))
-                content_str += '\n  ' + str(coreobj.e.apply_real(args_dict, (w, p), 'RNE'))
-
-                content_str += '\n\nreal value:'
-                if coreobj.pre:
-                    content_str += '\n  pre: ' + str(coreobj.pre.apply_real(args_dict, None, None))
-                real_answer = coreobj.e.apply_real(args_dict, None, None)
-                content_str += '\n  ' + str(real_answer)
-                content_str += '\n  ' + str(real_answer.numeric_value(10, abort_incomparables=False))
-
+                    content_str += '\n\npre:\n\n' + fpcast.explain_apply_all(coreobj.pre.apply_all(args_dict, (w, p), 'RNE'), w, p)
+                content_str += '\n\nresult:\n\n' + fpcast.explain_apply_all(coreobj.e.apply_all(args_dict, (w, p), 'RNE'), w, p)
             except Exception as e:
                 content_str = 'bad core or arguments:\n\n'
                 content_str += traceback.format_exc()

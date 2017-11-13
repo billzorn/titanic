@@ -7,6 +7,8 @@ import z3
 import real
 FReal = real.FReal
 import core
+import conv
+import describefloat
 
 # local data type conversions
 
@@ -20,9 +22,18 @@ np_sorts = {
     # np.float128 is NOT compatible with IEEE 754 bianry128
 }
 def np_sort(sort):
-    return np_sorts[sort]
+    if sort in np_sorts:
+        return np_sorts[sort]
+    else:
+        w, p = sort
+        if w <= 5 and p <= 11:
+            return np.float16
+        elif w <= 8 and p <= 24:
+            return np.float32
+        else:
+            return np.float64
 def np_val(data, sort):
-    return np_sorts[sort](data)
+    return np_sort(sort)(data)
 
 z3_sorts = {
     16 : z3.FPSort(5, 11),
@@ -83,6 +94,61 @@ def any_star(*args):
 
 # main expression classes
 
+_PY = 0
+_NP = 1
+_FP = 2
+_REAL = 3
+_N = 4
+
+def real_or_bool_to_string(x):
+    if isinstance(x, bool):
+        return repr(x)
+    else:
+        return conv.real_to_string(x, exact=True)
+
+def explain_ulps(rounded, expected):
+    if isinstance(expected, bool):
+        if rounded == expected:
+            return '(correct)'
+        else:
+            return '(incorrect)'
+    else:
+        if isinstance(rounded, float):
+            rounded_real = core.implicit_to_real(*conv.float_to_implicit(rounded))
+        elif (isinstance(rounded, np.float16)
+              or isinstance(rounded, np.float32)
+              or isinstance(rounded, np.float64)):
+            rounded_real = core.implicit_to_real(*conv.np_float_to_implicit(rounded))
+        else:
+            rounded_real = rounded
+        Se, Ee, Te = expected
+        Sr, Er, Tr = core.real_to_implicit(rounded_real, Ee.n, Te.n + 1, core.RNE)
+        return '(' + str(core.implicit_to_ordinal(Sr, Er, Tr) - core.implicit_to_ordinal(Se, Ee, Te)) + ' ulps)'
+
+def explain_apply_all(results, w, p):
+    s = ''
+    node, res, child_results = results
+    if isinstance(res[_REAL], bool):
+        expected = res[_REAL]
+    else:
+        expected = core.real_to_implicit(res[_REAL], w, p, core.RNE)
+    
+    s += 'at subexpression ' + str(node) + '\n'
+    s += '  python float:  ' + repr(res[_PY]) + ' ' + explain_ulps(res[_PY], expected) + '\n'
+    s += '  numpy ' + np_sort((w,p,)).__name__ + ': ' + repr(res[_NP]) + ' ' + explain_ulps(res[_NP], expected) + '\n'
+    s += '  titanic:       ' + real_or_bool_to_string(res[_FP]) + ' ' + explain_ulps(res[_FP], expected) + '\n'
+    s += '  real value:    ' + real_or_bool_to_string(res[_REAL])
+    if not isinstance(expected, bool):
+        expected_real = core.implicit_to_real(*expected)
+        expected_ordinal = core.implicit_to_ordinal(*expected)
+        s += '\n    rounded to:  ' + conv.real_to_string(expected_real) + ', ordinal ' + str(expected_ordinal)
+
+    if child_results is None:
+        return s
+    else:
+        return s + '\n\n' + '\n\n'.join((explain_apply_all(child_result, w ,p) for child_result in child_results))
+        
+    
 class Expr(object):
     name = 'Expr'
     nargs = None
@@ -122,6 +188,19 @@ class Expr(object):
         unrounded = operation(*(child.apply_real(argctx, sort, rm) for child in self.data))
         return round_real(unrounded, sort, rm)
 
+    def apply_all(self, argctx, sort, rm):
+        op_py = type(self).op
+        op_np = type(self).op_np if type(self).op_np else type(self).op
+        op_real = type(self).op_real if type(self).op_real else type(self).op
+        child_results = [child.apply_all(argctx, sort, rm) for child in self.data]
+        results_per_op = [*zip(*(res for node, res, children in child_results))]
+        results = [None]*_N
+        results[_PY] = op_py(*results_per_op[_PY])
+        results[_NP] = op_np(*results_per_op[_NP])
+        results[_FP] = round_real(op_real(*results_per_op[_FP]), sort, rm)
+        results[_REAL] = op_real(*results_per_op[_REAL])
+        return [self, results, child_results]
+    
 class ExprRM(Expr):
     name = 'ExprRM'
 
@@ -160,6 +239,14 @@ class Val(Expr):
 
     def apply_real(self, argctx, sort, rm):
         return round_real(type(self).op_real(self.data), sort, rm)
+
+    def apply_all(self, argctx, sort, rm):
+        results = [None]*_N
+        results[_PY] = self(argctx)
+        results[_NP] = self.apply_np(argctx, sort)
+        results[_FP] = self.apply_real(argctx, sort, rm)
+        results[_REAL] = self.apply_real(argctx, None, None)
+        return [self, results, None]
 
 # strings as values are special: they cause a call to the value constructor
 class Var(Val):
@@ -232,6 +319,9 @@ class Neg(Expr):
     nargs = 1
     op = operator.neg
     op_z3 = z3.fpNeg
+
+    def __str__(self):
+        return ('(-' + ' {}'*len(self.data) + ')').format(*self.data)
 
 # comparison
 
