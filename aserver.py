@@ -166,7 +166,7 @@ def test_worker_cached(query_list):
 class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
 
     # configuration
-    server_version = 'aserver/0.3'
+    server_version = 'aserver/0.4'
     sys_version = "Python/" + sys.version.split()[0]
     protocol_version = 'HTTP/1.0'
     error_message_format = ERROR_MESSAGE.format(server_version, sys_version)
@@ -243,6 +243,15 @@ class AsyncHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.send_header(k, v)
             self.end_headers()
             return content
+
+    # avoid sending unescaped strings that might break the console
+    def log_request(self, code='-', size='-'):
+        if isinstance(code, HTTPStatus):
+            code = code.value
+        self.log_message('%s %s', repr(self.requestline), str(code))
+
+    def log_message(self, format, *args):
+        sys.stderr.write("%s [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format%args))
 
     # Uses urllib to parse the path of the current request.
     def translate_path(self):
