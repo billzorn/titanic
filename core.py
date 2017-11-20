@@ -303,6 +303,38 @@ def ordinal_to_packed(i, w, p):
     else: # i < 0
         return concat(BV(1, 1), ET)
 
+# Relative position of a number in a representation
+def implicit_to_relative(S, E, T):
+    assert isinstance(S, BV)
+    assert size(S) == 1
+    assert isinstance(E, BV)
+    assert size(E) >= 2
+    assert isinstance(T, BV)
+
+    s = uint(S)
+    Re = FReal(uint(E)) / FReal((2 ** size(E)) - 1)
+    Rf = FReal(uint(T)) / FReal((2 ** size(T)) - 1)
+
+    return s, Re, Rf
+
+def relative_to_implicit(s, Re, Rf, w, p):
+    assert isinstance(s, int)
+    assert s == 0 or s == 1
+    assert isinstance(Re, FReal)
+    assert 0 <= Re and Re <= 1
+    assert isinstance(Rf, FReal)
+    assert 0 <= Rf and Rf <= 1
+    assert isinstance(w, int)
+    assert w >= 2
+    assert isinstance(p, int)
+    assert p >= 2
+
+    S = BV(s, 1)
+    E = BV((Re * ((2 ** w) - 1)).floor(), w)
+    T = BV((Rf * ((2 ** (p - 1)) - 1)).floor(), p - 1)
+
+    return S, E, T
+
 # markers for IEEE 754 rounding modes
 RTN = 'RTN' # roundTowardNegative
 RTP = 'RTP' # roundTowardPositive

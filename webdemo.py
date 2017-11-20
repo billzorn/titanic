@@ -14,6 +14,11 @@ import fpcast
 import fpcparser
 import webcontent
 from aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
+import fpcsolver
+FPSolver = fpcsolver.FPSolver
+import core
+import conv
+from real import FReal
 
 def get_first(d, k, default):
     x = d.get(k, (default,))
@@ -129,8 +134,8 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
         if err is not None:
             return err
 
-        if path == 'core':
-            return self.hacked_process_core(args)
+        if path == 'core' or path == 'ulps':
+            return self.hacked_process_core(path, args)
 
         # static page
         if args is None:
@@ -215,27 +220,51 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
 
         return response, msg, headers, content
 
-    def hacked_process_core(self, args):
+    def hacked_process_core(self, path, args):
         core_str = get_first(args, 'core', '').strip()
         w = int(get_first(args, 'w', '5').strip())
         p = int(get_first(args, 'p', '11').strip())
         args_str = get_first(args, 'args', '').strip()
 
+        prec = conv.bdb_round_trip_prec(p)
+
         if core_str:
             try:
                 cores = fpcparser.compile(core_str)
                 coreobj = cores[0]
+                content_str = str(coreobj) + '\n\n' + repr(coreobj)
 
-                arg_strs = args_str.split(';')
-                args_dict = {coreobj.args[i] : arg_strs[i].strip() for i in range(len(coreobj.args))}
+                if path == 'ulps':
+                    solver = FPSolver(coreobj, lo_sort=16, hi_sort=32)
+                    solver.binsearch_ulps(ulps_hi=2**10)
 
-                content_str = str(coreobj)
-                content_str += '\n\n' + repr(args_dict)
+                    content_str += '\n\n' + solver.describe_last()
+                    m = solver.get_model()
+                    args_dict = {}
+                    args_strs = []
+                    for i, arg in enumerate(coreobj.args):
+                        z3value = FReal(m[fpcsolver.arglo(i, arg)])
+                        S, E, T = core.real_to_implicit(z3value, 5, 11, core.RNE)
+                        s, Re, Rf = core.implicit_to_relative(S, E, T)
+                        scaled_value = core.implicit_to_real(*core.relative_to_implicit(s, Re, Rf, w, p))
+                        v_str = conv.real_to_string(scaled_value, prec=prec, exact=False).lstrip(conv.approx_str)
+                        args_dict[arg] = v_str
+                        args_strs.append(v_str)
+                    args_str = ' ; '.join(args_strs)
 
-                content_str += '\n\nwith w={:d}, p={:d}'.format(w,p)
-                if coreobj.pre:
-                    content_str += '\n\npre:\n\n' + fpcast.explain_apply_all(coreobj.pre.apply_all(args_dict, (w, p), 'RNE'), w, p)
-                content_str += '\n\nresult:\n\n' + fpcast.explain_apply_all(coreobj.e.apply_all(args_dict, (w, p), 'RNE'), w, p)
+                else:
+                    arg_strs = args_str.split(';')
+                    args_dict = {coreobj.args[i] : arg_strs[i].strip() for i in range(len(coreobj.args))}
+
+                if args_dict:
+                    content_str += '\n\n' + repr(args_dict)
+
+                    content_str += '\n\nwith w={:d}, p={:d}'.format(w,p)
+                    content_str += '\n\nresult:\n\n' + fpcast.explain_apply_all(coreobj.e.apply_all(args_dict, (w, p), 'RNE'), w, p)
+
+                    if coreobj.pre:
+                        content_str += '\n\npre:\n\n' + fpcast.explain_apply_all(coreobj.pre.apply_all(args_dict, (w, p), 'RNE'), w, p)
+
             except Exception as e:
                 content_str = 'bad core or arguments:\n\n'
                 content_str += traceback.format_exc()

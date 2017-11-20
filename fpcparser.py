@@ -56,12 +56,14 @@ class Visitor(FPCoreVisitor):
         raise ValueError('unsupported: FPImp')
 
     def visitExprNum(self, ctx):
+        #print('Num: ' + ctx.c.text)
         return ast.Val(ctx.c.text)
 
     def visitExprConst(self, ctx):
         return ast.Val(ctx.c.text) # this won't work with numpy...
 
     def visitExprVar(self, ctx):
+        #print('Var: ' + ctx.x.text)
         return ast.Var(ctx.x.text)
 
     def visitExprUnop(self, ctx):

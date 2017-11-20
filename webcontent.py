@@ -49,7 +49,7 @@ pages = {
     # 'ulps.pdf'  : ('www/ulps.pdf', 'application/pdf',),
 }
 
-protocols = {'demo', 'fmt', 'core'}
+protocols = {'demo', 'fmt', 'core', 'ulps'}
 # protocols = {'demo', 'fmt'}
 
 with open(skeleton, encoding=webenc, mode='r') as f:

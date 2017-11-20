@@ -13,7 +13,10 @@ import describefloat
 # local data type conversions
 
 def fp_val(data):
-    return float(data)
+    try:
+        return float(data)
+    except Exception:
+        return conv.implicit_to_float(*core.real_to_implicit(FReal(data), 11, 53, core.RNE))
 
 np_sorts = {
     16 : np.float16,
@@ -33,7 +36,16 @@ def np_sort(sort):
         else:
             return np.float64
 def np_val(data, sort):
-    return np_sort(sort)(data)
+    try:
+        return np_sort(sort)(data)
+    except Exception:
+        npsort = np_sort(sort)
+        if npsort == np.float16:
+            return conv.implicit_to_np_float(*core.real_to_implicit(FReal(data), 5, 11, core.RNE))
+        if npsort == np.float32:
+            return conv.implicit_to_np_float(*core.real_to_implicit(FReal(data), 8, 24, core.RNE))
+        else:
+            return conv.implicit_to_np_float(*core.real_to_implicit(FReal(data), 11, 53, core.RNE))
 
 z3_sorts = {
     16 : z3.FPSort(5, 11),
@@ -404,13 +416,13 @@ if __name__ == '__main__':
     print(a)
     print(a(args))
     print(a.apply_np(args, 32))
-    # print(a.apply_z3(args, 32, z3rm))
+    print(a.apply_z3(args, 32, z3rm))
     print(a.apply_real(args, None, None))
 
-    # something is messed up with Z3's printing...
-    # b = Add(a, Var('z'))
-    # print(b)
-    # print(b.apply_z3(args, z3sort, z3rm))
+    # need to fix z3's printer to get this to work, unfortunately
+    b = Add(a, Var('z'))
+    print(b)
+    print(b.apply_z3(args, z3sort, z3rm))
 
     c = Add(a, Var('y'))
     print(c)

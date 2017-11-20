@@ -188,6 +188,16 @@ class FReal(object):
             return eval_until_at_least(default_simplify(self.symbolic_value), prec,
                                        maxn=maxn, abort_incomparables=abort_incomparables)
 
+    def floor(self):
+        if self.isinf or self.isnan:
+            raise ValueError('cannot take floor of' + repr(self))
+        elif self.isinteger:
+            return self.rational_numerator
+        else:
+            # not sure if this really works
+            return int(sympy.floor(self.symbolic_value))
+
+
     def _valid(self):
         assert self.negative is True or self.negative is False
         assert self.infinite is True or self.infinite is False
