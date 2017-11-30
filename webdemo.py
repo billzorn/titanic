@@ -236,7 +236,7 @@ class TitanicHTTPRequestHandler(AsyncHTTPRequestHandler):
 
                 if path == 'ulps':
                     solver = FPSolver(coreobj, lo_sort=16, hi_sort=32)
-                    solver.binsearch_ulps(ulps_hi=2**10)
+                    solver.binsearch_ulps(2**10)
 
                     content_str += '\n\n' + solver.describe_last()
                     m = solver.get_model()

@@ -130,5 +130,5 @@ if __name__ == '__main__':
         print()
         print(x.sexp)
 
-    print(results[0].e({'x': 0.125}));
+    #print(results[0].e({'x': 0.125}));
         

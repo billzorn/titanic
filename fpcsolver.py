@@ -337,10 +337,10 @@ class FPSolver(object):
         self.solver.reset()
         self._init_solver()
 
-    def binsearch_ulps(self, ulps_hi = None, incremental = False):
+    def binsearch_ulps(self, ulps_requested = None, incremental = False):
         ulps_target = 1
         ulps_lo = 1
-        # ulps_hi as provided
+        ulps_hi = ulps_requested
         ulps_scale = 2
 
         stored_results = [None, None]
@@ -369,13 +369,23 @@ class FPSolver(object):
         if incremental:
             self.ulps_incremental_begin()
 
-        while ulps_hi is None:
+        if ulps_requested is None:
+            # determine ulps hi with logsearch
+            while ulps_hi is None:
+                ulps = get_ulps(ulps_target)
+                if ulps is None:
+                    ulps_hi = ulps_target
+                else:
+                    ulps_lo = ulps
+                    ulps_target = min(ulps_lo * ulps_scale, self.default_maxulps)
+        else:
+            # check requested number of ulps first
+            ulps_target = ulps_requested
             ulps = get_ulps(ulps_target)
             if ulps is None:
                 ulps_hi = ulps_target
             else:
                 ulps_lo = ulps
-                ulps_target = min(ulps_lo * ulps_scale, self.default_maxulps)
 
         while ulps_hi > ulps_lo + 1:
             ulps_target = ((ulps_hi - ulps_lo) // 2) + ulps_lo

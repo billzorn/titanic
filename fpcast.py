@@ -55,6 +55,8 @@ z3_sorts = {
 def z3_sort(sort):
     if sort in z3_sorts:
         return z3_sorts[sort]
+    elif isinstance(sort, tuple):
+        return z3.FPSort(*sort)
     else:
         return sort
 def z3_val(data, sort):
@@ -159,7 +161,23 @@ def explain_apply_all(results, w, p):
         return s
     else:
         return s + '\n\n' + '\n\n'.join((explain_apply_all(child_result, w ,p) for child_result in child_results))
-        
+
+def results_to_ulps(results, w, p):
+    node, res, child_results = results
+    if isinstance(res[_REAL], bool):
+        rounded = res[_FP] 
+        expected = res[_REAL]
+        if rounded == expected:
+            return 0, rounded, expected
+        else:
+            return 1, rounded, expected
+    else:
+        rounded = core.real_to_implicit(res[_FP], w, p, core.RNE)
+        rounded_ordinal = core.implicit_to_ordinal(*rounded)
+        expected = core.real_to_implicit(res[_REAL], w, p, core.RNE)
+        expected_ordinal = core.implicit_to_ordinal(*expected)
+        true_ulps = rounded_ordinal - expected_ordinal
+        return true_ulps, core.implicit_to_real(*rounded), core.implicit_to_real(*expected)
     
 class Expr(object):
     name = 'Expr'
@@ -207,7 +225,12 @@ class Expr(object):
         child_results = [child.apply_all(argctx, sort, rm) for child in self.data]
         results_per_op = [*zip(*(res for node, res, children in child_results))]
         results = [None]*_N
-        results[_PY] = op_py(*results_per_op[_PY])
+        try:
+            results[_PY] = op_py(*results_per_op[_PY])
+        except Exception as e:
+            print(e)
+            print(op_py, [*results_per_op[_PY]])
+            results[_PY] = float('nan')
         results[_NP] = op_np(*results_per_op[_NP])
         results[_FP] = round_real(op_real(*results_per_op[_FP]), sort, rm)
         results[_REAL] = op_real(*results_per_op[_REAL])
