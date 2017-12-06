@@ -54,11 +54,11 @@ def scale_fp(r_str, sort_lo, sort_hi):
     scaled_value = core.implicit_to_real(*core.relative_to_implicit(s, Re, Rf, w_hi, p_hi))
     prec = conv.bdb_round_trip_prec(p_hi)
     return conv.real_to_string(scaled_value, prec=prec, exact=False).lstrip(conv.approx_str)
-            
+
 def true_ulps(coreobj, args_dict, w = 8, p = 24):
     results = coreobj.e.apply_all(args_dict, (w, p), 'RNE')
     return ast.results_to_ulps(results, w, p)
-    
+
 def scale_breakage(coreobj, ulps, args_dict, w_lo, p_lo):
     w_hi, p_hi = 8, 24
     # we want all the bits on the right to be bad, ideally
@@ -91,7 +91,7 @@ def test_core(coreobj):
     def prnt(*args):
         #res_str[0] += ' '.join(str(arg) for arg in args) + '\n'
         print(*args)
-    
+
     prnt('>>>args', coreobj.args)
     prnt('>>>core', coreobj.e)
 
@@ -111,12 +111,13 @@ def test_core(coreobj):
                 prnt('>>>best', sort_str, ' ', scaled_ulps, scaled_args, scaled_results)
         except Exception as e:
             prnt(e)
-        
+
     return res_str[0]
 
 if __name__ == '__main__':
     import argparse
     from multiprocessing import Pool
+    import random
 
     # for e in testgen.gen_up_to_depth(2, 1):
     #     coreobj = testgen.mkcore(e, 1)
@@ -126,7 +127,7 @@ if __name__ == '__main__':
     #     test_core(coreobj)
 
     for i in range(2000):
-        depth = random.choice(range(3, 10))
+        depth = random.choice(range(3, 6))
         nargs = random.choice(range(1, 4))
         coreobj = testgen.mkcore(testgen.gen_random_depth(depth, nargs), nargs)
         test_core(coreobj)
