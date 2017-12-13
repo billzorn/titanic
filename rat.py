@@ -2,16 +2,25 @@ import random
 import timeit
 import math
 
-w = 11
-p = 53
+w = 19
+p = 237
 
 def v(_):
     return
 
+def rbits(n, k = 0):
+    if n > 0 and (k == 0 or k == n):
+        return random.randint(0, (1 << n) - 1)
+    elif n > k > 0:
+        return (1 << n) - (random.randint(1, 1 << k))
+    else:
+        raise ValueError('bad n={:d}, k={:d}'.format(n, k))
+
 def big():
-    #return random.randint(0, 2**p) * (2 ** random.randint(0, 2**w))
+    return random.randint(0, 2**p * (2 ** (2**w)))
+    return random.randint(0, 2**p) * (2 ** random.randint(0, 2**w))
     #return random.randint(0, 2 ** (2**w))
-    return 2 ** random.randint(0, (2**w))
+    #return 2 ** random.randint(0, (2**w))
 
 def p2(x):
     twos = 0
@@ -148,24 +157,78 @@ def p2xr(x):
 
 
 
-if __name__ == '__main__':
-    # algos = [v, p2, p2p, p2d, p2x, p2z, p2xs, p2xr]
-    algos = [v, p2a, p2x, p2xs, p2xr]
-    reps = 10000
-    per_width = 3
-    easy = [(5, 11), (8, 24), (11, 53)]
-    hard = [(5, 11), (8, 24), (11, 53), (15, 113), (19, 237)]
-    worst = [(12, 1024)]
+# if __name__ == '__main__':
+#     # algos = [v, p2, p2p, p2d, p2x, p2z, p2xs, p2xr]
+#     algos = [v, p2a, p2x, p2xs, p2xr]
+#     reps = 10000
+#     per_width = 3
+#     easy = [(5, 11), (8, 24), (11, 53)]
+#     hard = [(5, 11), (8, 24), (11, 53), (15, 113), (19, 237)]
+#     worst = [(12, 1024)]
 
-    for w, p in worst:
-        print('\nw={:d}, p={:d}\n'.format(w, p))
-        for _ in range(per_width):
-            x = big()
-            reference = p2(x)
-            print('using: ~exp({:.2f})\n  {:d} repetitions'.format(math.log(x), reps))
-            for a in algos:
-                seconds = timeit.timeit(lambda: a(x), number=reps)
-                #seconds = timeit.timeit(a.__name__ + '(x)', number=reps)
-                print('algorithm {:4s} {:.4f}s'.format(a.__name__, seconds))
-                result = a(x)
-                print('  got: {}, expected: {}, equal: {}'.format(result, reference, result == reference))
+#     for w, p in worst:
+#         print('\nw={:d}, p={:d}\n'.format(w, p))
+#         for _ in range(per_width):
+#             x = big()
+#             reference = p2(x)
+#             print('using: ~exp({:.2f})\n  {:d} repetitions'.format(math.log(x), reps))
+#             for a in algos:
+#                 seconds = timeit.timeit(lambda: a(x), number=reps)
+#                 #seconds = timeit.timeit(a.__name__ + '(x)', number=reps)
+#                 print('algorithm {:4s} {:.4f}s'.format(a.__name__, seconds))
+#                 result = a(x)
+#                 print('  got: {}, expected: {}, equal: {}'.format(result, reference, result == reference))
+
+
+if __name__ == '__main__':
+    runs = 1
+    
+    for i in range(runs):
+        reps = 1000000
+
+        # x = rbits(65536)
+        # diff = rbits(64)
+        # y = random.choice([x + diff, x - diff])
+
+        wbits = 1024
+        x = rbits(wbits)
+        y = 1 << (wbits + 1)
+
+        print('\n{:d} ops, w={:d}, x=...{:x}, y=...{:x}\n'.format(reps, wbits, x & 0xffffffff, y & 0xffffffff))
+    
+        seconds = timeit.timeit(lambda: True, number=reps)
+        print('reference: {:.3f}'.format(seconds))
+        
+        seconds = timeit.timeit(lambda: x <= y, number=reps)
+        print('<=       : {:.3f}'.format(seconds))
+        seconds = timeit.timeit(lambda: x < y, number=reps)
+        print('<        : {:.3f}'.format(seconds))
+        seconds = timeit.timeit(lambda: x >= y, number=reps)
+        print('>=       : {:.3f}'.format(seconds))
+        seconds = timeit.timeit(lambda: x > y, number=reps)
+        print('>        : {:.3f}'.format(seconds))
+        seconds = timeit.timeit(lambda: x == y, number=reps)
+        print('==       : {:.3f}'.format(seconds))
+        seconds = timeit.timeit(lambda: x != y, number=reps)
+        print('!=       : {:.3f}'.format(seconds))
+
+        # seconds = timeit.timeit(lambda: x + y, number=reps)
+        # print('+        : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: x - y, number=reps)
+        # print('-        : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: x * y, number=reps)
+        # print('*        : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: x // y, number=reps)
+        # print('/        : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: x % y, number=reps)
+        # print('%        : {:.3f}'.format(seconds))
+
+        # seconds = timeit.timeit(lambda: x << y, number=reps)
+        # print('<<       : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: x >> y, number=reps)
+        # print('>>       : {:.3f}'.format(seconds))
+
+        # seconds = timeit.timeit(lambda: x.bit_length(), number=reps)
+        # print('bl       : {:.3f}'.format(seconds))
+        # seconds = timeit.timeit(lambda: abs(y), number=reps)
+        # print('abs      : {:.3f}'.format(seconds))
