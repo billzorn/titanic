@@ -20,12 +20,12 @@ class BV(object):
     pass
 
 
-def mask(n: int) -> int:
+def bitmask(n: int) -> int:
     """Produces a bitmask of n 1s."""
     return ~(-1 << n)
 
 
-def mask_from(start: int, end: int) -> int:
+def bitmask_at(start: int, end: int) -> int:
     """Produces a bitmask of 1s from start to end."""
     return (~(-1 << (end - start))) << start
 
@@ -36,6 +36,198 @@ def msb(x: int) -> int:
 
 def floorlog2(x: int) -> int:
     return max(x.bit_length() - 1, 0)
+
+
+def naive_ctz2(x: int) -> typing.Tuple[int, int]:
+    """Count trailing zeros, naively.
+
+    Args:
+        x: An int.
+
+    Returns:
+        A tuple (zeros, x >> zeros) where zeros is the number of trailing
+        zeros in x. I.e. (x >> zeros) & 1 == 1 or x == zeros == 0.
+
+    This is a slow reference implementation for checking correctness. Since
+    it never needs to check the bit_length of x or do any multiplication,
+    it may be acceptably fast for numbers that have a very small number of
+    trailing zeros.
+
+    As it inherently tracks the remaining significant bits of x, this
+    implementation returns them as well as the number of zeros, hence its
+    name "ctz2".
+
+    >>> naive_ctz2(0)
+    (0, 0)
+    >>> naive_ctz2(1)
+    (0, 1)
+    >>> naive_ctz2(-1)
+    (0, -1)
+    >>> naive_ctz2(2)
+    (1, 1)
+    >>> naive_ctz2(-2)
+    (1, -1)
+    >>> naive_ctz2(40) # 0b101000 = 2**3 * 5
+    (3, 5)
+    >>> naive_ctz2(-40) # 0b1..1011000
+    (3, -5)
+    >>> naive_ctz2(37 << 100)
+    (100, 37)
+    """
+    if x == 0:
+        return 0, 0
+    else:
+        zeros: int = 0
+        while x & 1 == 0:
+            x = x >> 1
+            zeros += 1
+        return zeros, x
+
+
+def naive_sqrt_ctz2(x: int) -> typing.Tuple[int, int]:
+    """Count trailing zeros, in O(sqrt(zeros)) steps.
+
+    Args:
+        x: An int.
+
+    Returns:
+        A tuple (zeros, x >> zeros) where zeros is the number of trailing
+        zeros in x. I.e. (x >> zeros) & 1 == 1 or x == zeros == 0.
+
+    This implementation is much faster than the naive linear implementation
+    for many numbers of reasonable size. Because it looks at windows of
+    linearly increasing size, it only needs to perform the square root
+    of the number of zeros total steps, and it avoids constructing a number
+    with many more bits than x (the logarithmic implementation below can
+    compare x against a mask with twice as many bits in the worst case).
+    Because it tracks the remaining significant bits of x explicitly, this
+    implementation can return them more efficiently than the caller re-doing
+    the right shift, so it is provided as a "ctz2".
+
+    We still say this implementation is "naive" because it does not try
+    to use any specific optimization tricks besides the sqrt algorithm. For
+    some numbers with a very large number of zeros, it may be asymptotically
+    worse than the logarithmic algorithm.
+
+    >>> naive_sqrt_ctz2(0)
+    (0, 0)
+    >>> naive_sqrt_ctz2(1)
+    (0, 1)
+    >>> naive_sqrt_ctz2(-1)
+    (0, -1)
+    >>> naive_sqrt_ctz2(2)
+    (1, 1)
+    >>> naive_sqrt_ctz2(-2)
+    (1, -1)
+    >>> naive_sqrt_ctz2(40) # 0b101000 = 2**3 * 5
+    (3, 5)
+    >>> naive_sqrt_ctz2(-40) # 0b1..1011000
+    (3, -5)
+    >>> naive_sqrt_ctz2(37 << 100)
+    (100, 37)
+
+    # Of course the behavior should match for all integers...
+    >>> all(naive_ctz2(x) == naive_sqrt_ctz2(x) for x in range(1024))
+    True
+    """
+    if x == 0:
+        return 0, 0
+    else:
+        zmask = 1
+        zscale = 1
+        zeros: int = 0
+
+        # divide out larger and larger powers, until x % 2**zscale != 0
+        while x & zmask == 0:
+            x >>= zscale
+            zeros += zscale
+            zscale += 1
+            zmask = (zmask << 1) | 1
+
+        # recover smaller powers
+        while zscale > 0:
+            zmask >>= 1
+            zscale -= 1
+            if x & zmask == 0:
+                x = x >> zscale
+                zeros += zscale
+
+        # Using for with a range may allow Python to produce more efficient
+        # bytecode for this loop, but the difference is only a few percent,
+        # at least based on some quick testing with CPython 3.6.3.
+
+        # for zscale in range(zscale-1, 0, -1):
+        #     zmask >>= 1
+        #     if x & zmask == 0:
+        #         x = x >> zscale
+        #         zeros += zscale
+
+        return zeros, x
+
+
+def naive_log_ctz(x: int) -> int:
+    """Count trailing zeros, in a O(log(zeros)) steps.
+
+    Args:
+        x: An int.
+
+    Returns:
+        The number of trailing zeros in x, as an int.
+
+    This implementation is much faster than the naive linear implementation,
+    as it performs a logarithmic number of steps relative to the number of
+    trailing zeros in x. Unlike the linear implementation, this one avoids
+    looking at the high bits of x if it can, so it only returns the number
+    of zeros, not the remaining significant bits of x.
+
+    We still say this implementation is "naive" because it does not try
+    to use any specific optimization tricks besides the logarithmic algorithm.
+
+    >>> naive_log_ctz(0)
+    0
+    >>> naive_log_ctz(1)
+    0
+    >>> naive_log_ctz(-1)
+    0
+    >>> naive_log_ctz(2)
+    1
+    >>> naive_log_ctz(-2)
+    1
+    >>> naive_log_ctz(40) # 0b101000 = 2**3 * 5
+    3
+    >>> naive_log_ctz(-40) # 0b1..1011000
+    3
+    >>> naive_log_ctz(37 << 100)
+    100
+
+    # Of course the behavior should match for all integers...
+    >>> all(naive_ctz2(x)[0] == naive_log_ctz(x) for x in range(1024))
+    True
+    """
+    if x == 0:
+        return 0
+    else:
+        zmask = 1
+        zscale = 1
+        low_bits = x & zmask
+
+        while low_bits == 0:
+            zmask = (zmask << zscale) | zmask
+            zscale <<= 1
+            low_bits = x & zmask
+
+        zscale >>= 1
+        zmask >>= zscale
+        zeros : int = 0
+
+        while zscale > 0:
+            if low_bits & zmask == 0:
+                low_bits >>= zscale
+                zeros += zscale
+            zscale >>= 1
+            zmask >>= zscale
+
+        return zeros
 
 
 def _de_bruijn(k: int, n: int) -> typing.List[int]:
@@ -77,7 +269,7 @@ def _de_bruijn(k: int, n: int) -> typing.List[int]:
     return sequence
 
 
-def _init_ctz_table(n: int) -> typing.Tuple[int, typing.List[int]]:
+def _init_ctz_db_and_table(n: int) -> typing.Tuple[int, typing.List[int]]:
     """Setup for fast ctz of ints with up to 2**n bits.
 
     This code initializes the De Bruijn sequence (as an integer) and
@@ -89,17 +281,17 @@ def _init_ctz_table(n: int) -> typing.Tuple[int, typing.List[int]]:
 
     The following weird edge cases are correct, though they aren't exactly
     useful except to turn the fast ctz algorithm off:
-    >>> _init_ctz_table(0)
+    >>> _init_ctz_db_and_table(0)
     (0, [0])
-    >>> _init_ctz_table(1)
+    >>> _init_ctz_db_and_table(1)
     (1, [0, 1])
 
     This initialization is too small to be much use:
-    >>> _init_ctz_table(4)
+    >>> _init_ctz_db_and_table(4)
     (2479, [0, 1, 2, 5, 3, 9, 6, 11, 15, 4, 8, 10, 14, 7, 13, 12])
     """
     nbits = 1 << n
-    nmask = mask(nbits)
+    nmask = bitmask(nbits)
 
     db : int = 0
 
@@ -122,28 +314,76 @@ def _init_ctz_table(n: int) -> typing.Tuple[int, typing.List[int]]:
 
 # For small integers, it may be possible to perform ctz in constant
 # time. This parameter control how small those integers have to be.
-# Note that _CTZ_DB_LENGTH cannot be changed at runtime unless the
-# De Bruijn sequence and table being used are also updated. If this
-# update is not atomic, everything could explode.
-#
 # With a bit of very quick tuning, it seems like we can set this at about
 # 10 before the overhead of large multiplies starts to bite us, even for
 # very small inputs.
-_CTZ_DB_LENGTH = 10
+_CTZ_DB_LENGTH: int = 10
 
 # These constants are used internally by the ctz algorithm. They are
 # generated based on _CTZ_DB_LENGTH.
-_CTZ_DB_THRESH_BITS = 1 << _CTZ_DB_LENGTH
-_CTZ_DB_SHIFT = (1 << _CTZ_DB_LENGTH) - _CTZ_DB_LENGTH
-_CTZ_DB_MASK = mask(_CTZ_DB_LENGTH)
-_CTZ_DB, _CTZ_DB_TABLE = _init_ctz_table(_CTZ_DB_LENGTH)
+_CTZ_DB_THRESH_BITS: int = 1 << _CTZ_DB_LENGTH
+_CTZ_DB_SHIFT: int = (1 << _CTZ_DB_LENGTH) - _CTZ_DB_LENGTH
+_CTZ_DB_MASK: int = bitmask(_CTZ_DB_LENGTH)
+_INIT_CTZ_DB, _INIT_CTZ_DB_TABLE = _init_ctz_db_and_table(_CTZ_DB_LENGTH)
+_CTZ_DB: int = _INIT_CTZ_DB
+_CTZ_DB_TABLE : typing.List[int] = _INIT_CTZ_DB_TABLE
+
+# We might as well avoid recomputing these values each time we call ctz.
+_CTZ_ZMASK : int = bitmask(_CTZ_DB_THRESH_BITS)
+_CTZ_ZSCALE : int = 1 << _CTZ_DB_THRESH_BITS
 
 # For this to work at all, the De Bruijn sequence we're using must start
 # with _CTZ_DB_LENGTH zeros. All sequences returned by our generator should
 # have this property, but just in case let's check.
 assert(_CTZ_DB >> _CTZ_DB_SHIFT == 0)
 
+
+# For very small integers, or numbers with a small number of trailing zeros
+# (such as normal numbers), we can get the number of trailing zeros efficiently
+# with a lookup table.
+_CTZ_SMALL_THRESH_BITS: int = 10
+
+# The mask and table are generated based on the threshold bits. We store a table of size
+# 2 ** _CTZ_SMALL_THRESH_BITS, and can use it for integers with their first set bit
+# within the threshold.
+_CTZ_SMALL_THRESH_MASK: int = bitmask(_CTZ_SMALL_THRESH_BITS)
+_CTZ_SMALL_TABLE: typing.List[int] = [z for z, _ in (naive_ctz2(x) for x in range(1 << _CTZ_SMALL_THRESH_BITS))]
+
+# Note that the parameters cannot be changed at runtime, unless the change
+# manages to update all of the values atomically relative to any calls to
+# ctz.
+
 def ctz(x: int) -> int:
+    """FAST!
+    """
+    low_bits = x & _CTZ_SMALL_THRESH_MASK
+    # Test for x == 0 under a short circuit or, so it's off the control
+    # flow path for the (probably common) case of nonzero x with a small
+    # number of trailing zeros.
+    if low_bits != 0 or x == 0:
+        return _CTZ_SMALL_TABLE[low_bits]
+    else:
+        low_bits = x & _CTZ_ZMASK
+        # use the De Bruijn sequence immediately if possible
+        if low_bits != 0:
+            return _CTZ_DB_TABLE[
+                (((low_bits & -low_bits) * _CTZ_DB) >> _CTZ_DB_SHIFT) & _CTZ_DB_MASK
+            ]
+        else:
+            zmask = _CTZ_ZMASK
+            zscale = _CTZ_ZSCALE
+
+            for i in range(0): what???
+                zmask = (zmask << zscale)
+                zscale <<= 1
+                low_bits = x & zmask
+                if low_bits != 0:
+                    break
+
+    return 0
+
+
+def ctz_alt(x: int) -> int:
     """Count trailing zeros.
 
     Counts the zeros on the least-significant end of the binary representation
@@ -155,15 +395,15 @@ def ctz(x: int) -> int:
     Returns:
         The number of trailing zeros.
 
-    >>> ctz(0)
+    >>> ctz_alt(0)
     0
-    >>> ctz(1)
+    >>> ctz_alt(1)
     0
-    >>> ctz(2)
+    >>> ctz_alt(2)
     1
-    >>> ctz(40) # 2**3 * 5
+    >>> ctz_alt(40) # 2**3 * 5
     3
-    >>> ctz(37 << 100)
+    >>> ctz_alt(37 << 100)
     100
 
     Should be fast for all conceivable integers.
@@ -239,57 +479,66 @@ def ctz_split(x: int) -> typing.Tuple[int, int]:
                 zeros += f2
         return zeros, x
 
-
-def naive_ctz_split(x: int) -> typing.Tuple[int, int]:
-    """Count trailing zeros, naively.
-
-    The behavior should be identical to ctz_split(x). This is a slow reference
-    implementation for checking correctness. Since it never needs to check the
-    bit_length of x or do any multiplication, it may be slightly faster for
-    numbers that have a very small number of trailing zeros.
-    """
-    zeros = 0
-    while x & 1 == 0 and x > 0:
-        x = x >> 1
-        zeros += 1
-    return zeros, x
-
-
-def test_range(e, mbits):
-    for m in range(1 << mbits):
-        for shift in range(e):
-            x = m << shift
-            naive_z, naive_y = naive_ctz_split(x)
-            z, y = ctz_split(x)
-            just_z = ctz(x)
-
-            if not (naive_z == z == just_z):
-                print(x, naive_z, z, just_z)
-            if not (naive_y == y):
-                print(x, naive_y, y)
-
-def time_range(e, mbits):
-    for m in range(1 << mbits):
-        for shift in range(e):
-            x = m << shift
-            z, y = ctz_split(x)
-
-def time_blank(e, mbits):
-    for m in range(1 << mbits):
-        for shift in range(e):
-            x = m << shift
-
-
 if __name__ == "__main__":
     import doctest
-    doctest.testmod()
+    import timeit
 
+    def test_range(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                naive_z, naive_y = naive_ctz2(x)
+                sqrt_z, sqrt_y = naive_sqrt_ctz2(x)
+                log_z = naive_log_ctz(x)
+                z, y = ctz_split(x)
+                just_z = ctz_alt(x)
+
+                if not (naive_z == sqrt_z == log_z == z == just_z):
+                    print(x, naive_z, z, just_z)
+                if not (naive_y == sqrt_y == y):
+                    print(x, naive_y, y)
+
+    def time_naive(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                z, y = naive_ctz2(x)
+
+    def time_sqrt(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                z, y = naive_sqrt_ctz2(x)
+
+    def time_log(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                z = naive_log_ctz(x)
+
+    def time_fast(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                z = ctz_alt(x)
+
+    def time_blank(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+
+    def compare_e_m(e, mbits, reps, naive=False):
+        print('for e={:d}, mbits={:d}, {:d} reps'.format(e, mbits, reps))
+        if naive:
+            print('  naive: {:.3f}'.format(timeit.timeit(lambda: time_naive(e, mbits), number=reps)))
+        print('  sqrt : {:.3f}'.format(timeit.timeit(lambda: time_sqrt(e, mbits), number=reps)))
+        print('  log  : {:.3f}'.format(timeit.timeit(lambda: time_log(e, mbits), number=reps)))
+        print('  fast : {:.3f}'.format(timeit.timeit(lambda: time_fast(e, mbits), number=reps)))
+        print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_blank(e, mbits), number=reps)))
+
+    doctest.testmod()
     test_range(100, 8)
     test_range(1, 17)
 
-    import timeit
-    reps = 3
-    e = 1528
-    mbits = 8
-    print('ref: {:.3f}'.format(timeit.timeit(lambda: time_blank(e, mbits), number=reps)))
-    print('run: {:.3f}'.format(timeit.timeit(lambda: time_range(e, mbits), number=reps)))
+    # compare_e_m(8, 16, 10, True)
+    # compare_e_m(512, 8, 10, True)
