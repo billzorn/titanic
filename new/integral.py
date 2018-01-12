@@ -429,8 +429,6 @@ def ctz(x: int) -> int:
 
             upstep = _CTZ_DB_LENGTH
             for upstep in range(_CTZ_DB_LENGTH + 1, (x.bit_length() - 1).bit_length()):
-                #print('up', upstep)
-
                 # scale first, as we've already tested with the initial mask
                 zmask = (zmask << zscale) | zmask
                 zscale <<= 1
@@ -456,11 +454,7 @@ def ctz(x: int) -> int:
             if low_bits == 0:
                 low_bits = x
 
-            #print(x, low_bits, upstep, zscale, zmask, zmask.bit_length())
-
             for downstep in range(upstep, _CTZ_DB_LENGTH - 1, -1):
-                #print('down', downstep)
-
                 if low_bits & zmask == 0:
                     low_bits >>= zscale
                     zeros += zscale
@@ -475,103 +469,6 @@ def ctz(x: int) -> int:
             ]
 
 
-def ctz_alt(x: int) -> int:
-    """Count trailing zeros.
-
-    Counts the zeros on the least-significant end of the binary representation
-    of x.
-
-    Args:
-        x: An int. Must be >= 0.
-
-    Returns:
-        The number of trailing zeros.
-
-    >>> ctz_alt(0)
-    0
-    >>> ctz_alt(1)
-    0
-    >>> ctz_alt(2)
-    1
-    >>> ctz_alt(40) # 2**3 * 5
-    3
-    >>> ctz_alt(37 << 100)
-    100
-
-    An early attempt at an optimized implementation.
-    """
-    if x.bit_length() <= _CTZ_DB_THRESH_BITS:
-        return _CTZ_DB_TABLE[
-            (((x & -x) * _CTZ_DB) >> _CTZ_DB_SHIFT) & _CTZ_DB_MASK
-        ]
-    else:
-        zeros = 0
-        f2 = 1
-        fm = 1
-        # divide out larger and larger powers, until x % 2**f2 != 0
-        while x & fm == 0 and x > 0:
-            x >>= f2
-            zeros += f2
-            f2 += 1
-            fm = (fm << 1) | 1
-        # recover smaller powers
-        for f2 in range(f2-1, 0, -1):
-            fm >>= 1
-            if x & fm == 0:
-                x = x >> f2
-                zeros += f2
-        return zeros
-
-
-def ctz_split(x: int) -> typing.Tuple[int, int]:
-    """Count trailing zeros, and separate out the interesting bits.
-
-    As ctz_alt(x), but also reports the "significant" part of x, shifted over
-    by the number of zeros. This is the same as factoring out all powers
-    of 2 to produce z and y such that x = 2**z * y.
-
-    Args:
-        x: An int. Must be >= 0.
-
-    Returns:
-        A tuple (zeros, x >> zeros) where zeros is the number of trailing
-        zeros in x.
-
-    >>> ctz_split(0)
-    (0, 0)
-    >>> ctz_split(1)
-    (0, 1)
-    >>> ctz_split(2)
-    (1, 1)
-    >>> ctz_split(40) # 2**3 * 5
-    (3, 5)
-    >>> ctz_split(37 << 100)
-    (100, 37)
-    """
-    if x.bit_length() <= _CTZ_DB_THRESH_BITS:
-        zeros = _CTZ_DB_TABLE[
-            (((x & -x) * _CTZ_DB) >> _CTZ_DB_SHIFT) & _CTZ_DB_MASK
-        ]
-        return zeros, x >> zeros
-    else:
-        zeros = 0
-        f2 = 1
-        fm = 1
-        # divide out larger and larger powers, until x % 2**f2 != 0
-        while x & fm == 0 and x > 0:
-            x >>= f2
-            zeros += f2
-            f2 += 1
-            fm = (fm << 1) | 1
-        # recover smaller powers
-        for f2 in range(f2-1, 0, -1):
-            fm >>= 1
-            if x & fm == 0:
-                x = x >> f2
-                zeros += f2
-        return zeros, x
-
-
 if __name__ == "__main__":
     import doctest
     import timeit
@@ -583,14 +480,12 @@ if __name__ == "__main__":
                 naive_z, naive_y = naive_ctz2(x)
                 sqrt_z, sqrt_y = naive_sqrt_ctz2(x)
                 log_z = naive_log_ctz(x)
-                z, y = ctz_split(x)
-                alt_z = ctz_alt(x)
-                just_z = ctz(x)
+                z = ctz(x)
 
-                if not (naive_z == sqrt_z == log_z == z == alt_z == just_z):
-                    print(x, naive_z, sqrt_z, log_z, z, alt_z, just_z)
-                if not (naive_y == sqrt_y == y):
-                    print(x, naive_y, sqrt_y, y)
+                if not (naive_z == sqrt_z == log_z == z):
+                    print(x, naive_z, sqrt_z, log_z, z)
+                if not (naive_y == sqrt_y):
+                    print(x, naive_y, sqrt_y)
 
     def time_naive(e, mbits):
         for m in range(1 << mbits):
@@ -610,12 +505,6 @@ if __name__ == "__main__":
                 x = m << shift
                 z = naive_log_ctz(x)
 
-    def time_alt(e, mbits):
-        for m in range(1 << mbits):
-            for shift in range(e):
-                x = m << shift
-                z = ctz_alt(x)
-
     def time_fast(e, mbits):
         for m in range(1 << mbits):
             for shift in range(e):
@@ -633,13 +522,12 @@ if __name__ == "__main__":
             print('  naive: {:.3f}'.format(timeit.timeit(lambda: time_naive(e, mbits), number=reps)))
         print('  sqrt : {:.3f}'.format(timeit.timeit(lambda: time_sqrt(e, mbits), number=reps)))
         print('  log  : {:.3f}'.format(timeit.timeit(lambda: time_log(e, mbits), number=reps)))
-        print('  alt  : {:.3f}'.format(timeit.timeit(lambda: time_alt(e, mbits), number=reps)))
         print('  fast : {:.3f}'.format(timeit.timeit(lambda: time_fast(e, mbits), number=reps)))
         print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_blank(e, mbits), number=reps)))
 
     doctest.testmod()
-    test_range(8301, 4)
+    test_range(2051, 4)
     test_range(8, 17)
 
-    compare_e_m(8, 17, 10, True)
-    compare_e_m(8301, 4, 10, False)
+    compare_e_m(8, 16, 10, True)
+    compare_e_m(2051, 4, 10, False)
