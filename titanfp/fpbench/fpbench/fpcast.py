@@ -41,7 +41,7 @@ class EvalCtx(object):
 class Expr(object):
     name: str = 'Expr'
 
-    def __init__(self, *children):
+    def __init__(self, *children: "Expr") -> None:
         self.children: typing.Tuple[Expr, ...] = children
 
     def __str__(self):
@@ -244,7 +244,7 @@ class NEQ(Expr):
     def evaluate(self, ctx: EvalCtx):
         return _nary_ne(child.evaluate(ctx) for child in self.children)
 
-# # logic
+# logic
 
 class And(Expr):
     name: str = 'and'
