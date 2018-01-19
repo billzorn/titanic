@@ -4,7 +4,7 @@ parse : fpcore* EOF ;
 
 // We break the standard by allowing cores to cores to have names,
 // which can be referred to as operators in other cores.
-fpcore : '(' 'FPCore' (name=SYMBOL)? '(' (inputs+=SYMBOL)* ')' (props+=prop)* e=expr ')' ;
+fpcore : '(' 'FPCore' (cid=SYMBOL)? '(' (inputs+=SYMBOL)* ')' (props+=prop)* e=expr ')' ;
 
 expr
     : n=NUMBER # ExprNumeric
