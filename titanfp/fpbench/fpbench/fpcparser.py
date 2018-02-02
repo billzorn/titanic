@@ -1,5 +1,7 @@
 # all the things you wish you didn't know about floating point
 
+import typing
+
 import antlr4
 from FPCoreLexer import FPCoreLexer
 from FPCoreParser import FPCoreParser
@@ -8,67 +10,72 @@ from FPCoreVisitor import FPCoreVisitor
 import fpcast as ast
 
 
+def _reserve(message):
+    def raise_reserved(*args):
+        raise ValueError(message)
+    return raise_reserved
+
 reserved_constructs = {
     # reserved
-    'FPCore' : None,
-    # control flow
-    'if' : ast.If,
-    'let' : ast.Let,
-    'while' : ast.While,
-    
-    # ieee754 required arithmetic
+    'FPCore' : _reserve('reserved: FPCore'),
+    # control flow (these asts are assembled directly in the visitor)
+    'if' : _reserve('reserved: if'),
+    'let' : _reserve('reserved: let'),
+    'while' : _reserve('reserved: while'),
+
+    # ieee754 required arithmetic (negation is a special case of subtraction)
     '+' : ast.Add,
-    '-' : ast.Sub, # unary negation is a special case
+    '-' : lambda a, b=None: ast.Sub(a, b) if b is not None else ast.Neg(a),
     '*' : ast.Mul,
     '/' : ast.Div,
     'sqrt' : ast.Sqrt,
-    'fma' : None,
+    'fma' : _reserve('unimplemented: fma'),
     # discrete operations
-    'copysign' : None,
-    'fabs' : None,
+    'copysign' : _reserve('unimplemented: copysign'),
+    'fabs' : _reserve('unimplemented: fabs'),
     # composite arithmetic
-    'fdim' : None,
-    'fmax' : None,
-    'fmin' : None,
-    'fmod' : None,
-    'remainder' : None,
+    'fdim' : _reserve('unimplemented: fdim'),
+    'fmax' : _reserve('unimplemented: fmax'),
+    'fmin' : _reserve('unimplemented: fmin'),
+    'fmod' : _reserve('unimplemented: fmod'),
+    'remainder' : _reserve('unimplemented: remainder'),
     # rounding and truncation
-    'ceil' : None,
-    'floor' : None,
-    'nearbyint' : None,
-    'round' : None,
-    'trunc' : None,
+    'ceil' : _reserve('unimplemented: ceil'),
+    'floor' : _reserve('unimplemented: floor'),
+    'nearbyint' : _reserve('unimplemented: nearbyint'),
+    'round' : _reserve('unimplemented: round'),
+    'trunc' : _reserve('unimplemented: trunc'),
     # trig
-    'acos' : None,
-    'acosh' : None,
-    'asin' : None,
-    'asinh' : None,
-    'atan' : None,
-    'atan2' : None,
-    'atanh' : None,
-    'cos' : None,
-    'cosh' : None,
-    'sin' : None,
-    'sinh' : None,
-    'tan' : None,
-    'tanh' : None,
+    'acos' : _reserve('unimplemented: acos'),
+    'acosh' : _reserve('unimplemented: acosh'),
+    'asin' : _reserve('unimplemented: asin'),
+    'asinh' : _reserve('unimplemented: asinh'),
+    'atan' : _reserve('unimplemented: atan'),
+    'atan2' : _reserve('unimplemented: atan2'),
+    'atanh' : _reserve('unimplemented: atanh'),
+    'cos' : _reserve('unimplemented: cos'),
+    'cosh' : _reserve('unimplemented: cosh'),
+    'sin' : _reserve('unimplemented: sin'),
+    'sinh' : _reserve('unimplemented: sinh'),
+    'tan' : _reserve('unimplemented: tan'),
+    'tanh' : _reserve('unimplemented: tanh'),
     # exponentials
-    'exp' : None,
-    'exp2' : None,
-    'expm1' : None,
-    'log' : None,
-    'log10' : None,
-    'log1p' : None,
-    'log2' : None,
+    'exp' : _reserve('unimplemented: exp'),
+    'exp2' : _reserve('unimplemented: exp2'),
+    'expm1' : _reserve('unimplemented: expm1'),
+    'log' : _reserve('unimplemented: log'),
+    'log10' : _reserve('unimplemented: log10'),
+    'log1p' : _reserve('unimplemented: log1p'),
+    'log2' : _reserve('unimplemented: log2'),
     # powers
-    'cbrt' : None,
-    'hypot' : None,
-    'pow' : None,
+    'cbrt' : _reserve('unimplemented: cbrt'),
+    'hypot' : _reserve('unimplemented: hypot'),
+    'pow' : _reserve('unimplemented: pow'),
     # other
-    'erf' : None,
-    'erfc' : None,
-    'lgamma' : None,
-    'tgamma' : None,
+    'erf' : _reserve('unimplemented: erf'),
+    'erfc' : _reserve('unimplemented: erfc'),
+    'lgamma' : _reserve('unimplemented: lgamma'),
+    'tgamma' : _reserve('unimplemented: tgamma'),
 
     # comparison
     '<' : ast.LT,
@@ -78,11 +85,11 @@ reserved_constructs = {
     '==' : ast.EQ,
     '!=' : ast.NEQ,
     # testing
-    'isfinite' : None,
-    'isinf' : None,
-    'isnan' : None,
-    'isnormal' : None,
-    'signbit' : None,
+    'isfinite' : _reserve('unimplemented: isfinite'),
+    'isinf' : _reserve('unimplemented: isinf'),
+    'isnan' : _reserve('unimplemented: isnan'),
+    'isnormal' : _reserve('unimplemented: isnormal'),
+    'signbit' : _reserve('unimplemented: signbit'),
     # logic
     'and' : ast.And,
     'or' : ast.Or,
@@ -132,30 +139,30 @@ class FPCore(object):
 
     def __str__(self):
         return 'FPCore ({})\n  name: {}\n   pre: {}\n  {}'.format(
-            ' '.join(self.args), self.name, self.pre, self.e)
+            ' '.join(self.inputs), self.name, self.pre, self.e)
 
     def __repr__(self):
         return 'FPCoreObject(\n  {},\n  {},\n  {}\n)'.format(
-            repr(self.args), repr(self.props), repr(self.e))
+            repr(self.inputs), repr(self.props), repr(self.e))
 
     def _sexp(self):
         return '(FPCore ({}) {} {})'.format(
-            ' '.join(self.args),
-            ' '.join(name + ' ' + propToSexp(prop) for name, prop in self.properties.items()),
+            ' '.join(self.inputs),
+            ' '.join(name + ' ' + propToSexp(prop) for name, prop in self.props.items()),
             str(self.e))
     sexp = property(_sexp)
 
-    
+
 class Visitor(FPCoreVisitor):
     def visitParse(self, ctx) -> typing.List[FPCore]:
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
     def visitFpcore(self, ctx) -> FPCore:
-        core_id = ctx.cid.text
+        core_id = ctx.cid.text if ctx.cid is not None else None
         # need a real error strategy
         if core_id in reserved_constructs:
             raise ValueError('name {} is reserved'.format(core_id))
-        
+
         inputs = [x.text for x in ctx.inputs]
         input_set = set()
         for x in inputs:
@@ -165,10 +172,10 @@ class Visitor(FPCoreVisitor):
                 raise ValueError('duplicate argument name {}'.format(x))
             else:
                 input_set.add(x)
-            
+
         props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
         e = ctx.e.accept(self)
-        return FPCoreObject(inputs, e, props=props, core_id=core_id)
+        return FPCore(inputs, e, props=props, core_id=core_id)
 
     def visitExprNumeric(self, ctx) -> ast.Expr:
         return ast.Val(ctx.n.text)
@@ -189,7 +196,7 @@ class Visitor(FPCoreVisitor):
 
     def visitExprLet(self, ctx) -> ast.Expr:
         return ast.Let(
-            [*zip(x.text for x in ctx.xs, e.accept(self) for e in ctx.es)],
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
             ctx.body.accept(self),
         )
 
@@ -197,47 +204,55 @@ class Visitor(FPCoreVisitor):
         return ast.While(
             ctx.cond.accept(self),
             [*zip(
-                x.text for x in ctx.xs,
-                e0.accept(self) for e0 in ctx.e0s,
-                e.accept(self) for e in ctx.es,
+                (x.text for x in ctx.xs),
+                (e0.accept(self) for e0 in ctx.e0s),
+                (e.accept(self) for e in ctx.es),
             )],
             ctx.body.accept(self),
         )
 
     def visitExprOp(self, ctx):
-        #TODOTODOTODO
-        op = ctx.op.getText()
-        # special case unary negation
-        if op == '-':
-            return ops['neg'](ctx.arg0.accept(self))
+        op = ctx.op.text
+        if op in reserved_constructs:
+            return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
         else:
-            return ops[op](ctx.arg0.accept(self))
-
-
+            raise ValueError('unsupported: call to core operator {}'.format(op))
 
     def visitPropStr(self, ctx):
         return ctx.name.text, ctx.s.text[1:-1]
 
     def visitPropList(self, ctx):
-        return ctx.name.text, [t.text for t in ctx.syms]
+        return ctx.name.text, [x.text for x in ctx.xs]
 
     def visitPropExpr(self, ctx):
         return ctx.name.text, ctx.e.accept(self)
+
 
 def parse(s):
     input_stream = antlr4.InputStream(s)
     lexer = FPCoreLexer(input_stream)
     token_stream = antlr4.CommonTokenStream(lexer)
     parser = FPCoreParser(token_stream)
-    parse_tree = parser.parse()
-    return parser, parse_tree
+    tree = parser.parse()
+    return parser, tree
 
 def compile(s):
     parser, tree = parse(s)
     visitor = Visitor()
     return visitor.visit(tree)
 
-if __name__ == '__main__':
+
+
+
+
+def compfile(fname):
+    with open(fname, 'r') as f:
+        results = compile(f.read())
+    return results[0]
+
+
+
+if __name__ == '__main__' and False:
     import sys
     parser, tree = parse(sys.stdin.read())
 
@@ -250,4 +265,6 @@ if __name__ == '__main__':
         print()
         print(x.sexp)
 
-    #print(results[0].e({'x': 0.125}));
+    print(results[0].e.z3_expr)
+
+    print(results[0].e.evaluate_sig(ast.EvalCtx({"a":"1e16", "b":"3.14159"})))
