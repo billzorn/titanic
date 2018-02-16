@@ -4,6 +4,7 @@ Implemented really badly in one file.
 """
 
 
+import typing
 import sys
 import random
 
@@ -167,17 +168,19 @@ mpfr = gmp.mpfr
 mpz = gmp.mpz
 
 
-# this should probably be replaced with a better mechanism...
-_GMPCTX = gmp.context()
-_GMPCTX.precision = 2
-_GMPCTX.trap_underflow = True
-_GMPCTX.trap_overflow = True
-_GMPCTX.trap_inexact = True
-_GMPCTX.trap_invalid = True
-_GMPCTX.trap_erange = True
-_GMPCTX.trap_divzero = True
-_GMPCTX.trap_expbound = True
-gmp.set_context(_GMPCTX)
+def exactctx(prec, emin, emax):
+    return gmp.context(
+        precision=max(2, prec),
+        emin=min(-1, emin),
+        emax=max(+1, emax),
+        trap_underflow=True,
+        trap_overflow=True,
+        trap_inexact=True,
+        trap_invalid=True,
+        trap_erange=True,
+        trap_divzero=True,
+        trap_expbound=True,
+    )
 
 
 def sigbits(m):
@@ -189,7 +192,8 @@ def sigbits(m):
         return z.bit_length() - trailing_zeros
 
 
-def to_mantissa_exp(r):
+def to_shortest_mantissa_exp(r):
+    """This destroys info about the precision"""
     m, e = r.as_mantissa_exp()
     trailing_zeros = m.bit_scan1(0)
     if trailing_zeros is None:
@@ -198,17 +202,35 @@ def to_mantissa_exp(r):
         return m >> trailing_zeros, e + trailing_zeros
 
 
+def to_mantissa_exp(r):
+    m, e = r.as_mantissa_exp()
+    if m == 0:
+        return 0, None
+    else:
+        return m, e
+
+
 def from_mantissa_exp(m, e):
-    emax = int(e) + m.bit_length()
-
-    with _GMPCTX as gmpctx:
-        if e <= gmpctx.emin:
-            gmpctx.emin = int(e) - 1
-        elif emax >= gmpctx.emax:
-            gmpctx.emax = emax + 1
-        gmpctx.precision = max(2, sigbits(m))
-
-        return gmp.mul(mpfr(m), gmp.exp2(mpfr(e, max(2, sigbits(e)))))
+    if m == 0:
+        return mpfr(0, 2)
+    mbits = m.bit_length()
+    ebits = e.bit_length()
+    esig = sigbits(e)
+    exp = int(e)
+    with exactctx(mbits, min(ebits, mbits, exp), max(ebits, mbits, exp + mbits)):
+        rexp = scale = rm = result = None
+        try:
+            rexp = mpfr(e, max(2, esig))
+            scale = mpfr(gmp.exp2(rexp), 2)
+            rm = mpfr(m)
+            result = gmp.mul(rm, scale)
+        except Exception as exc:
+            print(exc)
+            print(m, e)
+            print(mbits, ebits, exp, esig)
+            print(result, rm, scale, rexp)
+            print(gmp.get_context())
+        return result
 
 
 # more debugging
@@ -225,31 +247,115 @@ def _gmprt(x1, x2=None):
 def _test_gmp():
     print('watch for output...')
     for i in range(1 << 16):
-        m = random.randint(0, 1 << 256) << (random.randint(0, 64) if random.randint(0, 2) else 0)
+        m = random.randint(0, 1 << 256) << (random.randint(0, 256) if random.randint(0, 2) else 0)
         e = random.randint(-126, 127) if random.randint(0, 2) else random.randint(-(1 << 32), (1 << 32))
         x1 = from_mantissa_exp(m, e)
         x2 = from_mantissa_exp(*to_mantissa_exp(x1))
         if x1 != x2:
             print(m, e, x1, x2)
+        if x1.precision != x2.precision:
+            print(x1.precision, x2.precision, x1, x2)
     print('...done')
 
 
+# todo:
+# split
+# trunc (which is just split)
+# interval_contains
+# the two arith algos
+    
+_DEFAULT_PREC = 53
+    
 class Sink:
-    e : int = None # exponent
-    n : int = None # "sticky bit" or lsb
-    p : int = None # precision: e - n
-    c : int = None # significand
-    negative : bool = None # sign bit
-    inexact : bool = None # approximate bit
-    inf: bool = None # is the value infinite?
-    nan: bool = None # is this value NaN?
+    _e : int = None # exponent
+    _n : int = None # "sticky bit" or lsb
+    _p : int = None # precision: e - n
+    _c : int = None # significand
+    _negative : bool = None # sign bit
+    _inexact : bool = None # approximate bit
+    _isinf : bool = None # is the value infinite?
+    _isnan : bool = None # is this value NaN?
 
+    
     def _valid(self) -> bool:
         return (
-            (self.e >= self.n) and
-            (self.p == self.e - self.n) and
-            (not self.inf and self.nan)
+            (self._e >= self._n) and
+            (self._p == self._e - self._n) and
+            (not (self._isinf and self._isnan))
         )
 
-    def __init__(self, x) -> None:
-        pass
+
+    def split(self, n):
+        """split into exact part with lsb=n and zero with e=lsb=n"""
+        
+    
+    def __init__(self, x, p=None, negative=False, inexact=True) -> None:
+        # special case for zeros
+        if x is None or x == 0:
+            if p is None:
+                self._e = self._n = 0
+                self._inexact = False
+            else:
+                self._e = self._n = p
+                self._inexact = inexact
+            self._p = 0
+            self._c = 0
+            self._negative = negative
+            self._isinf = False
+            self._isnan = False
+        else:
+            prec = _DEFAULT_PREC if p is None else p
+            if isinstance(x, str) and x.strip().lower() == 'pi':
+                with gmp.context(precision=prec) as gmpctx:
+                    r = gmp.const_pi()
+                    inexact = True
+            else:
+                with gmp.context(precision=prec) as gmpctx:
+                    r = mpfr(x)
+                    # we could infer the needed precision for a literal... but we don't
+
+            m, e = to_mantissa_exp(r)
+            # just ignore sign of the mpfr, use given flag
+            self._c = abs(int(m))
+            self._n = int(e) - 1
+            self._p = m.bit_length()
+            self._e = self._n + self._p
+            self._negative = negative
+            self._inexact = inexact
+            self._isinf = False
+            self._isnan = False
+
+            
+    def __repr__(self):
+        try:
+            mpfr_val = self.as_mpfr()
+        except Exception as exc:
+            mpfr_val = exc
+        try:
+            f64_val = self.as_np(np.float64)
+        except Exception as exc:
+            f64_val = exc
+        try:
+            f32_val = self.as_np(np.float32)
+        except Exception as exc:
+            f32_val = exc
+        try:
+            f16_val = self.as_np(np.float16)
+        except Exception as exc:
+            f16_val = exc
+        return ('Sinking point number:\n  e={}\n  n={}\n  p={}\n  c={}\n  negative={}\n  inexact={}\n  isinf={}\n  isnan={}\n  valid? {}'
+                .format(self._e, self._n, self._p, self._c, self._negative, self._inexact, self._isinf, self._isnan, self._valid()) +
+                '\n  as mpfr: {}\n  as np.float64: {}\n  as np.float32: {}\n  as np.float16: {}'
+                .format(repr(mpfr_val), repr(f64_val), repr(f32_val), repr(f16_val)))
+
+
+    def as_mpfr(self):
+        return from_mantissa_exp(self._c * (-1 if self._negative else 1), self._n + 1)
+
+    
+    def as_np(self, ftype=np.float64):
+        # fails for 0
+        return mkfloat(self._negative, self._e, self._c, ftype=ftype)
+            
+
+
