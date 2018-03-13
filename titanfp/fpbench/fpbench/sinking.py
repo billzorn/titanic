@@ -166,7 +166,7 @@ def _test_np():
 import gmpy2 as gmp
 mpfr = gmp.mpfr
 mpz = gmp.mpz
-
+mpfr_t = type(gmp.mpfr())
 
 def exactctx(prec, emin, emax):
     return gmp.context(
@@ -267,13 +267,57 @@ def _test_gmp():
 _DEFAULT_PREC = 53
 
 
-class Sink:
+def enclose(lower, upper):
+    """Return the sink with the smallest interval that encloses lower and upper.
+    Upper and lower must be exact sinks, with upper <= lower.
+    TODO: auto bounds?
+    TODO: other kinds of intervals?
+    """
+    if lower._inexact or upper._inexact:
+        raise ValueError('enclose: must have exact arguments, got [{} and {}]'.format(lower, upper))
+    elif lower == upper:
+        return Sink(lower) if lower._n < upper._n else Sink(upper)
+    elif not lower < upper:
+        raise ValueError('enclose: arguments out of order, not {} < {}'.format(lower, upper))
+
+    zero = Sink(0)
+    # because upper != lower, the distance between them must be larger than the interval size
+    # with this n
+    min_n = min(lower._n, upper._n) - 1
+    
+    if lower < zero and upper > zero:
+        # binsearch around zero
+        offset = 1
+        n_lo = n_hi = min_n
+        bound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False)
+        # first expsearch for n_hi
+        while lower < bound_lo or bound_hi < upper:
+            offset <<= 1
+            n_lo = n_hi = n_hi + offset
+            nbound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False)
+        # refine with binsearch
+        while ???:
+            n_mid = n_lo + ((n_hi - n_lo) // 2)
+            
+            if lower < bound_lo or bound_hi < upper:
+                
+            
+        
+
+    else:
+        # Binsearch for largest interval known to be too small.
+        # We will know this interval size because
+        pass
+
+class Sink(object):
     _e : int = None # exponent
     _n : int = None # "sticky bit" or lsb
     _p : int = None # precision: e - n
     _c : int = None # significand
     _negative : bool = None # sign bit
     _inexact : bool = None # approximate bit
+    _full_interval : bool = None # envelope interval size
+    _sided_interval : bool = None # envelope interval position
     _isinf : bool = None # is the value infinite?
     _isnan : bool = None # is this value NaN?
 
@@ -283,13 +327,15 @@ class Sink:
             (self._e >= self._n) and
             (self._p == self._e - self._n) and
             (self._c.bit_length() == self._p) and
+            (self._c >= 0) and
             # no support for nonfinite yet
             (not (self._isinf or self._isnan))
         )
 
 
     def __init__(self, x=None, e=None, n=None, p=None, c=None,
-                 negative=None, inexact=None, isinf=None, isnan=None,
+                 negative=None, inexact=None, sided_interval=None, full_interval=None,
+                 isinf=None, isnan=None,
                  max_p=None, min_n=None) -> None:
         """Create a new Sink.
         If an existing Sink is provided, then the fields can be specified individually
@@ -297,42 +343,60 @@ class Sink:
         If a new sink is being created, then most fields will be ignored, except n for
         the lsb of 0 values and p for the precision of mpfrs.
         Note that __init__ is currently recursive, to handle some cases of 0 and
-        round-on-init with maxp and minn.
+        round-on-init with max_p and min_n.
+        TODO TODO TODO
         """
 
         # if given another sink, clone and update
         if isinstance(x, Sink):
             # might have to think about this more carefully...
-            self._e = x._e if e is None else e
-            self._n = x._n if n is None else n
-            self._p = x._p if p is None else p
-            self._c = x._c if c is None else c
-            self._negative = x._negative if negative is None else negative
-            self._inexact = x._inexact if inexact is None else inexact
-            self._isinf = x._isinf if isinf is None else isinf
-            self._isnan = x._isnan if isnan is None else isnan
+            self._e = x._e if e is None else int(e)
+            self._n = x._n if n is None else int(n)
+            self._p = x._p if p is None else int(p)
+            self._c = x._c if c is None else int(c)
+            self._negative = x._negative if negative is None else bool(negative)
+            self._inexact = x._inexact if inexact is None else bool(inexact)
+            self._sided_interval = x._sided_interval if sided_interval is None else bool(sided_interval)
+            self._full_interval = x._full_interval if full_interval is None else bool(full_interval)
+            self._isinf = x._isinf if isinf is None else bool(isinf)
+            self._isnan = x._isnan if isnan is None else bool(isnan)
 
         # By default, produce "zero".
-        # Note that this throws away the sign of the zero, and substitutes the provided sign...
-        # Theoretically we can track one-sided vs two-sided envelopes, but that will take
-        # some special logic.
-        elif x is None or x == 0:
+        # Note that this throws away the sign of the zero, and substitutes the provided sign
+        # and interval specification.
+        # TODO
+        elif x is None:
             if n is None:
                 raise ValueError('zero must specify n')
             else:
-                self._e = self._n = n
+                self._e = self._n = int(n)
                 self._p = self._c = 0
                 self._inexact = bool(inexact)
                 self._negative = bool(negative)
+                self._sided_interval = bool(sided_interval)
+                self._full_interval = bool(full_interval)
                 self._isinf = self._isnan = False
 
+        # integers are exact and have n=-1
+        elif isinstance(x, int):
+            self._c = abs(x)
+            self._p = self._c.bit_length()
+            self._n = -1
+            self._e = self._n + self._p
+            self._negative = x < 0
+            self._inexact = False
+            self._sided_interval = False
+            self._full_interval = False
+            self._isinf = self._isnan = False
+
         # otherwise convert from mpfr
+        # TODO: get incoming precision right (custom parser)
         else:
             # guess precision for
-            if p is maxp is None:
+            if p is max_p is None:
                 prec = _DEFAULT_PREC
             elif p is None:
-                prec = maxp
+                prec = max_p
             else:
                 prec = p
 
@@ -342,7 +406,7 @@ class Sink:
                     x = gmp.const_pi()
                     inexact = True
 
-            if not isinstance(x, mpfr):
+            if not isinstance(x, mpfr_t):
                 x = mpfr(x, precision=prec)
 
             # we reread precision from the mpfr
@@ -356,6 +420,8 @@ class Sink:
                 self._n = int(exp) - 1
                 self._e = self._n + self._p
                 self._inexact = inexact
+                # all intervals are half / unsided due to RNE
+                self._full_interval = self._sided_interval = False
                 self._isinf = self._isnan = False
 
                 if negative is None:
@@ -365,34 +431,17 @@ class Sink:
                         raise ValueError('negative magnitude')
                     self._negative = negative
 
-        if not maxp is minn is None:
+        if not max_p is min_n is None:
+            # TODO: not sound to round!
             self.__init__(self.widen(min_n=min_n, max_p=max_p))
 
         assert self._valid()
 
 
     def __repr__(self):
-        try:
-            mpfr_val = self.as_mpfr()
-        except Exception as exc:
-            mpfr_val = exc
-        try:
-            f64_val = self.as_np(np.float64)
-        except Exception as exc:
-            f64_val = exc
-        try:
-            f32_val = self.as_np(np.float32)
-        except Exception as exc:
-            f32_val = exc
-        try:
-            f16_val = self.as_np(np.float16)
-        except Exception as exc:
-            f16_val = exc
-        return ('Sinking point number:\n  e={}\n  n={}\n  p={}\n  c={}\n  negative={}\n  inexact={}\n  isinf={}\n  isnan={}\n  valid? {}'
-                .format(self._e, self._n, self._p, self._c, self._negative, self._inexact, self._isinf, self._isnan, self._valid()) +
-                '\n  as mpfr: {}\n  as np.float64: {}\n  as np.float32: {}\n  as np.float16: {}'
-                .format(repr(mpfr_val), repr(f64_val), repr(f32_val), repr(f16_val)))
-
+        return 'Sink({}, e={}, n={}, p={}, c={}, negative={}, inexact={}, sided_interval={}, full_interval={})'.format(
+            self.as_mpfr(), self._e, self._n, self._p, self._c, self._negative, self._inexact, self._sided_interval, self._full_interval
+        )
 
     def __str__(self):
         """yah"""
@@ -412,15 +461,40 @@ class Sink:
             # return '{}{}'.format(rep, '~@{:d}'.format(self._n) if self._inexact else '')
 
 
+    def details(self):
+        try:
+            mpfr_val = self.as_mpfr()
+        except Exception as exc:
+            mpfr_val = exc
+        try:
+            f64_val = self.as_np(np.float64)
+        except Exception as exc:
+            f64_val = exc
+        try:
+            f32_val = self.as_np(np.float32)
+        except Exception as exc:
+            f32_val = exc
+        try:
+            f16_val = self.as_np(np.float16)
+        except Exception as exc:
+            f16_val = exc
+
+        print ('Sinking point number:\n  e={}\n  n={}\n  p={}\n  c={}\n  negative={}\n  inexact={}\n  sided={}\n  full={}\n  isinf={}\n  isnan={}\n  valid? {}'
+               .format(self._e, self._n, self._p, self._c, self._negative, self._inexact, self._sided_interval, self._full_interval, self._isinf, self._isnan, self._valid()) +
+               '\n    as mpfr: {}\n    as np.float64: {}\n    as np.float32: {}\n    as np.float16: {}'
+               .format(repr(mpfr_val), repr(f64_val), repr(f32_val), repr(f16_val)))
+
+
     # properties
 
 
     def is_exactly_zero(self) -> bool:
         """Really there are multiple kinds of 0:
-          - 'Exactly' 0, as written
-          - 0 or infinitely close to 0, from either side: lim(n) as n -> 0
-          - finitely close to 0, from either side: lim(n) as n -> small
-          - finitely close to zero from some side, side unknown
+          - 'Exactly' 0, as written: self._inexact == False and self._sided_interval == False
+          - 0 or infinitely close to 0, from either side: lim(n) as n -> 0: self._inexact == False and self._sided_interval == True
+          - finitely close to 0, from either side: lim(n) as n -> small: self._inexact == True and self._sided_interval == True
+          - finitely close to zero from some side, side unknown: self._inexact == True and self._sided_interval == False
+        This just checks for either of the first two kinds, that are infinitely close to 0.
         """
         return self._c == 0 and (not self._inexact)
 
@@ -428,25 +502,23 @@ class Sink:
     # core envelope operations
 
 
-    def collapse(self):
-        """Collapse the interval down to its average.
-        Currently just clears the inexact flag, could do something more clever.
-        """
-        return Sink(self, inexact=False)
+    # Adjacent interval logic.
+    # If const_p is True, then preserve the value of p (this is the behavior of IEEE754 FP).
+    # Otherwise, preserve n - this ensures intervals have the same size, as for fixed point.
+    # If strict is True, then always preserve interval properties - this may produce a disconnected interval
+    # for half intervals. Otherwise, sided half intervals will produce (connected) unsided half intervals,
+    # and unsided intervals will flow through sided intervals around zero.
+
+    # TODO: toward for sided half intervals produces a (still disconnected) unsided half interval.
 
 
-    def explode(self):
-        """Explodes a point back to an enclosing interval.
-        Currently just sets the inexact flag, could do something more clever.
-        """
-        return Sink(self, inexact=True)
-
-
-    def away(self, const_p = False) -> Sink:
+    def away(self, const_p = False, strict = False):
         """The sink with the next greatest magnitude at this precision, away from 0.
-        Preserves sign and exactness.
-        Theoretically meaningless for non-sided zero.
+        Preserves sign and exactness. Meaningless for non-sided zero.
         """
+        if self._c == 0 and (not self._sided_interval):
+            raise ValueError('away: cannot determine which direction to go from {}'.format(repr(self)))
+
         next_e = self._e
         next_c = self._c + 1
         next_n = self._n
@@ -463,21 +535,30 @@ class Sink:
             else:
                 next_p += 1
 
-        return Sink(self, e=next_e, n=next_n, p=next_p, c=next_c)
+        if strict:
+            sided = self._sided_interval
+        else:
+            if next_c == 1:
+                sided = False
+            elif not self._full_interval:
+                sided = False
+            else:
+                sided = self._sided_interval
+
+        return Sink(self, e=next_e, n=next_n, p=next_p, c=next_c, sided_interval=sided)
 
 
-    def toward(self, const_p = False) -> Sink:
+    def toward(self, const_p = False, strict = False):
         """The sink with the next smallest magnitude at this precision, toward 0.
-        Preserves sign and exactness.
-        Meaningless for any zero.
+        Preserves sign and exactness. Meaningless for any zero.
         """
+        if self._c == 0:
+            raise ValueError('toward: {} is already 0'.format(repr(self)))
+
         prev_e = self._e
         prev_c = self._c - 1
         prev_n = self._n
         prev_p = self._p
-
-        if prev_c < 0:
-            raise ValueError('toward: {} is already 0'.format(repr(self)))
 
         if prev_c.bit_length() < self._c.bit_length():
             # adjust e if we borrowed
@@ -490,52 +571,153 @@ class Sink:
             else:
                 prev_p -= 1
 
+        if strict:
+            sided = self._sided_interval
+        else:
+            if prev_c == 0:
+                sided = True
+            elif not self._full_interval:
+                sided = False
+            else:
+                sided = self._sided_interval
+
         return Sink(self, e=prev_e, n=prev_n, p=prev_p, c=prev_c)
 
 
-    def above(self, const_p = False) -> Sink:
+    def above(self, const_p = False, strict = False):
         """The sink with the next largest value, toward positive infinity.
-        Special cases for 0 (especially if sided).
         """
         if self._c == 0:
-            # theoretically this should handle the sided case, right now it doesn't
-            return Sink(self, e=self._n+1, p=1, c=1, negative=False)
+            if self._sided_interval:
+                if self._negative:
+                    return -self
+                else:
+                    return self.away(const_p=const_p, strict=strict)
+            else:
+                if strict:
+                    sided = self._sided_interval
+                else:
+                    sided = False
+                return Sink(self, e=self._n+1, p=1, c=1, negative=False, sided_interval=sided)
         elif self._negative:
-            return self.toward(const_p=const_p)
+            return self.toward(const_p=const_p, strict=strict)
         else:
-            return self.away(const_p=const_p)
+            return self.away(const_p=const_p, strict=strict)
 
 
-    def below(self, const_p = False) -> Sink:
+    def below(self, const_p = False, strict = False):
         """The sink with the next smallest value, toward negative infinity.
-        Special cases for 0 (especially if sided).
         """
         if self._c == 0:
-            # theoretically this should handle the sided case, right now it doesn't
-            return Sink(self, e=self._n+1, p=1, c=1, negative=True)
+            if self._sided_interval:
+                if self._negative:
+                    return self.away(const_p=const_p, strict=strict)
+                else:
+                    return -self
+            else:
+                if strict:
+                    sided = self._sided_interval
+                else:
+                    sided = False
+                return Sink(self, e=self._n+1, p=1, c=1, negative=True, sided_interval=sided)
         elif self._negative:
-            return self.away(const_p=const_p)
+            return self.away(const_p=const_p, strict=strict)
         else:
-            return self.toward(const_p=const_p)
+            return self.toward(const_p=const_p, strict=strict)
 
 
-    def bounds(self) -> Sink:
+    # Interval representatives and bounds.
+    # An interval's representative is the exact value used for arithmetic in traditional
+    # IEEE 754-like systems. An interval's bounds are [inclusive] limits on the values the interval
+    # can represent. For half intervals, they will have one more bit of precision than the
+    # interval's representative.
+
+    # TODO: bounds are always inclusive; this could be tracked, for example to actually do the right
+    # thing with <> and rounding modes.
+
+
+    def collapse(self, center=False):
+        """Collapse an interval down to a representative point.
+        For sided intervals, can return the "bottom" of the interval, or its true center, which requires
+        1-2 bits more precision.
+        """
+        if center and self._sided_interval and self._inexact:
+            extra_bits = 1 if self._full_interval else 2
+            return Sink(self.narrow(n=self._n - extra_bits), inexact=False, sided_interval=False).away()
+        else:
+            return Sink(self, inexact=False)
+
+
+    def explode(self, sided=None, full=None):
+        """Explode a representative point to an enclosing interval.
+        If provided, sided and full replace the corresponding properties of the original interval.
+        It is invalid to explode a larger interval to a smaller one, i.e. full to half or
+        unsided to sided.
+        """
+        if sided and (not self._sided_interval):
+            raise ValueError('explode: cannot shrink unsided interval {} to sided'.format(repr(self)))
+        elif full and (not self._full_interval):
+            raise ValueError('explode: cannot shrink full interval {} to half'.format(repr(self)))
+        else:
+            sided = self._sided_interval if sided is None else sided
+            full = self._full_interval if full is None else full
+            return Sink(self, inexact=True, sided_interval=sided, full_interval=full)
+
+
+    def bounds(self):
         """Upper and lower bounds on the value of this number.
-        Note that this could do something clever with half intervals, but it doesn't.
+        Intervals are inclusive.
         """
         if self._inexact:
-            return self.above().collapse(), self.below().collapse()
+            if self._full_interval:
+                base = self
+            else:
+                base = self.narrow(n=self._n - 1)
+
+            if self._sided_interval:
+                if self._negative:
+                    return base.away().collapse(), self.collapse()
+                else:
+                    return self.collapse(), base.away().collapse()
+            else:
+                return base.below().collapse(), base.above().collapse()
         else:
             return Sink(self), Sink(self)
 
 
-    def split(self, n=None, rm=0) -> typing.Tuple[Sink, Sink]:
+    def trunc(self, n):
+        """Round this number towards 0, throwing away the low bits, or append zeros
+        onto the end, to provide a lower bound on its absolute value at any n.
+        """
+        if self._inexact:
+            # TODO
+            raise ValueError('trunc: unsupported: inexact value {}'.format(repr(self)))
+
+        if self._n == n:
+            return Sink(self)
+        else:
+            if self._n < n:
+                # get rid of bits
+                offset = n - self._n
+                c = self._c >> offset
+            else:
+                # add bits
+                offset = self._n - n
+                c = self._c << offset
+            # figure out p and e again
+            p = c.bit_length()
+            e = n + p
+            return Sink(self, e=e, n=n, p=p, c=c)
+
+
+    def split(self, n=None, rm=0):
         """Split a number into an exact part and an uncertainty bound.
         If we produce split(A, n) -> A', E, then we know:
           - A' is exact
           - E is zero
           - lsb(A') == lsb(E) == max(n, lsb(A)) if A is inexact
           - lsb(A') == lsb(E) == n if A is exact
+        TODO: is this correct????
         """
         if n is None:
             n = self._n
@@ -545,7 +727,8 @@ class Sink:
             if offset == 0 or self._inexact:
                 return (
                     Sink(self, inexact=False),
-                    Sink(0, n=self._n, negative=self._negative, inexact=self._inexact),
+                    Sink(0, n=self._n, negative=self._negative, inexact=self._inexact,
+                         sided_interval=self._sided_interval, full_interval=self._full_interval),
                 )
             else:
                 extended_c = self._c << -offset
@@ -553,7 +736,8 @@ class Sink:
                 extended_e = n if extended_c == 0 else self._e
                 return (
                     Sink(self, e=extended_e, n=n, p=extended_p, c=extended_c),
-                    Sink(0, n=n, negative=self._negative, inexact=self._inexact),
+                    Sink(0, n=n, negative=self._negative, inexact=self._inexact,
+                         sided_interval=self._sided_interval, full_interval=self._full_interval),
                 )
         else:
             lost_bits = self._c & bitmask(offset)
@@ -563,10 +747,14 @@ class Sink:
 
             e = max(self._e, n)
             inexact = self._inexact or lost_bits != 0
+            if left_bits == 0:
+                sided = True
+            else:
+                sided = self._sided_interval
 
-            rounded = Sink(self, e=e, n=n, p=e-n, c=left_bits, inexact=False)
+            rounded = Sink(self, e=e, n=n, p=e-n, c=left_bits, inexact=False, sided_interval=sided)
             # in all cases we copy the sign onto epsilon... is that right?
-            epsilon = Sink(0, n=n, negative=self._negative, inexact=inexact)
+            epsilon = Sink(0, n=n, negative=self._negative, inexact=inexact, sided_interval=sided, full_interval=self._full_interval)
 
             if half_bit == 1:
                 # Note that if we're rounding an inexact number, then the new tight 1-ulp envelope
@@ -592,7 +780,7 @@ class Sink:
                 return rounded, epsilon
 
 
-    def widen(self, min_n = None, max_p = None) -> Sink:
+    def widen(self, min_n = None, max_p = None):
         """Round this number, using split, so that n is >= min_n and p <= max_p.
         By default, preserve n and p, returning this number unchanged.
         """
@@ -602,7 +790,7 @@ class Sink:
             n = min_n
 
         if max_p is not None:
-            n = max(n, self._e - maxp)
+            n = max(n, self._e - max_p)
 
         rounded, epsilon = self.split(n)
 
@@ -618,7 +806,7 @@ class Sink:
         return rounded
 
 
-    def narrow(self, n=None, p=None) -> Sink:
+    def narrow(self, n=None, p=None):
         """Force this number into a representation with either n or p.
         By default, preserve n and p, returning this number unchanged.
         Note that this may produce a smaller envelope that does not contain
@@ -664,53 +852,185 @@ class Sink:
         return rounded
 
 
+    def ieee_754(self, w, p):
+        emax = (1 << (w - 1)) - 1
+        emin = 1 - emax
+        max_p = p
+        min_n = emin - p
+
+        if self._c == 0:
+            return self.narrow(n=min_n)
+        elif self._n <= min_n or self._p <= max_p:
+            return self.widen(min_n=min_n, max_p=max_p)
+        else:
+            extra_bits = p - self._p
+            return self.narrow(n=max(min_n, self._n - extra_bits))
+
+
     def as_mpfr(self):
         return from_mantissa_exp(self._c * (-1 if self._negative else 1), self._n + 1)
 
 
     def as_np(self, ftype=np.float64):
-        # TODO: breaks for 0
-        return mkfloat(self._negative, self._e, self._c, ftype=ftype)
+        if ftype == np.float16:
+            w = 5
+            p = 11
+        elif ftype == np.float32:
+            w = 8
+            p = 24
+        elif ftype == np.float64:
+            w = 11
+            p = 53
+        else:
+            raise TypeError('as_np: expected np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+
+        rounded = self.ieee_754(w, p)
+        return mkfloat(rounded._negative, rounded._e, rounded._c, ftype=ftype)
 
 
-    # arith, for now, only optimistic precision bounds
+    # core arith and comparison
 
 
     def __neg__(self):
-        # oh gawd
-        sunk = Sink(None)
-        sunk._e = self._e
-        sunk._n = self._n
-        sunk._p = self._p
-        sunk._c = self._c
-        sunk._negative = not self._negative
-        sunk._inexact = self._inexact
-        sunk._isinf = self._isinf
-        sunk._isnan = self._isnan
-        return sunk
+        return Sink(self, negative=not self._negative)
 
 
-    def __add__(self, arg):
-        # slow and scary
-        prec = (max(self._e, arg._e) - min(self._n, arg._n)) + 1
-        # could help limit with this?
-        if (not self._inexact) and (not arg._inexact):
-            n = None
-        elif self._inexact and (not arg._inexact):
-            n = self._n
-        elif arg._inexact and (not self._inexact):
-            n = arg._n
+    def compareto(self, x, strict=True):
+        """Compare to another number.
+        Returns two different things: the ordering, and the sharpness.
+        For a.compareto(b), the ordering is:
+         -1 iff a < b
+          0 iff a = b
+          1 iff a > b
+        And the sharpness is:
+          True iff the intervals do not overlap, or a and b are the same point
+          False iff the intervals overlap at a single point (i.e. they are touching)
+          None iff the intervals overlap for a region larger than a single point
+        Note that two identical points have a sharpness of False, rather than None.
+        """
+        lower, upper = self.bounds()
+        xlower, xupper = x.bounds()
+
+        # normalize to smallest n
+        n = min(upper._n, lower._n, xupper._n, xlower._n)
+        lower = lower.narrow(n=n)
+        upper = upper.narrow(n=n)
+        xlower = xlower.narrow(n=n)
+        xupper = xupper.narrow(n=n)
+
+        # convert to ordinals
+        lower_ord = -lower._c if lower._negative else lower._c
+        upper_ord = -upper._c if upper._negative else upper._c
+        xlower_ord = -xlower._c if xlower._negative else xlower._c
+        xupper_ord = -xupper._c if xupper._negative else xupper._c
+
+        # integer comparison
+        if not (lower_ord <= upper_ord and xlower_ord <= xupper_ord):
+            # TODO: assertion
+            self.details()
+            x.details()
+            print(lower_ord, upper_ord, xlower_ord, xupper_ord)
+            raise ValueError('compareto: unreachable')
+        elif lower_ord == upper_ord == xlower_ord == xupper_ord:
+            # a == b
+            order = 0
+            sharp = True
+        elif upper_ord <= xlower_ord:
+            # a <= b
+            order = -1
+            sharp = upper_ord != xlower_ord
+        elif xupper_ord < lower_ord:
+            # b <= a
+            order = 1
+            sharp = xupper_ord != lower_ord
         else:
-            n = max(self._n, arg._n)
-        result_f, ctx = withprec(prec, gmp.add, self.as_mpfr(), arg.as_mpfr())
-        result = Sink(result_f, p=prec, negative=(result_f < 0),
-                      inexact=(ctx.inexact or self._inexact or arg._inexact))
-        # mandatory rounding even for optimists:
-        return result.trunc(n)
+            # overlap: compare representatives
+            # TODO: center here? it makes comparisons fair...
+            center = False
+            rep = self.collapse(center=center)
+            xrep = x.collapse(center=center)
+
+            n = min(rep._n, xrep._n)
+            rep = rep.narrow(n=n)
+            xrep = xrep.narrow(n=n)
+            rep_ord = -rep._c if rep._negative else rep._c
+            xrep_ord = -xrep._c if xrep._negative else xrep._c
+
+            if rep == xrep:
+                # a == b
+                order = 0
+            elif rep < xrep:
+                # a < b
+                order = -1
+            else:
+                # b < a
+                order = 1
+
+            sharp = None
+
+        if strict and sharp is None:
+            # TODO: this will print warnings, but has no other teeth, and is otherwise unused
+            # in inline comparisons.
+            print('WARNING: compared overlapping intervals {} and {}'.format(self, x))
+
+        return order, sharp
 
 
-    def __sub__(self, arg):
-        return self + (-arg)
+    def __lt__(self, x):
+        order, sharp = self.compareto(x)
+        if sharp is False:
+            # TODO: fangs
+            print('WARNING: {} < {} is not known to be sharp'.format(self, x))
+        return order < 0
+
+    def __le__(self, x):
+        order, sharp = self.compareto(x)
+        return order <= 0
+
+    def __eq__(self, x):
+        order, sharp = self.compareto(x)
+        return order == 0
+
+    def __ne__(self, x):
+        order, sharp = self.compareto(x)
+        return order != 0
+
+    def __ge__(self, x):
+        order, sharp = self.compareto(x)
+        return 0 <= order
+
+    def __gt__(self, x):
+        order, sharp = self.compareto(x)
+        if sharp is False:
+            # TODO: fangs
+            print('WARNING: {} > {} is not known to be sharp'.format(self, x))
+        return 0 < order
+
+
+    # TODO: arith
+
+
+    # def __add__(self, arg):
+    #     # slow and scary
+    #     prec = (max(self._e, arg._e) - min(self._n, arg._n)) + 1
+    #     # could help limit with this?
+    #     if (not self._inexact) and (not arg._inexact):
+    #         n = None
+    #     elif self._inexact and (not arg._inexact):
+    #         n = self._n
+    #     elif arg._inexact and (not self._inexact):
+    #         n = arg._n
+    #     else:
+    #         n = max(self._n, arg._n)
+    #     result_f, ctx = withprec(prec, gmp.add, self.as_mpfr(), arg.as_mpfr())
+    #     result = Sink(result_f, p=prec, negative=(result_f < 0),
+    #                   inexact=(ctx.inexact or self._inexact or arg._inexact))
+    #     # mandatory rounding even for optimists:
+    #     return result.trunc(n)
+
+
+    # def __sub__(self, arg):
+    #     return self + (-arg)
 
 
 def adjacent_mpfrs(x):
