@@ -238,6 +238,12 @@ def withprec(p, op, *args):
         result = op(*args)
         return result, gmpctx
 
+    
+def add_at(op1, op2, p):
+    result, gmpctx = withprec(p, gmp.add, op1, op2)
+    return result, gmpctx.inexact
+
+
 
 # more debugging
 
@@ -267,7 +273,63 @@ def _test_gmp():
 _DEFAULT_PREC = 53
 
 
-def enclose(lower, upper):
+def _interval_scan_away(lower, upper, n):
+    """Scan for a representative with n=n whose envelope encloses lower and upper.
+    Returns two things:
+      True, if the interval is provably too small for the bound, else False
+        (i.e. we found a representative whose envelope is totally enclosed between lower and upper).
+      None, if no enclosing representative is found, else the representative.
+    """
+    if lower._inexact or upper._inexact:
+        raise ValueError('enclose: can only scan exact numbers')
+    elif lower._negative or upper._negative:
+        raise ValueError('enclose: can only scan positive numbers')
+    elif not lower < upper:
+        raise ValueError('enclose: can only scan ordered envelope, got [{}, {}]'.format(lower, upper))
+
+    rep = lower.trunc(n)
+    if rep.is_exactly_zero():
+        rep = rep.explode(sided=True, full=False)
+    else:
+        rep = rep.explode(sided=False, full=False)
+
+    # This loop will only make a small number of iterations.
+    # We will always hit the bottom of the interval after a short amount of time:
+    # if we truncated a lot of bits off, then the interval is large and we'll hit the
+    # exact value in one step. If we didn't truncate bits, the interval might be
+    # small, but we'll start exactly at lower.
+    # Because we detect the case where the envelope size is provable smaller than the
+    # interval, we will abort after a few iterations in cases where the envelope
+    # is much smaller than the interval.
+        
+    while True:
+        bound_lo, bound_hi = rep.bounds()
+        bottom_enclosed = bound_lo <= lower
+        top_enclosed = upper <= bound_hi
+        
+        if bottom_enclosed and top_enclosed:
+            # representative encloses the interval: return it
+            return False, rep
+        elif not (bottom_enclosed or top_enclosed):
+            # interval encloses the representative: unless we were using the half envelope
+            # near zero, this is proof that this n is too small
+            if rep._sided_interval:
+                # try the next number to see if that gives us a proof
+                # TODO: sided -> sided will break everything
+                rep = rep.away(const_p=False)
+            else:
+                return True, None
+        elif bottom_enclosed:
+            # (top wasn't enclosed, or we'd have hit the first case)
+            # bottom of interval was good, top wasn't: move on to the next number to see what
+            # happens
+            rep = rep.away(const_p=False)
+        else:
+            # bottom of interval was no good, so we went too far.
+            return False, None
+
+        
+def enclose(lower, upper, min_n=None):
     """Return the sink with the smallest interval that encloses lower and upper.
     Upper and lower must be exact sinks, with upper <= lower.
     TODO: auto bounds?
@@ -283,31 +345,85 @@ def enclose(lower, upper):
     zero = Sink(0)
     # because upper != lower, the distance between them must be larger than the interval size
     # with this n
-    min_n = min(lower._n, upper._n) - 1
-    
+    min_possible_n = min(lower._n, upper._n) - 1
+    if min_n is None:
+        min_n = min_possible_n
+    else:
+        min_n = max(min_possible_n, min_n)
+        
     if lower < zero and upper > zero:
         # binsearch around zero
         offset = 1
         n_lo = n_hi = min_n
-        bound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False)
+        bound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False).bounds()
         # first expsearch for n_hi
         while lower < bound_lo or bound_hi < upper:
+            n_lo = n_hi
+            n_hi = n_hi + offset
             offset <<= 1
-            n_lo = n_hi = n_hi + offset
-            nbound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False)
-        # refine with binsearch
-        while ???:
+            bound_lo, bound_hi = zero.trunc(n_hi).explode(sided=False, full=False).bounds()
+        # final condition: n_hi, bound_lo, bound_hi are all safe
+        while n_lo + 1 < n_hi:
             n_mid = n_lo + ((n_hi - n_lo) // 2)
-            
+            bound_lo, bound_hi = zero.trunc(n_mid).explode(sided=False, full=False).bounds()
             if lower < bound_lo or bound_hi < upper:
-                
-            
-        
+                # bound is unsafe, update n_lo
+                n_lo = n_mid
+            else:
+                # bound is safe, update n_hi
+                n_hi = n_mid
+        # final conditions: n_lo + 1 = n_hi, n_lo doesn't work, n_hi works
+        # OR, we never entered the loop, and n_lo = n_hi = min_n
+        return zero.trunc(n_hi).explode(sided=False, full=False)
 
     else:
-        # Binsearch for largest interval known to be too small.
-        # We will know this interval size because
-        pass
+        # First, reorder based on magnitude, as we can only trunc towards zero.
+        if lower._negative:
+            tmp = -lower
+            lower = -upper
+            upper = tmp
+            negative = True
+        else:
+            negative = False
+
+        # Binsearch for the largest interval that doesn't work.
+        # We know we've found it when we can demonstrate that the span
+        # of this interval is too small, but the demonstration fails for the next size up.
+        offset = 1
+        n_lo = n_hi = min_n
+        too_small, enclosing_rep = _interval_scan_away(lower, upper, n_hi)
+        # first expsearch for n_hi
+        while too_small:
+            n_lo = n_hi
+            n_hi = n_hi + offset
+            offset <<= 1
+            too_small, enclosing_rep = _interval_scan_away(lower, upper, n_hi)
+        # final condition: n_hi is not provably too small
+        while n_lo + 1 < n_hi:
+            n_mid = n_lo + ((n_hi - n_lo) // 2)
+            too_small, enclosing_rep = _interval_scan_away(lower, upper, n_mid)
+            if too_small:
+                # provably too small, update n_lo
+                n_lo = n_mid
+            else:
+                # not provable: update n_hi
+                n_hi = n_mid
+        # final conditions: n_lo + 1 = n_hi, n_lo is provably too small, n_hi has no such proof
+        # OR, we never entered the loops, and n_lo = n_hi = min_n
+        
+        # We now perform a linear search, starting from n_lo, until we find the smallest n
+        # that can produce a representative. This should not take very long, as we are doubling
+        # the size of the envelope each time we increment n.
+        # TODO: We could save a few cycles by refusing to actually test n_lo if it is the same as n_hi.
+        n = n_lo
+        while True:
+            too_small, enclosing_rep = _interval_scan_away(lower, upper, n)
+            if enclosing_rep is None:
+                n += 1
+            else:
+                # remember to correct the sign
+                return Sink(enclosing_rep, negative=negative)
+
 
 class Sink(object):
     _e : int = None # exponent
@@ -654,14 +770,15 @@ class Sink(object):
         It is invalid to explode a larger interval to a smaller one, i.e. full to half or
         unsided to sided.
         """
-        if sided and (not self._sided_interval):
-            raise ValueError('explode: cannot shrink unsided interval {} to sided'.format(repr(self)))
-        elif full and (not self._full_interval):
-            raise ValueError('explode: cannot shrink full interval {} to half'.format(repr(self)))
-        else:
-            sided = self._sided_interval if sided is None else sided
-            full = self._full_interval if full is None else full
-            return Sink(self, inexact=True, sided_interval=sided, full_interval=full)
+        if self._inexact:
+            if sided and (not self._sided_interval):
+                raise ValueError('explode: cannot shrink unsided interval {} to sided'.format(repr(self)))
+            elif full and (not self._full_interval):
+                raise ValueError('explode: cannot shrink full interval {} to half'.format(repr(self)))
+
+        sided = self._sided_interval if sided is None else sided
+        full = self._full_interval if full is None else full
+        return Sink(self, inexact=True, sided_interval=sided, full_interval=full)
 
 
     def bounds(self):
@@ -1007,9 +1124,54 @@ class Sink(object):
         return 0 < order
 
 
-    # TODO: arith
+    #TODO: arith
+    #TODO: precision explodes with unnecessary trailing zeros, which is probably bad...
+
+    def __add__(self, x):
+        """Add this sink to another sink x, exactly. Fails if either is inexact."""
+        if self._inexact or x._inexact:
+            raise ValueError('linear: can only add exact sinks, got {} + {}'.format(repr(self), repr(x)))
+        n = min(self._n, x._n)
+        c_norm = self._c << (self._n - n)
+        xc_norm = x._c << (x._n - n)
+        sign = -1 if self._negative else 1
+        xsign = -1 if x._negative else 1
+        signed_c = (sign * c_norm) + (xsign * xc_norm)
+        if signed_c >= 0:
+            c = signed_c
+            negative = False
+        else:
+            c = -signed_c
+            negative = True
+
+        p = c.bit_length()
+        e = n + p
+        #TODO: inf and nan
+        #TODO: sign of negative 0
+        #TODO: envelope properties
+        return Sink(self, e=e, n=n, p=p, c=c, negative=negative, sided_interval=False)
 
 
+    def __sub__(self, x):
+        """Alias of self + (-x)"""
+        return self + (-x)
+
+
+    def __mul__(self, x):
+        """Multiply this sink by another sink x, exactly. Fails if either is inexact."""
+        if self._inexact or x._inexact:
+            raise ValueError('poly: can only multiply exact sinks, got {} * {}'.format(repr(self), repr(x)))
+        n = self._n + x._n + 1 # equivalent to (self._n + 1) + (x._n + 1) - 1
+        c = self._c * x._c
+        p = c.bit_length()
+        e = n + p
+        #TODO: None in xor
+        negative = bool(self._negative) != bool(x._negative)
+        #TODO: inf and nan
+        #TODO: envelope properties
+        return Sink(self, e=e, n=n, p=p, c=c, negative=negative, sided_interval=False)
+        
+    
     # def __add__(self, arg):
     #     # slow and scary
     #     prec = (max(self._e, arg._e) - min(self._n, arg._n)) + 1
@@ -1031,31 +1193,6 @@ class Sink(object):
 
     # def __sub__(self, arg):
     #     return self + (-arg)
-
-
-def adjacent_mpfrs(x):
-    # so this is completely broken
-    yield x
-
-
-def inbounds(lower, upper):
-    """pls to give mpfrs... nope we need to use sinks herp derp"""
-    if upper < lower:
-        raise ValueError('invalid bounding range [{}, {}]'.format(upper))
-    elif lower == upper:
-        # TODO: breaks for -0
-        return Sink(lower, p=lower.precision, negative=lower<0, inexact=False)
-    else:
-        # sterbenz applies here
-        prec = max(lower.precision, upper.precision)
-        difference = withprec(prec, gmp.sub, upper, lower)
-        # retain another bit
-        prec += 1
-        half_difference = withprec(prec, gmp.div, difference, 2)
-        mid = withprec(prec, gmp.add, lower, half_difference)
-        # TODO: linear scan
-        while prec > 2:
-            pass
 
 
 # halp
