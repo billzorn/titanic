@@ -16,6 +16,13 @@ _Z3SORT = z3.FPSort(5, 11)
 _Z3RM = z3.RoundNearestTiesToEven()
 
 
+# Sinking Point library
+import sinking as sp
+Sink = sp.Sink
+gmp = sp.gmp
+mpfr = sp.mpfr
+
+
 # pairwise implementations of n-ary comparisons; these don't short-circuit
 
 def _impl_by_pairs(op, conj):
@@ -36,38 +43,27 @@ def _impl_all_pairs(op, conj):
             return conj(op(args[i], args[j]) for i in range(len(args)-1) for j in range(i+1,len(args)))
     return impl
 
-# evaluation contexts
+# evaluation contexts and modes
+
+EVAL_754 = 0
+EVAL_OPTIMISTIC = 1
 
 class EvalCtx(object):
-
-    def __init__(self, inputs):
+    
+    def __init__(self, inputs, w=11, p=53, mode=EVAL_754):
         self.inputs = inputs
         self.variables = inputs
+        self.mode = mode
+        # 754-like
+        self.w = w
+        self.p = p
+        self.emax = (1 << (self.w - 1)) - 1
+        self.emin = 1 - self.emax
+        self.n = self.emin - self.p
 
     def let(self, bindings):
         self.variables = self.variables.update(bindings)
         return self
-
-class SigCtx(object):
-    def __init__(self, x, lsb=None, lsb_min=None):
-        self.x = float(x) # TODO: raw python floats
-
-        m, e = math.frexp(self.x)
-        if lsb is None:
-            self.lsb = e - 53
-        else:
-            self.lsb = lsb
-        if lsb_min is None:
-            self.lsb_min = self.lsb
-        else:
-            self.lsb_min = lsb_min
-
-        #print(repr(self))
-
-    def __repr__(self):
-        m, e = math.frexp(self.x)
-        return ("x: {}\n  lsb:     {}\n  lsb_min: {}\n  precision:     {}\n  precision lost: {}"
-                .format(repr(self.x), repr(self.lsb), repr(self.lsb_min), repr(e - self.lsb), repr(self.lsb - self.lsb_min)))
 
 # ast
 
@@ -76,7 +72,6 @@ class Expr(object):
 
     def __init__(self):
         self._z3_expr = None
-        self._sigctx = None
 
     @property
     def z3_expr(self):
@@ -88,10 +83,10 @@ class Expr(object):
         return self.evaluate(EvalCtx(*args, **kwargs))
 
     def evaluate(self, ctx: EvalCtx):
-        raise ValueError('evaluation unimplemented for ast node ' + type(self).__name__)
+        raise ValueError('floating point unimplemented for ast node ' + type(self).__name__)
 
-    def evaluate_sig(self, ctx: EvalCtx):
-        raise ValueError('significance unimplemented for ast node ' + type(self).__name__)
+    def evaluate_sink(self, ctx: EvalCtx):
+        raise ValueError('sinking point evaluation unimplemented for ast node ' + type(self).__name__)
 
     def _translate_z3(self):
         raise ValueError('z3 compilation not implemented for ast node ' + type(self).__name__)
@@ -145,23 +140,41 @@ class ValueExpr(Expr):
 class Val(ValueExpr):
     name: str = 'Val'
 
+    #TODO: any input processing beyond passing to float() / mpfr()
+    
     def evaluate(self, ctx: EvalCtx):
-        return float(self.value) # TODO
+        return float(self.value)
 
-    def evaluate_sig(self, ctx: EvalCtx):
-        return SigCtx(self.value)
+    def evaluate_sink(self, ctx: EvalCtx):
+        rep = Sink(mpfr(self.value, ctx.p))
+        if rep._n < ctx.n:
+            prec = rep._e - min_n
+            if prec < 2:
+                raise ValueError('unsupported: gmp with precision < 2: {}({}), n={}, p={}'.format(
+                    self.name, repr(self.value), repr(ctx.n), repr(ctx.p)))
+            rep = Sink(mpfr(self.value, prec))
+            if rep._n != ctx.n:
+                #TODO: fixup
+                # as in sp.withnprec
+                if rep._n == min_n + 1:
+                    # rounded up, put back one bit
+                    rep = Sink(mpfr(result, result.precision + 1))
+                else:
+                    raise ValueError('unsupported: n should be {}, got {}: {}({}), n={}, p={}'.format(
+                        repr(ctx.n), repr(rep._n), self.name, repr(self.value), repr(ctx.n), repr(ctx.p)))
+        return rep
 
     def _translate_z3(self):
-        return z3.FPVal(self.value, _Z3SORT) # TODO
+        return z3.FPVal(self.value, _Z3SORT)
 
 class Var(ValueExpr):
     name: str = 'Var'
 
     def evaluate(self, ctx: EvalCtx):
-        return float(ctx.variables[self.value]) # TODO
+        return ctx.variables[self.value]
 
-    def evaluate_sig(self, ctx: EvalCtx):
-        return SigCtx(ctx.variables[self.value])
+    def evaluate_sink(self, ctx: EvalCtx):
+        return ctx.variables[self.value]
 
     def _translate_z3(self):
         return z3.FP(self.value, _Z3SORT) # TODO
@@ -182,12 +195,12 @@ class If(NaryExpr):
         else:
             return else_body.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         cond, then_body, else_body = self.children
-        if cond.evaluate(ctx): # TODO - uses raw evaluate without significance tracking
-            return then_body.evaluate_sig(ctx)
+        if cond.evaluate(ctx):
+            return then_body.evaluate_sink(ctx)
         else:
-            return else_body.evaluate_sig(ctx)
+            return else_body.evaluate_sink(ctx)
 
     def _translate_z3(self):
         cond, then_body, else_body = self.children
@@ -245,10 +258,10 @@ class Neg(UnaryExpr):
         (child,) = self.children
         return -child.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         (child,) = self.children
-        sctx = child.evaluate_sig(ctx)
-        return SigCtx(-sctx.x, sctx.lsb, sctx.lsb_min)
+        # independent of mode
+        return -child.evaluate_sink(ctx)
 
     def _translate_z3(self):
         (child,) = self.children
@@ -262,17 +275,30 @@ class Sqrt(UnaryExpr):
         (child,) = self.children
         return math.sqrt(child.evaluate(ctx))
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         (child,) = self.children
-        child_sig = child.evaluate_sig(ctx)
-        child_e, child_m = math.frexp(child_sig.x)
+        rep = child.evaluate_sink(ctx)
         
-        sigbits = child_e - child_sig.lsb
-        maxbits = child_e - child_sig.lsb_min
-        x = math.sqrt(child_sig.x)
-        m, e = math.frexp(x)
+        if ctx.mode == EVAL_754:
+            n = ctx.n
+            p = ctx.p
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            n = ctx.n
+            p = min(rep._p, ctx.p) if rep._inexact else ctx.p
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
-        return SigCtx(x, e - sigbits, e - maxbits)
+        result, op_inexact = sp.withnprec(gmp.sqrt, rep.as_mpfr(), min_n=n, max_p=p)
+
+        if ctx.mode == EVAL_754:
+            inexact = False
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            inexact = rep._inexact or op_inexact
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        #TODO: envelopes?
+        return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
         (child,) = self.children
@@ -285,12 +311,34 @@ class Add(BinaryExpr):
         left, right = self.children
         return left.evaluate(ctx) + right.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         left, right = self.children
-        left_sig = left.evaluate_sig(ctx)
-        right_sig = right.evaluate_sig(ctx)
-        return SigCtx(left_sig.x + right_sig.x, max(left_sig.lsb, right_sig.lsb), min(left_sig.lsb_min, right_sig.lsb_min))
+        left_rep = left.evaluate_sink(ctx)
+        right_rep = right.evaluate_sink(ctx)
 
+        if ctx.mode == EVAL_754:
+            n = ctx.n
+            p = ctx.p
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            left_n = left_rep._n if left_rep._inexact else ctx.n
+            right_n = right_rep._n if right_rep._inexact else ctx.n
+            n = max(left_n, right_n)
+            p = ctx.p
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        result, op_inexact = sp.withnprec(gmp.add, left_rep.as_mpfr(), right_rep.as_mpfr(), min_n=n, max_p=p)
+
+        if ctx.mode == EVAL_754:
+            inexact = False
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            inexact = left_rep._inexact or right_rep._inexact or op_inexact
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        #TODO: envelopes?
+        return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
+        
     def _translate_z3(self):
         left, right = self.children
         return z3.fpAdd(_Z3RM, left.z3_expr, right.z3_expr)
@@ -302,11 +350,33 @@ class Sub(BinaryExpr):
         left, right = self.children
         return left.evaluate(ctx) - right.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         left, right = self.children
-        left_sig = left.evaluate_sig(ctx)
-        right_sig = right.evaluate_sig(ctx)
-        return SigCtx(left_sig.x - right_sig.x, max(left_sig.lsb, right_sig.lsb), min(left_sig.lsb_min, right_sig.lsb_min))
+        left_rep = left.evaluate_sink(ctx)
+        right_rep = right.evaluate_sink(ctx)
+
+        if ctx.mode == EVAL_754:
+            n = ctx.n
+            p = ctx.p
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            left_n = left_rep._n if left_rep._inexact else ctx.n
+            right_n = right_rep._n if right_rep._inexact else ctx.n
+            n = max(left_n, right_n)
+            p = ctx.p
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        result, op_inexact = sp.withnprec(gmp.sub, left_rep.as_mpfr(), right_rep.as_mpfr(), min_n=n, max_p=p)
+
+        if ctx.mode == EVAL_754:
+            inexact = False
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            inexact = left_rep._inexact or right_rep._inexact or op_inexact
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        #TODO: envelopes?
+        return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
         left, right = self.children
@@ -319,19 +389,33 @@ class Mul(BinaryExpr):
         left, right = self.children
         return left.evaluate(ctx) * right.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         left, right = self.children
-        left_sig = left.evaluate_sig(ctx)
-        right_sig = right.evaluate_sig(ctx)
-        left_m, left_e = math.frexp(left_sig.x)
-        right_m, right_e = math.frexp(right_sig.x)
+        left_rep = left.evaluate_sink(ctx)
+        right_rep = right.evaluate_sink(ctx)
 
-        sigbits = min(left_e - left_sig.lsb, right_e - right_sig.lsb)
-        maxbits = max(left_e - left_sig.lsb_min, right_e - right_sig.lsb_min)
-        x = left_sig.x * right_sig.x
-        m, e = math.frexp(x)
+        if ctx.mode == EVAL_754:
+            n = ctx.n
+            p = ctx.p
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            n = ctx.n
+            left_p = left_rep._p if left_rep._inexact else ctx.p
+            right_p = right_rep._p if right_rep._inexact else ctx.p
+            p = min(left_p, right_p)
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
-        return SigCtx(x, e - sigbits, e - maxbits)
+        result, op_inexact = sp.withnprec(gmp.mul, left_rep.as_mpfr(), right_rep.as_mpfr(), min_n=n, max_p=p)
+
+        if ctx.mode == EVAL_754:
+            inexact = False
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            inexact = left_rep._inexact or right_rep._inexact or op_inexact
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
+
+        #TODO: envelopes?
+        return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
         left, right = self.children
@@ -344,27 +428,33 @@ class Div(BinaryExpr):
         left, right = self.children
         return left.evaluate(ctx) / right.evaluate(ctx)
 
-    def evaluate_sig(self, ctx: EvalCtx):
+    def evaluate_sink(self, ctx: EvalCtx):
         left, right = self.children
-        left_sig = left.evaluate_sig(ctx)
-        right_sig = right.evaluate_sig(ctx)
-        left_m, left_e = math.frexp(left_sig.x)
-        right_m, right_e = math.frexp(right_sig.x)
+        left_rep = left.evaluate_sink(ctx)
+        right_rep = right.evaluate_sink(ctx)
 
-        sigbits = min(left_e - left_sig.lsb, right_e - right_sig.lsb)
-        maxbits = max(left_e - left_sig.lsb_min, right_e - right_sig.lsb_min)
-        x = left_sig.x / right_sig.x
-        m, e = math.frexp(x)
+        if ctx.mode == EVAL_754:
+            n = ctx.n
+            p = ctx.p
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            n = ctx.n
+            left_p = left_rep._p if left_rep._inexact else ctx.p
+            right_p = right_rep._p if right_rep._inexact else ctx.p
+            p = min(left_p, right_p)
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
-        out_sig = SigCtx(x, e - sigbits, e - maxbits)
+        result, op_inexact = sp.withnprec(gmp.div, left_rep.as_mpfr(), right_rep.as_mpfr(), min_n=n, max_p=p)
 
-        print("DIV")
-        print(left_sig)
-        print(right_sig)
-        print(out_sig)
-        print("")
+        if ctx.mode == EVAL_754:
+            inexact = False
+        elif ctx.mode == EVAL_OPTIMISTIC:
+            inexact = left_rep._inexact or right_rep._inexact or op_inexact
+        else:
+            raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
-        return out_sig
+        #TODO: envelopes?
+        return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
         left, right = self.children
@@ -387,11 +477,18 @@ class LT(NaryExpr):
     def evaluate(self, ctx: EvalCtx):
         return _nary_lt(child.evaluate(ctx) for child in self.children)
 
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_lt(child.evaluate_sink(ctx) for child in self.children)
+
 class GT(NaryExpr):
     name: str = '>'
 
     def evaluate(self, ctx: EvalCtx):
         return _nary_gt(child.evaluate(ctx) for child in self.children)
+
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_gt(child.evaluate_sink(ctx) for child in self.children)
+
 
 class LEQ(NaryExpr):
     name: str = '<='
@@ -399,11 +496,17 @@ class LEQ(NaryExpr):
     def evaluate(self, ctx: EvalCtx):
         return _nary_le(child.evaluate(ctx) for child in self.children)
 
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_le(child.evaluate_sink(ctx) for child in self.children)
+
 class GEQ(NaryExpr):
     name: str = '>='
 
     def evaluate(self, ctx: EvalCtx):
         return _nary_ge(child.evaluate(ctx) for child in self.children)
+
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_ge(child.evaluate_sink(ctx) for child in self.children)
 
 class EQ(NaryExpr):
     name: str = '=='
@@ -411,11 +514,17 @@ class EQ(NaryExpr):
     def evaluate(self, ctx: EvalCtx):
         return _nary_eq(child.evaluate(ctx) for child in self.children)
 
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_eq(child.evaluate_sink(ctx) for child in self.children)
+
 class NEQ(NaryExpr):
     name: str = '!='
 
     def evaluate(self, ctx: EvalCtx):
         return _nary_ne(child.evaluate(ctx) for child in self.children)
+
+    def evaluate_sink(self, ctx: EvalCtx):
+        return _nary_ne(child.evaluate_sink(ctx) for child in self.children)
 
 # logic
 
@@ -425,11 +534,17 @@ class And(NaryExpr):
     def evaluate(self, ctx: EvalCtx):
         return all(*[child.evaluate(ctx) for child in self.children])
 
+    def evaluate_sink(self, ctx: EvalCtx):
+        return all(*[child.evaluate_sink(ctx) for child in self.children])
+
 class Or(NaryExpr):
     name: str = 'or'
 
     def evaluate(self, ctx: EvalCtx):
         return any(*[child.evaluate(ctx) for child in self.children])
+
+    def evaluate_sink(self, ctx: EvalCtx):
+        return any(*[child.evaluate_sink(ctx) for child in self.children])
 
 class Not(UnaryExpr):
     name: str = 'not'
@@ -437,3 +552,7 @@ class Not(UnaryExpr):
     def evaluate(self, ctx: EvalCtx):
         (child,) = self.children
         return not child.evaluate(ctx)
+
+    def evaluate_sink(self, ctx: EvalCtx):
+        (child,) = self.children
+        return not child.evaluate_sink(ctx)

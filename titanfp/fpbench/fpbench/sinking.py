@@ -238,11 +238,44 @@ def withprec(p, op, *args):
         result = op(*args)
         return result, gmpctx
 
-    
-def add_at(op1, op2, p):
-    result, gmpctx = withprec(p, gmp.add, op1, op2)
-    return result, gmpctx.inexact
+# IEEE754 rounding values:
+# binary16:
+#   w = 5
+#   p = 11
+#   n = -25
+# binary32:
+#   w = 8
+#   p = 24
+#   n = -150
+# binary64:
+#   w = 11
+#   p = 53
+#   n = -1075
 
+def withnprec(op, *args, min_n = -1075, max_p = 53):
+    with gmp.context(precision=max_p, trap_expbound=True) as gmpctx:
+        result = op(*args)
+        inexact = gmpctx.inexact
+    rep = Sink(result)
+    if rep._n < min_n:
+        prec = rep._e - min_n
+        if prec < 2:
+            raise ValueError('unsupported: gmp with precision < 2: {}(*{}) == {}, min_n={}, max_p={}'.format(
+                repr(op), repr(args), repr(result), repr(min_n), repr(max_p)))
+        with gmp.context(precision=prec, trap_expbound=True) as gmpctx:
+            result = op(*args)
+            inexact = gmpctx.inexact
+        rep = Sink(result)
+        if rep._n != min_n:
+            #TODO: fixup
+            # here's a simple stupid hack...
+            if rep._n == min_n + 1:
+                # rounded up, put back one bit
+                result = mpfr(result, result.precision + 1)
+            else:
+                raise ValueError('unsupported: n should be {}, got {}: {}(*{}) == {}, min_n={}, max_p={}'.format(
+                    repr(min_n), repr(rep._n), repr(op), repr(args), repr(result), repr(min_n), repr(max_p)))
+    return result, inexact
 
 
 # more debugging

@@ -252,19 +252,76 @@ def compfile(fname):
 
 
 
-if __name__ == '__main__' and False:
+if __name__ == '__main__':
     import sys
-    parser, tree = parse(sys.stdin.read())
 
-    visitor = Visitor()
-    results = visitor.visit(tree)
-    for x in results:
-        print(str(x))
-        print()
-        print(repr(x))
-        print()
-        print(x.sexp)
+    core = compfile('minimal.fpcore')
+    print(core)
 
-    print(results[0].e.z3_expr)
+    pie = '3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117068'
+    
+    float_args = {
+        'a' : float('1e12'),
+        'b' : float(pie),
+    }
 
-    print(results[0].e.evaluate_sig(ast.EvalCtx({"a":"1e16", "b":"3.14159"})))
+    sink_args = {
+        'a' : ast.Sink(ast.mpfr('1e12', 53), inexact=False),
+        'b' : ast.Sink(ast.mpfr(pie, 53), inexact=True),
+    }
+    
+    print(core.e.evaluate(ast.EvalCtx(
+        float_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_754)))
+
+    print(core.e.evaluate_sink(ast.EvalCtx(
+        sink_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_754)))
+
+    print(core.e.evaluate_sink(ast.EvalCtx(
+        sink_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_OPTIMISTIC)))
+
+
+    print('\n\n')
+
+    core = compfile('example.fpcore')
+    print(core)
+
+    float_args = {
+        'a' : float('-1e8'),
+        'b' : float('1.2'),
+        'c' : float('0.5'),
+    }
+    
+    sink_args = {
+        'a' : ast.Sink(ast.mpfr('-1e8', 53), inexact=True),
+        'b' : ast.Sink(ast.mpfr('1.2', 53), inexact=True),
+        'c' : ast.Sink(ast.mpfr('0.5', 53), inexact=False),
+    }
+    
+    print(core.e.evaluate(ast.EvalCtx(
+        float_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_754)))
+
+    print(core.e.evaluate_sink(ast.EvalCtx(
+        sink_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_754)))
+
+    print(core.e.evaluate_sink(ast.EvalCtx(
+        sink_args,
+        w=11,
+        p=53,
+        mode=ast.EVAL_OPTIMISTIC)))
+
+    # print(results[0].e.evaluate_sink(ast.EvalCtx({"a":"1e16", "b":"3.14159"})))
