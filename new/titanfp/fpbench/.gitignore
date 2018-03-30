@@ -1,0 +1,6 @@
+*.interp
+*.tokens
+antlr/*.jar
+FPCoreLexer.py
+FPCoreParser.py
+FPCoreVisitor.py
