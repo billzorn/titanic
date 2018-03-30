@@ -3,11 +3,11 @@
 import typing
 
 import antlr4
-from FPCoreLexer import FPCoreLexer
-from FPCoreParser import FPCoreParser
-from FPCoreVisitor import FPCoreVisitor
+from .FPCoreLexer import FPCoreLexer
+from .FPCoreParser import FPCoreParser
+from .FPCoreVisitor import FPCoreVisitor
 
-import fpcast as ast
+from . import fpcast as ast
 
 
 def _reserve(message):
@@ -241,21 +241,24 @@ def compile(s):
     visitor = Visitor()
     return visitor.visit(tree)
 
-
-
-
-
 def compfile(fname):
     with open(fname, 'r') as f:
         results = compile(f.read())
     return results[0]
 
 
-
-if __name__ == '__main__':
-    import sys
-
-    core = compfile('minimal.fpcore')
+def demo():
+    fpc_minimal = """(FPCore (a b) (- (+ a b) a))
+"""
+    fpc_example = """(FPCore (a b c)
+ :name "NMSE p42, positive"
+ :cite (hamming-1987 herbie-2015)
+ :fpbench-domain textbook
+ :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
+ (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
+"""
+    
+    core = compile(fpc_minimal)[0]
     print(core)
 
     pie = '3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117068'
@@ -291,7 +294,7 @@ if __name__ == '__main__':
 
     print('\n\n')
 
-    core = compfile('example.fpcore')
+    core = compile(fpc_example)[0]
     print(core)
 
     float_args = {

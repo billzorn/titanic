@@ -17,7 +17,7 @@ _Z3RM = z3.RoundNearestTiesToEven()
 
 
 # Sinking Point library
-import sinking as sp
+from ..titanic import sinking as sp
 Sink = sp.Sink
 gmp = sp.gmp
 mpfr = sp.mpfr
