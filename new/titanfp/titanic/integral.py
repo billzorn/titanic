@@ -5,9 +5,10 @@ This file is part of Titanic, available under the MIT license.
 The BV class implements bitvectors of known size. Bitvectors
 can be shifted and concatenated, and bits or sub-vectors can be
 extracted. They can be compared for equality, but not order,
-and interpreted as (unsigned only?) integers.
+and interpreted as integers.
 
-Also provides small utilities are provided for integers:
+Also provides small utilities for integers:
+  bitmask(n): a bitmask of n 1s or 0s
   msb(x): "most significant bit" of x, as x.bit_length()
   floorlog2(x): x.bit_length() - 1, 0 if x is 0
   ctz(x): "count trailing zeros"
@@ -21,13 +22,11 @@ class BV(object):
 
 
 def bitmask(n: int) -> int:
-    """Produces a bitmask of n 1s."""
-    return ~(-1 << n)
-
-
-def bitmask_at(start: int, end: int) -> int:
-    """Produces a bitmask of 1s from start to end."""
-    return (~(-1 << (end - start))) << start
+    """Produces a bitmask of n 1s if n is positive, or n 0s if n is negative."""
+    if n >= 0:
+        return (1 << n) - 1
+    else:
+        return -1 << -n
 
 
 def msb(x: int) -> int:
@@ -525,9 +524,43 @@ if __name__ == "__main__":
         print('  fast : {:.3f}'.format(timeit.timeit(lambda: time_fast(e, mbits), number=reps)))
         print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_blank(e, mbits), number=reps)))
 
+
+    # bitmask performance testing
+
+    def _bm1(n):
+        return (1 << n) - 1
+
+    def _bm2(n):
+        return ~(-1 << n)
+
+    def _bm3(n):
+        if n >= 0:
+            return (1 << n) - 1
+        else:
+            return -1 << -n
+
+    def time_bm(bm, minbits, maxbits):
+        for i in range(minbits, maxbits):
+            x = bm(i)
+
+    def time_bm_blank(minbits, maxbits):
+        for i in range(minbits, maxbits):
+            x = i
+
+    def compare_bm(minbits, maxbits, reps):
+        print('for {:d} to {:d} bits, {:d} reps'.format(minbits, maxbits, reps))
+        for impl in [_bm1, _bm2, _bm3]:
+            print('  {:s} : {:.3f}'.format(repr(impl), timeit.timeit(lambda: time_bm(impl, minbits, maxbits), number=reps)))
+        print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_bm_blank(minbits, maxbits), number=reps)))
+
+
     doctest.testmod()
     test_range(2051, 4)
     test_range(8, 17)
 
-    compare_e_m(8, 16, 10, True)
-    compare_e_m(2051, 4, 10, False)
+    # consensus: fast method works (how does it compare to gmpy2 mpz bit_scan1 ???)
+    # compare_e_m(8, 16, 10, True)
+    # compare_e_m(2051, 4, 10, False)
+
+    # consensus: performance is identical all of them, so use bm3 since it's the most general
+    # compare_bm(0, 65536, 10)

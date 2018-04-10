@@ -9,158 +9,6 @@ import sys
 import random
 import re
 
-def bitmask(n):
-    if n > 0:
-        return (1 << n) - 1
-    else:
-        return (-1) << (-n)
-
-
-# Binary conversions are relatively simple for numpy's floating point types.
-# float16 : w = 5,  p = 11
-# float32 : w = 8,  p = 24
-# float64 : w = 11, p = 53
-# float128: unsupported, not an IEEE 754 128-bit float, possibly 80bit x87?
-#           doc says this uses longdouble on the underlying system
-import numpy as np
-
-
-def np_byteorder(ftype):
-    bo = np.dtype(ftype).byteorder
-    if bo == '=':
-        return sys.byteorder
-    elif bo == '<':
-        return 'little'
-    elif bo == '>':
-        return 'big'
-    else:
-        raise ValueError('unknown numpy byteorder {} for dtype {}'.format(repr(bo), repr(ftype)))
-
-
-def xfloat(f):
-    if isinstance(f, np.float16):
-        w = 5
-        pbits = 10
-    elif isinstance(f, np.float32):
-        w = 8
-        pbits = 23
-    elif isinstance(f, np.float64):
-        w = 11
-        pbits = 52
-    else:
-        raise TypeError('expected np.float{{16,32,64}}, got {}'.format(repr(type(f))))
-
-    emax = (1 << (w - 1)) - 1
-
-    bits = int.from_bytes(f.tobytes(), np_byteorder(type(f)))
-
-    S = bits >> (w + pbits) & bitmask(1)
-    E = bits >> (pbits) & bitmask(w)
-    C = bits & bitmask(pbits)
-
-    e = E - emax
-
-    if E == 0:
-        # subnormal
-        return S != 0, -emax - (pbits - C.bit_length()), C
-    elif e <= emax:
-        # normal
-        return S != 0, e, C | (1 << pbits)
-    else:
-        # nonreal
-        raise ValueError('nonfinite value {}'.format(repr(f)))
-
-
-def mkfloat(s, e, c, ftype=np.float64):
-    if ftype == np.float16:
-        w = 5
-        p = 11
-        pbits = 10
-        nbytes = 2
-    elif ftype == np.float32:
-        w = 8
-        p = 24
-        pbits = 23
-        nbytes = 4
-    elif ftype == np.float64:
-        w = 11
-        p = 53
-        pbits = 52
-        nbytes = 8
-    else:
-        raise TypeError('expected np.float{{16,32,64}}, got {}'.format(repr(type(f))))
-
-    emax = (1 << (w - 1)) - 1
-    emin = 1 - emax
-
-    cbits = c.bit_length()
-
-    if e < emin:
-        # subnormal
-        lz = (emin - 1) - e
-        if lz > pbits or (lz == pbits and cbits > 0):
-            raise ValueError('exponent out of range: {}'.format(e))
-        elif lz + cbits > pbits:
-            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, pbits - lz))
-        S = 1 if s else 0
-        E = 0
-        C = c << (lz - (pbits - cbits))
-    elif e <= emax:
-        # normal
-        if cbits > p:
-            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, p))
-        elif cbits < p:
-            print('Warning: inventing {} low order bits!'.format(p - cbits))
-        S = 1 if s else 0
-        E = e + emax
-        C = (c << (p - cbits)) & bitmask(pbits)
-    else:
-        # overflow
-        raise ValueError('exponent out of range: {}'.format(e))
-
-    return np.frombuffer(
-        ((S << (w + pbits)) | (E << pbits) | C).to_bytes(nbytes, np_byteorder(ftype)),
-        dtype=ftype, count=1, offset=0,
-    )[0]
-
-
-# debugging
-
-def _nprt(x):
-    print(repr(x))
-    return mkfloat(*xfloat(x), type(x))
-
-def _check_conv(i, ftype):
-    if ftype == np.float16:
-        nbytes = 2
-    elif ftype == np.float32:
-        nbytes = 4
-    elif ftype == np.float64:
-        nbytes = 8
-    else:
-        raise TypeError('expected np.float{{16,32,64}}, got {}'.format(repr(type(f))))
-
-    try:
-        f = np.frombuffer(i.to_bytes(nbytes, np_byteorder(ftype)), dtype=ftype, count=1, offset=0)[0]
-        s, e, c = xfloat(f)
-        f2 = mkfloat(s, e, c, ftype)
-        if f != f2:
-            print(repr(f), repr(f2), s, e, c)
-    except ValueError as e:
-        if not (np.isinf(f) or np.isnan(f)):
-            print(repr(f), repr(f2), s, e, c)
-            print('  ' + repr(e))
-
-def _test_np():
-    print('watch for output...')
-    for i in range(1 << 16):
-        _check_conv(i, np.float16)
-    for i in range(1 << 16):
-        _check_conv(random.randint(0, 1 << 32), np.float32)
-    for i in range(1 << 16):
-        _check_conv(random.randint(0, 1 << 64), np.float64)
-    print('...done')
-
 
 # gmpy2 helpers
 import gmpy2 as gmp
@@ -334,12 +182,12 @@ def _interval_scan_away(lower, upper, n):
     # Because we detect the case where the envelope size is provable smaller than the
     # interval, we will abort after a few iterations in cases where the envelope
     # is much smaller than the interval.
-        
+
     while True:
         bound_lo, bound_hi = rep.bounds()
         bottom_enclosed = bound_lo <= lower
         top_enclosed = upper <= bound_hi
-        
+
         if bottom_enclosed and top_enclosed:
             # representative encloses the interval: return it
             return False, rep
@@ -361,7 +209,7 @@ def _interval_scan_away(lower, upper, n):
             # bottom of interval was no good, so we went too far.
             return False, None
 
-        
+
 def enclose(lower, upper, min_n=None):
     """Return the sink with the smallest interval that encloses lower and upper.
     Upper and lower must be exact sinks, with upper <= lower.
@@ -383,7 +231,7 @@ def enclose(lower, upper, min_n=None):
         min_n = min_possible_n
     else:
         min_n = max(min_possible_n, min_n)
-        
+
     if lower < zero and upper > zero:
         # binsearch around zero
         offset = 1
@@ -443,7 +291,7 @@ def enclose(lower, upper, min_n=None):
                 n_hi = n_mid
         # final conditions: n_lo + 1 = n_hi, n_lo is provably too small, n_hi has no such proof
         # OR, we never entered the loops, and n_lo = n_hi = min_n
-        
+
         # We now perform a linear search, starting from n_lo, until we find the smallest n
         # that can produce a representative. This should not take very long, as we are doubling
         # the size of the envelope each time we increment n.
@@ -497,7 +345,7 @@ class Sink(object):
         """
 
         #print('sink {} with inexact={}'.format(repr(x), inexact))
-        
+
         # if given another sink, clone and update
         if isinstance(x, Sink):
             # might have to think about this more carefully...
@@ -1208,8 +1056,8 @@ class Sink(object):
         #TODO: inf and nan
         #TODO: envelope properties
         return Sink(self, e=e, n=n, p=p, c=c, negative=negative, sided_interval=False)
-        
-    
+
+
     # def __add__(self, arg):
     #     # slow and scary
     #     prec = (max(self._e, arg._e) - min(self._n, arg._n)) + 1
