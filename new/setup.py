@@ -4,8 +4,8 @@ setuptools.setup(
     name='titanfp',
     version='0.1.1',
     description='floating point analysis with fpbench',
-    packages=['titanic', 'fpbench'],
+    packages=setuptools.find_packages('.'),
     package_data={
-        'fpbench' : ['antlr/Makefile', 'antlr/*.g4', '*.interp', '*.tokens'],
+        'titanfp/fpbench' : ['antlr/Makefile', 'antlr/*.g4', '*.interp', '*.tokens'],
     },
 )

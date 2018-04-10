@@ -269,8 +269,8 @@ def demo():
     }
 
     sink_args = {
-        'a' : ast.Sink(ast.mpfr('1e12', 53), inexact=False),
-        'b' : ast.Sink(ast.mpfr(pie, 53), inexact=True),
+        'a' : ast.Sink('1e12', inexact=False),
+        'b' : ast.Sink(pie, inexact=True),
     }
     
     print(core.e.evaluate(ast.EvalCtx(
@@ -298,15 +298,15 @@ def demo():
     print(core)
 
     float_args = {
-        'a' : float('-1e8'),
+        'a' : float('1e-16'),
         'b' : float('1.2'),
         'c' : float('0.5'),
     }
     
     sink_args = {
-        'a' : ast.Sink(ast.mpfr('-1e8', 53), inexact=True),
-        'b' : ast.Sink(ast.mpfr('1.2', 53), inexact=True),
-        'c' : ast.Sink(ast.mpfr('0.5', 53), inexact=False),
+        'a' : ast.Sink('1e-16', inexact=True),
+        'b' : ast.Sink('1.2', inexact=True),
+        'c' : ast.Sink('0.5', inexact=False),
     }
     
     print(core.e.evaluate(ast.EvalCtx(

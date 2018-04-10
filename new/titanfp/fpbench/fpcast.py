@@ -298,6 +298,7 @@ class Sqrt(UnaryExpr):
             raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
         #TODO: envelopes?
+        #print('sqrt {}: {} -> {}'.format(ctx.mode, rep._inexact, inexact))
         return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
@@ -337,6 +338,7 @@ class Add(BinaryExpr):
             raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
         #TODO: envelopes?
+        #print('add {}: {}, {} -> {}'.format(ctx.mode, left_rep._inexact, right_rep._inexact, inexact))
         return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
         
     def _translate_z3(self):
@@ -376,6 +378,7 @@ class Sub(BinaryExpr):
             raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
         #TODO: envelopes?
+        #print('sub {}: {}, {} -> {}'.format(ctx.mode, left_rep._inexact, right_rep._inexact, inexact))
         return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
@@ -415,6 +418,7 @@ class Mul(BinaryExpr):
             raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
         #TODO: envelopes?
+        #print('mul {}: {}, {} -> {}'.format(ctx.mode, left_rep._inexact, right_rep._inexact, inexact))
         return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):
@@ -454,6 +458,8 @@ class Div(BinaryExpr):
             raise ValueError('unknown mode {}'.format(repr(ctx.mode)))
 
         #TODO: envelopes?
+        #print('div {}: {}, {} -> {}'.format(ctx.mode, left_rep._inexact, right_rep._inexact, inexact))
+        #print('div result is {}'.format(repr(result)))
         return Sink(result, inexact=inexact, sided_interval=False, full_interval=False)
 
     def _translate_z3(self):

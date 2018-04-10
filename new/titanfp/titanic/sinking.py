@@ -496,6 +496,8 @@ class Sink(object):
         TODO TODO TODO
         """
 
+        #print('sink {} with inexact={}'.format(repr(x), inexact))
+        
         # if given another sink, clone and update
         if isinstance(x, Sink):
             # might have to think about this more carefully...
@@ -556,12 +558,14 @@ class Sink(object):
                     inexact = True
 
             if not isinstance(x, mpfr_t):
-                x = mpfr(x, precision=prec)
+                with gmp.context(precision=prec) as gmpctx:
+                    x = mpfr(x, precision=prec)
 
             # we reread precision from the mpfr
             m, exp = to_mantissa_exp(x)
             if m == 0:
                 # negative is disregarded in this case, only inexact is passed through
+                #print('a zero')
                 self.__init__(x=0, n=x.precision, inexact=inexact)
             else:
                 self._c = abs(int(m))
@@ -599,6 +603,7 @@ class Sink(object):
             if self._inexact:
                 return '{}0~@{:d}'.format(sgn, self._n)
             else:
+                #print(repr(self))
                 return '{}0'.format(sgn)
         else:
             rep = re.search(r"'(.*)'", repr(self.as_mpfr())).group(1).split('e')
