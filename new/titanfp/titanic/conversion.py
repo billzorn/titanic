@@ -34,6 +34,10 @@ def np_byteorder(ftype):
 
 
 def float_to_mantissa_exp(f):
+    """Converts a python or numpy float into universal m, exp representation:
+    f = m * 2**e. If the float does not represent a real number (i.e. it is inf
+    or NaN) this will raise an exception.
+    """
     if isinstance(f, float):
         f = np.float64(f)
         w = 11
@@ -82,6 +86,12 @@ def float_to_mantissa_exp(f):
 
 
 def float_from_mantissa_exp(m, exp, ftype=float):
+    """Converts universal m, exp representation into a python or numpy
+    float according to ftype.
+    TODO: this implementation is incapable of rounding: if it is not given
+    enough precision, it will complain to stdout, and if it is given too much,
+    it will raise an exception rather than trying to round.
+    """
     if ftype == float:
         w = 11
         p = 53
@@ -140,10 +150,36 @@ def float_from_mantissa_exp(m, exp, ftype=float):
         # overflow
         raise ValueError('exponent out of range: {}'.format(e))
 
-    return np.frombuffer(
+    f = np.frombuffer(
         ((S << (w + pbits)) | (E << pbits) | C).to_bytes(nbytes, np_byteorder(ftype)),
         dtype=ftype, count=1, offset=0,
     )[0]
+
+    if ftype == float:
+        return float(f)
+    else:
+        return f
+
+
+def float64_from_mantissa_exp(m, exp):
+    """Converts universal m, exp representation into a numpy float64,
+    as float_from_mantissa_exp.
+    """
+    return float_from_mantissa_exp(m, exp, ftype=np.float64)
+
+
+def float32_from_mantissa_exp(m, exp):
+    """Converts universal m, exp representation into a numpy float32,
+    as float_from_mantissa_exp.
+    """
+    return float_from_mantissa_exp(m, exp, ftype=np.float32)
+
+
+def float16_from_mantissa_exp(m, exp):
+    """Converts universal m, exp representation into a numpy float16,
+    as float_from_mantissa_exp.
+    """
+    return float_from_mantissa_exp(m, exp, ftype=np.float16)
 
 
 # debugging
