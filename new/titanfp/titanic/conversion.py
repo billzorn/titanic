@@ -4,23 +4,16 @@ universal m/exp notation.
 
 
 import sys
+import math
 
 from .integral import bitmask
 
 import numpy as np
 import gmpy2 as gmp
+mpfr_t = type(gmp.mpfr())
 
 
-# Binary conversions are relatively simple for numpy's floating point types.
-# float16 : w = 5,  p = 11
-# float32 : w = 8,  p = 24
-# float64 : w = 11, p = 53
-# float128: unsupported, not an IEEE 754 128-bit float, possibly 80bit x87?
-#           doc says this uses longdouble on the underlying system
-
-
-
-def np_byteorder(ftype):
+def _np_byteorder(ftype):
     """Converts from numpy byteorder conventions for a floating point datatype
     to sys.byteorder 'big' or 'little'.
     """
@@ -35,30 +28,151 @@ def np_byteorder(ftype):
         raise ValueError('unknown numpy byteorder {} for dtype {}'.format(repr(bo), repr(ftype)))
 
 
+# Get status flags out of numeric types
+
+def isneg(f):
+    """Get the sign bit of a float or mpfr."""
+    if isinstance(f, mpfr_t):
+        if gmp.is_zero(f):
+            #TODO: this is terrible
+            return str(f).startswith('-')
+        elif gmp.is_nan(f):
+            raise ValueError('conversion: isneg: mpfr NaNs are unsigned')
+        else:
+            return gmp.sign(f) < 0
+    else:
+        if isinstance(f, float):
+            f = np.float64(f)
+            offset = 63
+        elif isinstance(f, np.float16):
+            offset = 15
+        elif isinstance(f, np.float32):
+            offset = 31
+        elif isinstance(f, np.float64):
+            offset = 63
+        else:
+            raise TypeError('expected mpfr, float, or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+
+        bits = int.from_bytes(f.tobytes(), _np_byteorder(type(f)))
+
+        return bits >> offset != 0
+
+def isinf(f):
+    """Check whether a float or mpfr is inf or -inf."""
+    if isinstance(f, mpfr_t):
+        return gmp.is_inf(f)
+    elif isinstance(f, float):
+        return math.isinf(f)
+    elif isinstance(f, np.float16):
+        return np.isinf(f)
+    elif isinstance(f, np.float32):
+        return np.isinf(f)
+    elif isinstance(f, np.float64):
+        return np.isinf(f)
+    else:
+        raise TypeError('expected mpfr, float, or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+
+def isnan(f):
+    """Check whether a float or mpfr is nan."""
+    if isinstance(f, mpfr_t):
+        return gmp.is_nan(f)
+    elif isinstance(f, float):
+        return math.isnan(f)
+    elif isinstance(f, np.float16):
+        return np.isnan(f)
+    elif isinstance(f, np.float32):
+        return np.isnan(f)
+    elif isinstance(f, np.float64):
+        return np.isnan(f)
+    else:
+        raise TypeError('expected mpfr, float, or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+
+
+# Other non-real properties of numeric types
+
+def float_to_payload(f):
+    """Get the integer payload of a float that is NaN."""
+    if isinstance(f, float):
+        pbits = 52
+        f = np.float64(f)
+    elif isinstance(f, np.float16):
+        pbits = 10
+    elif isinstance(f, np.float32):
+        pbits = 23
+    elif isinstance(f, np.float64):
+        pbits = 52
+    else:
+        raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+
+    if not np.isnan(f):
+        raise ValueError('conversion: float_to_payload: expecting NaN, got {}'.format(repr(f)))
+
+    bits = int.from_bytes(f.tobytes(), _np_byteorder(type(f)))
+
+    return bits & bitmask(pbits)
+
+
+# Mini format datasheet.
+# For all formats:
+#   emax = (1 << (w - 1)) - 1
+#   emin = 1 - emax
+#   n = emin - p
+
+# numpy.float16
+#   w = 5
+#   p = 11
+#   emax = 15
+#   emin = -14
+#   n = -25
+#   pbits = 10
+#   nbytes = 2
+# numpy.float32:
+#   w = 8
+#   p = 24
+#   emax = 127
+#   emin = -126
+#   n = -150
+#   pbits = 23
+#   nbytes = 4
+# numpy.float64 or float:
+#   w = 11
+#   p = 53
+#   emax = 1023
+#   emin = -1022
+#   n = -1075
+#   pbits = 52
+#   nbytes = 8
+# numpy.float128:
+#   unsupported, not an IEEE 754 binary128, possibly 80bit x87?
+#   doc says this uses longdouble on the underlying system
+
+
 def float_to_mantissa_exp(f):
     """Converts a python or numpy float into universal m, exp representation:
     f = m * 2**e. If the float does not represent a real number (i.e. it is inf
     or NaN) this will raise an exception.
     """
     if isinstance(f, float):
-        f = np.float64(f)
         w = 11
+        emax = 1023
         pbits = 52
+        f = np.float64(f)
     elif isinstance(f, np.float16):
         w = 5
+        emax = 15
         pbits = 10
     elif isinstance(f, np.float32):
         w = 8
+        emax = 127
         pbits = 23
     elif isinstance(f, np.float64):
         w = 11
+        emax = 1023
         pbits = 52
     else:
         raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
 
-    emax = (1 << (w - 1)) - 1
-
-    bits = int.from_bytes(f.tobytes(), np_byteorder(type(f)))
+    bits = int.from_bytes(f.tobytes(), _np_byteorder(type(f)))
 
     S = bits >> (w + pbits) & bitmask(1)
     E = bits >> (pbits) & bitmask(w)
@@ -97,28 +211,33 @@ def float_from_mantissa_exp(m, exp, ftype=float):
     if ftype == float:
         w = 11
         p = 53
+        emax = 1023
+        emin = -1022
         pbits = 52
         nbytes = 8
     elif ftype == np.float16:
         w = 5
         p = 11
+        emax = 15
+        emin = -14
         pbits = 10
         nbytes = 2
     elif ftype == np.float32:
         w = 8
         p = 24
+        emax = 127
+        emin = -126
         pbits = 23
         nbytes = 4
     elif ftype == np.float64:
         w = 11
         p = 53
+        emax = 1023
+        emin = -1022
         pbits = 52
         nbytes = 8
     else:
         raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(ftype)))
-
-    emax = (1 << (w - 1)) - 1
-    emin = 1 - emax
 
     if m >= 0:
         S = 0
@@ -153,7 +272,7 @@ def float_from_mantissa_exp(m, exp, ftype=float):
         raise ValueError('exponent out of range: {}'.format(e))
 
     f = np.frombuffer(
-        ((S << (w + pbits)) | (E << pbits) | C).to_bytes(nbytes, np_byteorder(ftype)),
+        ((S << (w + pbits)) | (E << pbits) | C).to_bytes(nbytes, _np_byteorder(ftype)),
         dtype=ftype, count=1, offset=0,
     )[0]
 
@@ -220,39 +339,7 @@ def mpfr_from_mantissa_exp(m, exp):
         return gmp.mpfr(r, max(2, mbits))
 
 
-# Mini format datasheet.
-# For all formats:
-#   emax = (1 << (w - 1)) - 1
-#   emin = 1 - emax
-#   n = emin - p
-
-# numpy.float64 or float:
-#   w = 11
-#   p = 53
-#   emax = 1023
-#   emin = -1022
-#   n = -1075
-#   pbits = 52
-#   nbytes = 8
-# numpy.float32:
-#   w = 8
-#   p = 24
-#   emax = 127
-#   emin = -126
-#   n = -150
-#   pbits = 23
-#   nbytes = 4
-# numpy.float16
-#   w = 5
-#   p = 11
-#   emax = 15
-#   emin = -14
-#   n = -25
-#   pbits = 10
-#   nbytes = 2
-
-
-# Some basic tests:
+# Some basic tests
 
 
 # denormal numbers will puke out more precision than they really have;
@@ -263,24 +350,24 @@ def _float_to_mpfr(f):
         p = 53
         n = -1075
         emin = -1022
-        emax = 1023
+        emax = 1024 # emax + 1
     elif isinstance(f, np.float16):
         p = 11
         n = -25
         emin = -14
-        emax = 15
+        emax = 16 # emax + 1
         f = float(f)
     elif isinstance(f, np.float32):
         p = 24
         n = -150
         emin = -126
-        emax = 127
+        emax = 128 # emax + 1
         f = float(f)
     elif isinstance(f, np.float64):
         p = 53
         n = -1075
         emin = -1022
-        emax = 1023
+        emax = 1024 # emax + 1
         f = float(f)
     else:
         raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
@@ -288,7 +375,7 @@ def _float_to_mpfr(f):
     with gmp.context(
             precision=p,
             emin=n,
-            emax=emax + 1,
+            emax=emax,
             trap_underflow=True,
             trap_overflow=True,
             trap_inexact=True,
@@ -305,7 +392,7 @@ def _mpfr_from_frexp(fraction, exponent):
     with gmp.context(
             precision=53,
             emin=-1075,
-            emax=1025,
+            emax=1025, # emax + 2
             trap_underflow=True,
             trap_overflow=True,
             trap_inexact=True,
@@ -320,8 +407,6 @@ def _mpfr_from_frexp(fraction, exponent):
 
 
 def _check_agreement(i, ftype):
-    import math
-
     if ftype == float:
         nbytes = 8
     elif ftype == np.float16:
@@ -334,7 +419,7 @@ def _check_agreement(i, ftype):
         raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
 
     try:
-        f = np.frombuffer(i.to_bytes(nbytes, np_byteorder(ftype)), dtype=ftype, count=1, offset=0)[0]
+        f = np.frombuffer(i.to_bytes(nbytes, _np_byteorder(ftype)), dtype=ftype, count=1, offset=0)[0]
         if np.isinf(f) or np.isnan(f):
             # raise OverflowError('not a real number: {}'.format(f))
             return # TODO: this could do something
@@ -401,7 +486,8 @@ def _test():
 
     print('... Done.')
 
-    
+
+# this takes days
 def _test_all_fp32():
     print('Watch for output ...')
     print('-- testing all np.float32 --')

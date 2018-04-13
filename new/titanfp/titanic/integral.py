@@ -559,8 +559,8 @@ if __name__ == "__main__":
     test_range(8, 17)
 
     # consensus: fast method works (how does it compare to gmpy2 mpz bit_scan1 ???)
-    # compare_e_m(8, 16, 10, True)
-    # compare_e_m(2051, 4, 10, False)
+    compare_e_m(8, 16, 10, True)
+    compare_e_m(2051, 4, 10, False)
 
     # consensus: performance is identical all of them, so use bm3 since it's the most general
-    # compare_bm(0, 65536, 10)
+    compare_bm(0, 65536, 100)
