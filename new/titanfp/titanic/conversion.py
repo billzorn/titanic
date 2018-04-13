@@ -321,10 +321,25 @@ def mpfr_from_mantissa_exp(m, exp):
     """
     mbits = m.bit_length()
     ebits = exp.bit_length()
+
     with gmp.context(
-            precision=max(2, mbits, ebits),
+            precision=max(2, ebits),
             emin=min(-1, exp),
-            emax=max(1, mbits, ebits, exp + mbits),
+            emax=max(1, ebits, exp + 1),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+    ):
+        scale = gmp.exp2(exp)
+
+    with gmp.context(
+            precision=max(2, mbits),
+            emin=min(-1, exp),
+            emax=max(1, mbits, exp + mbits),
             trap_underflow=True,
             trap_overflow=True,
             trap_inexact=True,
@@ -334,9 +349,7 @@ def mpfr_from_mantissa_exp(m, exp):
             trap_expbound=True,
     ):
         c = gmp.mpfr(m)
-        scale = gmp.exp2(exp)
-        r = gmp.mul(c, scale)
-        return gmp.mpfr(r, max(2, mbits))
+        return gmp.mul(c, scale)
 
 
 # Some basic tests
