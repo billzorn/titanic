@@ -322,10 +322,15 @@ def mpfr_from_mantissa_exp(m, exp):
     mbits = m.bit_length()
     ebits = exp.bit_length()
 
-    with gmp.context(
-            precision=max(2, ebits),
-            emin=min(-1, exp),
-            emax=max(1, ebits, exp + 1),
+    # Apparently a multiplication between a small precision 0 and a huge
+    # scale can raise a Type error indicating that gmp.mul() requires two
+    # mpfr arguments - we can avoid that case entirely by special-casing
+    # away the multiplication.
+    if mbits == 0:
+        with gmp.context(
+            precision=2,
+            emin=-1,
+            emax=1,
             trap_underflow=True,
             trap_overflow=True,
             trap_inexact=True,
@@ -333,23 +338,38 @@ def mpfr_from_mantissa_exp(m, exp):
             trap_erange=True,
             trap_divzero=True,
             trap_expbound=True,
-    ):
-        scale = gmp.exp2(exp)
+        ):
+            return gmp.mpfr(0)
 
-    with gmp.context(
-            precision=max(2, mbits),
-            emin=min(-1, exp),
-            emax=max(1, mbits, exp + mbits),
-            trap_underflow=True,
-            trap_overflow=True,
-            trap_inexact=True,
-            trap_invalid=True,
-            trap_erange=True,
-            trap_divzero=True,
-            trap_expbound=True,
-    ):
-        c = gmp.mpfr(m)
-        return gmp.mul(c, scale)
+    else:
+        with gmp.context(
+                precision=max(2, ebits),
+                emin=min(-1, exp),
+                emax=max(1, ebits, exp + 1),
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+            scale = gmp.exp2(exp)
+
+        with gmp.context(
+                precision=max(2, mbits),
+                emin=min(-1, exp),
+                emax=max(1, mbits, exp + mbits),
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+            c = gmp.mpfr(m)
+            return gmp.mul(c, scale)
 
 
 # Some basic tests
@@ -477,7 +497,7 @@ def _test():
     for i in range(1 << 16):
         _check_agreement(i, np.float16)
 
-    tests = 100000
+    tests = 1 << 20
     n32 = tests
     n64 = tests
     nfloat = tests
@@ -500,13 +520,98 @@ def _test():
     print('... Done.')
 
 
-# this takes days
-def _test_all_fp32():
+# this consumes many cores and takes cpu-days
+def _test_all_fp32(ncores = None):
+    import multiprocessing
+
+    if ncores is None:
+        ncores = multiprocessing.cpu_count()
+
+    tests = 1 << 32
+    blocksize = tests // ncores
+
+    procs = []
+    for n in range(ncores):
+        start = n * blocksize
+        if n < ncores - 1:
+            end = (n+1) * blocksize
+        else:
+            end = tests
+
+        p = multiprocessing.Process(target=_test_all_fp32_between, args=(start,end))
+        procs.append(p)
+
     print('Watch for output ...')
-    print('-- testing all np.float32 --')
-    ndots = 1000
-    mod = (1<<32) // ndots
-    for i in range(1 << 32):
-        if i % mod == 0:
-            print('.', end='', flush=True)
+
+    for p in procs:
+        p.start()
+
+    for p in procs:
+        p.join()
+
+    print('... Done.')
+
+
+def _test_all_fp32_between(start, end):
+    print('-- testing all np.float32 from {} to {} --'.format(start, end))
+
+    ndots = 100 # per core
+    mod = (end - start) // ndots
+    output_on = mod - 1
+
+    for i in range(start, end):
         _check_agreement(i, np.float32)
+        if i % mod == output_on:
+            print('.', end='', flush=True)
+
+
+def _test_big_mpfrs():
+    import random
+
+    print('Watch for output ...')
+
+    tests = 1 << 20
+
+    print('-- testing {} big mpfrs --'.format(tests))
+    for _ in range(tests):
+
+        l = random.randint(0, 1)
+        if l == 0:
+            llen = random.randint(1, 1024)
+            lbits = random.randint(0, bitmask(llen))
+        else:
+            lbits = 1
+
+        m = random.randint(0, 1)
+        if m == 0:
+            offset = random.randint(1, 2048)
+        else:
+            offset = 0
+
+        r = random.randint(0, 2)
+        if r == 0:
+            rlen = random.randint(1, 1024)
+            rbits = random.randint(0, bitmask(rlen))
+        elif r == 1:
+            rbits = 1
+        else:
+            rbits = 0
+
+        m = (lbits << (offset + rbits.bit_length())) | rbits
+        exp = random.randint(-65535, 65535)
+
+        f = mpfr_from_mantissa_exp(m, exp)
+
+        m1, exp1 = mpfr_to_mantissa_exp(f)
+
+
+        if not (m == m1 and exp == exp1):
+            if m == 0:
+                pass # IEEE 754 floats report small exponents for 0 (smaller than smallest denorm...), while mpfr reports 1
+            elif abs(m) == 1 and abs(m1) == 2 and exp1 == exp - 1:
+                pass # The smallest denorm has less than 2 precision, which mpfr can't represent
+            else:
+                print('disagreement on {} << {} . {}'.format(lbits, offset, rbits))
+                print('  m, exp failed to round trip through mpfr: {} = {}, {} = {}\n'.format(m, m1, exp, exp1))
+
+    print('... Done.')
