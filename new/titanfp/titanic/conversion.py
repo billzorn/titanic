@@ -6,11 +6,11 @@ universal m/exp notation.
 import sys
 import math
 
-from .integral import bitmask
-
 import numpy as np
 import gmpy2 as gmp
 mpfr_t = type(gmp.mpfr())
+
+from .integral import bitmask
 
 
 def _np_byteorder(ftype):

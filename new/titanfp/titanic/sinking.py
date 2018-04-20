@@ -9,149 +9,14 @@ import sys
 import random
 import re
 
-
-# gmpy2 helpers
+# ideally these would not be here...
+# for example, put some sort of fdata() function in conversion to get w and p...
+import numpy as np
 import gmpy2 as gmp
-mpfr = gmp.mpfr
-mpz = gmp.mpz
-mpfr_t = type(gmp.mpfr())
 
-def exactctx(prec, emin, emax):
-    return gmp.context(
-        precision=max(2, prec),
-        emin=min(-1, emin),
-        emax=max(+1, emax),
-        trap_underflow=True,
-        trap_overflow=True,
-        trap_inexact=True,
-        trap_invalid=True,
-        trap_erange=True,
-        trap_divzero=True,
-        trap_expbound=True,
-    )
+from .integral import bitmask
+from . import conversion
 
-
-def sigbits(m):
-    z = mpz(m)
-    trailing_zeros = z.bit_scan1(0)
-    if trailing_zeros is None:
-        return 0
-    else:
-        return z.bit_length() - trailing_zeros
-
-
-def to_shortest_mantissa_exp(r):
-    """This destroys info about the precision"""
-    m, e = r.as_mantissa_exp()
-    trailing_zeros = m.bit_scan1(0)
-    if trailing_zeros is None:
-        return 0, None
-    else:
-        return m >> trailing_zeros, e + trailing_zeros
-
-
-def to_mantissa_exp(r):
-    m, e = r.as_mantissa_exp()
-    if m == 0:
-        return 0, None
-    else:
-        return m, e
-
-
-def from_mantissa_exp(m, e):
-    if m == 0:
-        return mpfr(0, 2)
-    mbits = m.bit_length()
-    ebits = e.bit_length()
-    esig = sigbits(e)
-    exp = int(e)
-    with exactctx(mbits, min(ebits, mbits, exp), max(ebits, mbits, exp + mbits)):
-        rexp = scale = rm = result = None
-        try:
-            rexp = mpfr(e, max(2, esig))
-            scale = mpfr(gmp.exp2(rexp), 2)
-            rm = mpfr(m)
-            result = gmp.mul(rm, scale)
-        except Exception as exc:
-            print(exc)
-            print(m, e)
-            print(mbits, ebits, exp, esig)
-            print(result, rm, scale, rexp)
-            print(gmp.get_context())
-        return result
-
-
-def withprec(p, op, *args):
-    with gmp.context(precision=max(2, p), trap_expbound=True) as gmpctx:
-        result = op(*args)
-        return result, gmpctx
-
-# IEEE754 rounding values:
-# binary16:
-#   w = 5
-#   p = 11
-#   n = -25
-# binary32:
-#   w = 8
-#   p = 24
-#   n = -150
-# binary64:
-#   w = 11
-#   p = 53
-#   n = -1075
-
-def withnprec(op, *args, min_n = -1075, max_p = 53):
-    with gmp.context(precision=max_p, trap_expbound=True) as gmpctx:
-        result = op(*args)
-        inexact = gmpctx.inexact
-    rep = Sink(result)
-    if rep._n < min_n:
-        prec = rep._e - min_n
-        if prec < 2:
-            raise ValueError('unsupported: gmp with precision < 2: {}(*{}) == {}, min_n={}, max_p={}'.format(
-                repr(op), repr(args), repr(result), repr(min_n), repr(max_p)))
-        with gmp.context(precision=prec, trap_expbound=True) as gmpctx:
-            result = op(*args)
-            inexact = gmpctx.inexact
-        rep = Sink(result)
-        if rep._n != min_n:
-            #TODO: fixup
-            # here's a simple stupid hack...
-            if rep._n == min_n + 1:
-                # rounded up, put back one bit
-                result = mpfr(result, result.precision + 1)
-            else:
-                raise ValueError('unsupported: n should be {}, got {}: {}(*{}) == {}, min_n={}, max_p={}'.format(
-                    repr(min_n), repr(rep._n), repr(op), repr(args), repr(result), repr(min_n), repr(max_p)))
-    return result, inexact
-
-
-# more debugging
-
-def _gmprt(x1, x2=None):
-    if x2 is None:
-        x = mpfr(x1, 53)
-    else:
-        x = from_mantissa_exp(x1, x2)
-    result = from_mantissa_exp(*to_mantissa_exp(x))
-    print(repr(x))
-    return(x)
-
-def _test_gmp():
-    print('watch for output...')
-    for i in range(1 << 16):
-        m = random.randint(0, 1 << 256) << (random.randint(0, 256) if random.randint(0, 2) else 0)
-        e = random.randint(-126, 127) if random.randint(0, 2) else random.randint(-(1 << 32), (1 << 32))
-        x1 = from_mantissa_exp(m, e)
-        x2 = from_mantissa_exp(*to_mantissa_exp(x1))
-        if x1 != x2:
-            print(m, e, x1, x2)
-        if x1.precision != x2.precision:
-            print(x1.precision, x2.precision, x1, x2)
-    print('...done')
-
-
-_DEFAULT_PREC = 53
 
 
 def _interval_scan_away(lower, upper, n):
@@ -407,10 +272,10 @@ class Sink(object):
 
             if not isinstance(x, mpfr_t):
                 with gmp.context(precision=prec) as gmpctx:
-                    x = mpfr(x, precision=prec)
+                    x = gmp.mpfr(x)
 
             # we reread precision from the mpfr
-            m, exp = to_mantissa_exp(x)
+            m, exp = conversion.mpfr_to_mantissa_exp(x)
             if m == 0:
                 # negative is disregarded in this case, only inexact is passed through
                 #print('a zero')
@@ -441,7 +306,7 @@ class Sink(object):
 
     def __repr__(self):
         return 'Sink({}, e={}, n={}, p={}, c={}, negative={}, inexact={}, sided_interval={}, full_interval={})'.format(
-            self.as_mpfr(), self._e, self._n, self._p, self._c, self._negative, self._inexact, self._sided_interval, self._full_interval
+            self.to_mpfr(), self._e, self._n, self._p, self._c, self._negative, self._inexact, self._sided_interval, self._full_interval
         )
 
     def __str__(self):
@@ -454,7 +319,7 @@ class Sink(object):
                 #print(repr(self))
                 return '{}0'.format(sgn)
         else:
-            rep = re.search(r"'(.*)'", repr(self.as_mpfr())).group(1).split('e')
+            rep = re.search(r"'(.*)'", repr(self.to_mpfr())).group(1).split('e')
             s = rep[0]
             sexp = ''
             if len(rep) > 1:
@@ -465,19 +330,19 @@ class Sink(object):
 
     def details(self):
         try:
-            mpfr_val = self.as_mpfr()
+            mpfr_val = self.to_mpfr()
         except Exception as exc:
             mpfr_val = exc
         try:
-            f64_val = self.as_np(np.float64)
+            f64_val = self.to_float(np.float64)
         except Exception as exc:
             f64_val = exc
         try:
-            f32_val = self.as_np(np.float32)
+            f32_val = self.to_float(np.float32)
         except Exception as exc:
             f32_val = exc
         try:
-            f16_val = self.as_np(np.float16)
+            f16_val = self.to_float(np.float16)
         except Exception as exc:
             f16_val = exc
 
@@ -870,12 +735,18 @@ class Sink(object):
             return self.narrow(n=max(min_n, self._n - extra_bits))
 
 
-    def as_mpfr(self):
-        return from_mantissa_exp(self._c * (-1 if self._negative else 1), self._n + 1)
+    def to_mpfr(self):
+        if self._negative:
+            return conversion.mpfr_from_mantissa_exp(-self._c, self._n + 1)
+        else:
+            return conversion.mpfr_from_mantissa_exp(self._c, self._n + 1)
 
 
-    def as_np(self, ftype=np.float64):
-        if ftype == np.float16:
+    def to_float(self, ftype=float):
+        if ftype == float:
+            w = 11
+            p = 53
+        elif ftype == np.float16:
             w = 5
             p = 11
         elif ftype == np.float32:
@@ -885,10 +756,14 @@ class Sink(object):
             w = 11
             p = 53
         else:
-            raise TypeError('as_np: expected np.float{{16,32,64}}, got {}'.format(repr(type(f))))
+            raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
 
         rounded = self.ieee_754(w, p)
-        return mkfloat(rounded._negative, rounded._e, rounded._c, ftype=ftype)
+
+        if rounded._negative:
+            return conversion.float_from_mantissa_exp(-rounded._c, rounded._n + 1, ftype=ftype)
+        else:
+            return conversion.float_from_mantissa_exp(rounded._c, rounded._n + 1, ftype=ftype)
 
 
     # core arith and comparison
@@ -1056,82 +931,3 @@ class Sink(object):
         #TODO: inf and nan
         #TODO: envelope properties
         return Sink(self, e=e, n=n, p=p, c=c, negative=negative, sided_interval=False)
-
-
-    # def __add__(self, arg):
-    #     # slow and scary
-    #     prec = (max(self._e, arg._e) - min(self._n, arg._n)) + 1
-    #     # could help limit with this?
-    #     if (not self._inexact) and (not arg._inexact):
-    #         n = None
-    #     elif self._inexact and (not arg._inexact):
-    #         n = self._n
-    #     elif arg._inexact and (not self._inexact):
-    #         n = arg._n
-    #     else:
-    #         n = max(self._n, arg._n)
-    #     result_f, ctx = withprec(prec, gmp.add, self.as_mpfr(), arg.as_mpfr())
-    #     result = Sink(result_f, p=prec, negative=(result_f < 0),
-    #                   inexact=(ctx.inexact or self._inexact or arg._inexact))
-    #     # mandatory rounding even for optimists:
-    #     return result.trunc(n)
-
-
-    # def __sub__(self, arg):
-    #     return self + (-arg)
-
-
-# halp
-
-def ___ctx():
-    gmp.set_context(gmp.context())
-
-
-"""TODO:
-  Sound half-intervals:
-  - sided zero
-  - 1 ulp vs. 2 ulp
-  Arithmetic emulation:
-  - 754
-  - posit
-  Bit savings:
-  - but we would have to count on GMP's rounding behavior
-"""
-
-
-def addsub_mpfr(a, b):
-    """(a + b) - a"""
-    ___ctx()
-    A = mpfr(a)
-    B = mpfr(b)
-    result = (A + B) - A
-    return result
-
-
-def addsub_exact(a, b):
-    """(a + b) - a"""
-    A = Sink(a, inexact=False)
-    B = Sink(b, inexact=False)
-    result = (A + B) - A
-    return str(result)
-
-
-def addsub_sink(a, a_inexact, b, b_inexact, maxp=None):
-    """(a + b) - a"""
-    A = Sink(a, inexact=a_inexact)
-    B = Sink(b, inexact=b_inexact)
-    A_B = (A + B).trunc(maxp=maxp)
-    result = (A_B - A).trunc(maxp=maxp)
-    return str(result)
-
-
-def addsub_limited(a, b):
-    A = Sink(a, inexact=False)
-    B = Sink(b, inexact=False)
-    A_B = (A + B).trunc(maxp=53)
-    result = (A_B - A).trunc(maxp=53)
-    return str(result)
-
-
-___ctx()
-pie = gmp.const_pi()
