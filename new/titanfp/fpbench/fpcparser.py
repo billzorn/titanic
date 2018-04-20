@@ -257,74 +257,9 @@ def demo():
  :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
  (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
 """
-    
+
     core = compile(fpc_minimal)[0]
     print(core)
 
-    pie = '3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117068'
-    
-    float_args = {
-        'a' : float('1e12'),
-        'b' : float(pie),
-    }
-
-    sink_args = {
-        'a' : ast.Sink('1e12', inexact=False),
-        'b' : ast.Sink(pie, inexact=True),
-    }
-    
-    print(core.e.evaluate(ast.EvalCtx(
-        float_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_754)))
-
-    print(core.e.evaluate_sink(ast.EvalCtx(
-        sink_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_754)))
-
-    print(core.e.evaluate_sink(ast.EvalCtx(
-        sink_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_OPTIMISTIC)))
-
-
-    print('\n\n')
-
     core = compile(fpc_example)[0]
     print(core)
-
-    float_args = {
-        'a' : float('1e-16'),
-        'b' : float('1.2'),
-        'c' : float('0.5'),
-    }
-    
-    sink_args = {
-        'a' : ast.Sink('1e-16', inexact=True),
-        'b' : ast.Sink('1.2', inexact=True),
-        'c' : ast.Sink('0.5', inexact=False),
-    }
-    
-    print(core.e.evaluate(ast.EvalCtx(
-        float_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_754)))
-
-    print(core.e.evaluate_sink(ast.EvalCtx(
-        sink_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_754)))
-
-    print(core.e.evaluate_sink(ast.EvalCtx(
-        sink_args,
-        w=11,
-        p=53,
-        mode=ast.EVAL_OPTIMISTIC)))
-
-    # print(results[0].e.evaluate_sink(ast.EvalCtx({"a":"1e16", "b":"3.14159"})))

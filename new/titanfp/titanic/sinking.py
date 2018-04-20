@@ -13,6 +13,7 @@ import re
 # for example, put some sort of fdata() function in conversion to get w and p...
 import numpy as np
 import gmpy2 as gmp
+mpfr_t = type(gmp.mpfr())
 
 from .integral import bitmask
 from . import conversion

@@ -23,6 +23,8 @@ def withnprec(op, *args, min_n = -1075, max_p = 53, xulps = _DEFAULT_XULPS,
                emin = _DEFAULT_EMIN, emax = _DEFAULT_EMAX):
     """Compute op(*args), with n >= min_n and precision <= max_p.
 
+    TODO: exactness of input sinks -> exactness of result
+
     Arguments are provided as mpfrs; they are treated as exact values, so their
     precision is unimportant except where it affects their value. The result is a
     Titanic Sink.
@@ -44,6 +46,9 @@ def withnprec(op, *args, min_n = -1075, max_p = 53, xulps = _DEFAULT_XULPS,
     be supported.
     """
 
+    # or should the arguments be sinks
+    args = [arg.to_mpfr() for arg in args]
+    
     xbits = xulps.bit_length() << 1
 
     while xbits <= _DEFAULT_XBITS_MAX:
