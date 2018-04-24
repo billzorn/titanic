@@ -37,11 +37,11 @@ reserved_constructs = {
     'fdim' : _reserve('unimplemented: fdim'),
     'fmax' : _reserve('unimplemented: fmax'),
     'fmin' : _reserve('unimplemented: fmin'),
-    'fmod' : _reserve('unimplemented: fmod'),
+    'fmod' : ast.Fmod,
     'remainder' : _reserve('unimplemented: remainder'),
     # rounding and truncation
     'ceil' : _reserve('unimplemented: ceil'),
-    'floor' : _reserve('unimplemented: floor'),
+    'floor' : ast.Floor,
     'nearbyint' : _reserve('unimplemented: nearbyint'),
     'round' : _reserve('unimplemented: round'),
     'trunc' : _reserve('unimplemented: trunc'),

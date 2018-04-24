@@ -125,7 +125,14 @@ class Mul(BinaryExpr):
 class Div(BinaryExpr):
     name: str = '/'
 
+# more arithmetic
 
+class Fmod(BinaryExpr):
+    name: str = 'fmod'
+
+class Floor(UnaryExpr):
+    name: str = 'floor'
+    
 # comparison
 
 class LT(NaryExpr):

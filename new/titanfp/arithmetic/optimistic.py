@@ -10,6 +10,7 @@ from ..fpbench import fpcast as ast
 
 
 class EvalCtx(object):
+    
     def __init__(self, w=11, p=53):
         # IEEE 754-like
         self.w = w
@@ -19,6 +20,11 @@ class EvalCtx(object):
         self.n = self.emin - self.p
         # variables and stuff
         self.bindings = {}
+
+    def clone(self):
+        copy = EvalCtx(w=self.w, p=self.p)
+        copy.bindings.update(self.bindings)
+        return copy
 
 
 def interpret(core, args, ctx):
@@ -45,6 +51,21 @@ def evaluate(e, ctx):
 
     elif isinstance(e, ast.Var):
         return ctx.bindings[e.value]
+
+    # control flow
+
+    elif isinstance(e, ast.If):
+        if evaluate(e.children[0], ctx):
+            return evaluate(e.children[1], ctx)
+        else:
+            return evaluate(e.children[2], ctx)
+
+    elif isinstance(e, ast.Let):
+        # somebody has to clone the context, to prevent let bindings in the subexpressions
+        # from contaminating each other or the result
+        bindings = [(name, evaluate(expr, ctx.clone())) for name, expr in e.let_bindings]
+        ctx.bindings.update(bindings)
+        return evaluate(e.body, ctx)
 
     # Unary/Binary/NaryExpr
 
@@ -81,6 +102,17 @@ def evaluate(e, ctx):
             p = min(child._p if child._inexact else ctx.p for child in children)
             return gmpmath.withnprec(gmp.div, *children, min_n=n, max_p=p)
 
+        elif isinstance(e, ast.Floor):
+            n = max(child._n if child._inexact else max(ctx.n, -1) for child in children)
+            p = ctx.p
+            return gmpmath.withnprec(gmp.floor, *children, min_n=n, max_p=p)
+
+        # HACK
+        elif isinstance(e, ast.GT):
+            return children[0] > children[1]
+        elif isinstance(e, ast.LT):
+            return children[0] < children[1]
+            
         elif isinstance(e, ast.Expr):
             raise ValueError('unimplemented: {}'.format(repr(e)))
 
