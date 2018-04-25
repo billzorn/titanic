@@ -11,3 +11,22 @@
                 (if (> r PI) (- (- (- r (* 2 P1)) (* 2 P2)) (* 2 P3))
                     (if (< r (- PI)) (+ (+ (+ r (* 2 P1)) (* 2 P2)) (* 2 P3))
                         r)))))))
+
+(FPCore (x)
+        :name round
+        :precision binary64
+        :spec (round x)
+        (let ([n 6755399441055744.0])
+          (- (+ x n) n)))
+
+(FPCore (x)
+        :name abs_err_binary16
+        :precision real
+        (let ([x^ (x :precision binary16)])
+          (fabs (- x x^))))
+
+(FPCore (x^)
+        :name abs_err
+        :precision binary16
+        (let ([x (x^ :precision real)])
+          (fabs (- x x^))))

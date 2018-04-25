@@ -151,3 +151,19 @@ def withnprec(op, *args, min_n = -1075, max_p = 53, xulps = _DEFAULT_XULPS,
                     inexact = result_inexact,
                     sided_interval = result_sided,
                     full_interval = False)
+
+def pi(p):
+    assert p >= 2
+    with gmp.context(
+                precision=p,
+                emin=-1,
+                emax=2,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=False,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+    ):
+        return gmp.const_pi()

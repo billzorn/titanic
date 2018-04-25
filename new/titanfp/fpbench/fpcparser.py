@@ -158,10 +158,12 @@ class Visitor(FPCoreVisitor):
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
     def visitFpcore(self, ctx) -> FPCore:
-        core_id = ctx.cid.text if ctx.cid is not None else None
-        # need a real error strategy
-        if core_id in reserved_constructs:
-            raise ValueError('name {} is reserved'.format(core_id))
+        # core_id = ctx.cid.text if ctx.cid is not None else None
+        # # need a real error strategy
+        # if core_id in reserved_constructs:
+        #     raise ValueError('name {} is reserved'.format(core_id))
+
+        core_id = None
 
         inputs = [x.text for x in ctx.inputs]
         input_set = set()
@@ -217,6 +219,9 @@ class Visitor(FPCoreVisitor):
             return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
         else:
             raise ValueError('unsupported: call to core operator {}'.format(op))
+
+    def visitExprSub(self, ctx):
+        return ctx.sub.accept(self)
 
     def visitPropStr(self, ctx):
         return ctx.name.text, ctx.s.text[1:-1]

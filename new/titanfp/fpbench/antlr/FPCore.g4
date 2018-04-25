@@ -4,7 +4,7 @@ parse : fpcore* EOF ;
 
 // We break the standard by allowing cores to cores to have names,
 // which can be referred to as operators in other cores.
-fpcore : '(' 'FPCore' (cid=SYMBOL)? '(' (inputs+=SYMBOL)* ')' (props+=prop)* e=expr ')' ;
+fpcore : '(' 'FPCore' '(' (inputs+=SYMBOL)* ')' (props+=prop)* e=expr ')' ;
 
 expr
     : n=NUMBER # ExprNumeric
@@ -17,7 +17,11 @@ expr
     | '(' 'while' cond=expr '(' ('[' xs+=SYMBOL e0s+=expr es+=expr ']')* ')' body=expr ')' # ExprWhile
         // We allow nullary application here, as function calls to other cores are
         // the same as primitive operators according to this grammar.
-    | '(' op=SYMBOL (args+=expr)* ')' # ExprOp
+    | '(' op=SYMBOL (args+=expr)* (props+=prop)* ')' # ExprOp
+        // We allow an expression to be wrapped in parentheses so that properties
+        // can be applied to it. Note that this is different from specifying properties
+        // of an operation.
+    | '(' subexpr=expr (props+=prop)* ')' # ExprSub
     ;
 
 prop
