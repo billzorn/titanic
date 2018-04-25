@@ -615,3 +615,14 @@ def _test_big_mpfrs():
                 print('  m, exp failed to round trip through mpfr: {} = {}, {} = {}\n'.format(m, m1, exp, exp1))
 
     print('... Done.')
+
+    
+def _tostr(f):
+    m, exp = float_to_mantissa_exp(f)
+
+    trailing = gmp.bit_scan1(m)
+
+    c = m >> trailing
+    e = exp + trailing
+
+    return str(c) + '*2^' + str(e)
