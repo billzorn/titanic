@@ -173,16 +173,126 @@ def enclose(lower, upper, min_n=None):
 
 
 class Sink(object):
+
+    # for sinks with a real value, the value is exactly  (sign) * _c * 2**_exp
+    _c : int = None # unsigned significand
+    _exp : int = None # exponent
+
+    # sign is stored separately, as is information about infiniteness or NaN
+    _negative : bool = None # sign bit
+    _isinf : bool = None # is this value infinite?
+    _isnan : bool = None # is this value NaN?
+
+    # _m and _exp are not directly visible; we expose them with attributes
+
+    @property
+    def m(self):
+        """Signed integer significand.
+        The real value is m * 2**exp
+        """
+        if self._negative:
+            return -self._c
+        else:
+            return self._c
+
+    @property
+    def exp(self):
+        """Exponent."""
+        return self._exp
+
+    # we also present 4 views for the primary 'Titanic' properties
+
+    @property
+    def e(self):
+        """IEEE 754 style exponent.
+        If the significand is interpreted as a binary-point number x between 1 and 2,
+        i.e. 1.10011100 etc. then the real value is x * 2**e.
+        """
+        return (self._exp - 1) + self._c.bit_length()
+
+    @property
+    def n(self):
+        """The 'sticky bit' or the binary place where digits are no longer significant.
+        I.e. -1 for an integer inexact beyond the binary point. Always equal to exp - 1.
+        """
+        return self._exp - 1
+
+    @property
+    def p(self):
+        """The precision of the significand.
+        Always equal to the number of bits in c; 0 for any zero.
+        """
+        return self._c.bit_length()
+
+    @property
+    def c(self):
+        """Unsigned integer significand."""
+        return self._c
+
+    # views of basic semantic flags
+
+    @property
+    def negative(self):
+        """The sign bit - is this value negative?"""
+        return self._negative
+
+    @property
+    def isinf(self):
+        """Is this value infinite?"""
+
+    @property
+    def isnan(self):
+        """Is this value NaN?"""
+
+
+    # rounding envelopes and inexactness
+    _inexact : bool = None # approximate bit
+    _interval_full : bool = None # envelope interval size
+    _interval_sided : bool = None # envelope interval position
+    _interval_open_top : bool = None # is the top bound exclusive?
+    _interval_open_bottom : bool = None # ditto for the bottom bound
+
+    # views for interval properties
+
+    @property
+    def inexact(self):
+        """Is this value inexact?"""
+        return self._inexact
+
+    @property
+    def interval_full(self):
+        """Does the rounding envelope for this number extend a full ulp
+        on each side? (if false, it is a half ulp)
+        """
+        return self._interval_full
+
+    @property
+    def interval_sided(self):
+        """Does the rounding envelope only extend away from zero?
+        (if False, it is symmetric on both sides)
+        """
+        return self._interval_sided
+
+    @property
+    def interval_open_top(self):
+        """Is the top of the rounding envelope exclusive?
+        (if False, it is inclusive, or closed)
+        """
+        return self._interval_open_top
+
+    @property
+    def interval_open_bottom(self):
+        """Is the bottom of the rounding envelope exclusive?
+        (if False, it is inclusive, or closed)
+        """
+        return self._interval_open_bottom
+
+
+    # TODO old
     _e : int = None # exponent
     _n : int = None # "sticky bit" or lsb
     _p : int = None # precision: e - n
     _c : int = None # significand
-    _negative : bool = None # sign bit
-    _inexact : bool = None # approximate bit
-    _full_interval : bool = None # envelope interval size
-    _sided_interval : bool = None # envelope interval position
-    _isinf : bool = None # is the value infinite?
-    _isnan : bool = None # is this value NaN?
 
 
     def _valid(self) -> bool:
