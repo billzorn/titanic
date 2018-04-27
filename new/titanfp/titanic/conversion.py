@@ -13,6 +13,14 @@ mpfr_t = type(gmp.mpfr())
 from .integral import bitmask
 
 
+# reusable definitions
+ROUND_NEAREST_EVEN = 1
+ROUND_NEAREST_AWAY = 2
+ROUND_UP = 3
+ROUND_DOWN = 4
+ROUND_TO_ZERO = 5
+ROUND_AWAY_FROM_ZERO = 6
+
 def _np_byteorder(ftype):
     """Converts from numpy byteorder conventions for a floating point datatype
     to sys.byteorder 'big' or 'little'.
@@ -28,16 +36,59 @@ def _np_byteorder(ftype):
         raise ValueError('unknown numpy byteorder {} for dtype {}'.format(repr(bo), repr(ftype)))
 
 
+# Mini format datasheet.
+# For all formats:
+#   emax = (1 << (w - 1)) - 1
+#   emin = 1 - emax
+#   n = emin - p
+
+def fdata(ftype):
+    if ftype == np.float16:
+        return {
+            'w' : 5,
+            'p' : 11,
+            'emax' : 15,
+            'emin' : -14,
+            'n' : -25,
+            'pbits' : 10,
+            'nbytes' : 2,
+        }
+    elif ftype == np.float32:
+        return {
+            'w' : 8,
+            'p' : 24,
+            'emax' : 127,
+            'emin' : -126,
+            'n' : -150,
+            'pbits' : 23,
+            'nbytes' : 4,
+        }
+    elif ftype == np.float64 or ftype == float:
+        return {
+            'w' : 11,
+            'p' : 53,
+            'emax' : 1023,
+            'emin' : -1022,
+            'n' : -1075,
+            'pbits' : 52,
+            'nbytes' : 8,
+        }
+    elif ftype == np.float128:
+        raise ValueError('unsupported: machine-dependent 80-bit longdouble')
+    else:
+        TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(ftype)))
+
+
 # Get status flags out of numeric types
 
-def isneg(f):
+def is_neg(f):
     """Get the sign bit of a float or mpfr."""
     if isinstance(f, mpfr_t):
         if gmp.is_zero(f):
             #TODO: this is terrible
             return str(f).startswith('-')
         elif gmp.is_nan(f):
-            raise ValueError('conversion: isneg: mpfr NaNs are unsigned')
+            raise ValueError('mpfr NaNs are unsigned')
         else:
             return gmp.sign(f) < 0
     else:
@@ -57,7 +108,7 @@ def isneg(f):
 
         return bits >> offset != 0
 
-def isinf(f):
+def is_inf(f):
     """Check whether a float or mpfr is inf or -inf."""
     if isinstance(f, mpfr_t):
         return gmp.is_inf(f)
@@ -72,7 +123,7 @@ def isinf(f):
     else:
         raise TypeError('expected mpfr, float, or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
 
-def isnan(f):
+def is_nan(f):
     """Check whether a float or mpfr is nan."""
     if isinstance(f, mpfr_t):
         return gmp.is_nan(f)
@@ -105,46 +156,14 @@ def float_to_payload(f):
         raise TypeError('expected float or np.float{{16,32,64}}, got {}'.format(repr(type(f))))
 
     if not np.isnan(f):
-        raise ValueError('conversion: float_to_payload: expecting NaN, got {}'.format(repr(f)))
+        raise ValueError('expecting NaN, got {}'.format(repr(f)))
 
     bits = int.from_bytes(f.tobytes(), _np_byteorder(type(f)))
 
     return bits & bitmask(pbits)
 
 
-# Mini format datasheet.
-# For all formats:
-#   emax = (1 << (w - 1)) - 1
-#   emin = 1 - emax
-#   n = emin - p
-
-# numpy.float16
-#   w = 5
-#   p = 11
-#   emax = 15
-#   emin = -14
-#   n = -25
-#   pbits = 10
-#   nbytes = 2
-# numpy.float32:
-#   w = 8
-#   p = 24
-#   emax = 127
-#   emin = -126
-#   n = -150
-#   pbits = 23
-#   nbytes = 4
-# numpy.float64 or float:
-#   w = 11
-#   p = 53
-#   emax = 1023
-#   emin = -1022
-#   n = -1075
-#   pbits = 52
-#   nbytes = 8
-# numpy.float128:
-#   unsupported, not an IEEE 754 binary128, possibly 80bit x87?
-#   doc says this uses longdouble on the underlying system
+# Conversions to and from mantissa / exponent form
 
 
 def float_to_mantissa_exp(f):
@@ -370,6 +389,37 @@ def mpfr_from_mantissa_exp(m, exp):
         ):
             c = gmp.mpfr(m)
             return gmp.mul(c, scale)
+
+
+def numeric_to_mantissa_exp(x):
+    """Convert any type that can be interpreted as a number to
+    universal m, exp representation: x = m * 2**e.
+    """
+    if isinstance(x, int):
+        return (x, 0)
+    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(np.float64):
+        return float_to_mantissa_exp(x)
+    elif isinstance(f, mpfr_t):
+        return mpfr_to_mantissa_exp(x)
+    else:
+        raise TypeError('{}: not a numeric type'.format(repr(x)))
+
+
+def numeric_to_signed_mantissa_exp(x):
+    """Convert any type that can be interpreted as a number to
+    universal sign, m, exp representation: x = m * 2**e, with an explicit
+    sign so that the sign of floating point zeros is not lost.
+    """
+    if isinstance(x, int):
+        return (x < 0, abs(x), 0)
+    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(np.float64):
+        m, exp = float_to_mantissa_exp(x)
+        return (is_neg(x), abs(m), exp)
+    elif isinstance(f, mpfr_t):
+        m, exp = mpfr_to_mantissa_exp(x)
+        return (is_neg(x), abs(m), exp)
+    else:
+        raise TypeError('{}: not a numeric type'.format(repr(x)))
 
 
 # Some basic tests
@@ -615,14 +665,3 @@ def _test_big_mpfrs():
                 print('  m, exp failed to round trip through mpfr: {} = {}, {} = {}\n'.format(m, m1, exp, exp1))
 
     print('... Done.')
-
-    
-def _tostr(f):
-    m, exp = float_to_mantissa_exp(f)
-
-    trailing = gmp.bit_scan1(m)
-
-    c = m >> trailing
-    e = exp + trailing
-
-    return str(c) + '*2^' + str(e)
