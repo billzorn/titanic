@@ -1,0 +1,45 @@
+(FPCore (x)
+        :name cast_to_binary16
+        :precision real
+        (! :precision binary16 x))
+
+(FPCore (x)
+        :name numpy_cast_to_binary16
+        :precision real
+        (! :precision binary16 (cast (! :precision binary64 x))))
+
+(FPCore (x)
+        :name round
+        :spec (round x)
+        (let ([n (! :precision binary64 6755399441055744)])
+          (! :precision binary64 (-
+                                  (! :precision binary64 (+ x n))
+                                  n))))
+
+(FPCore (theta)
+        :name gsl_sf_angle_restrict_symm
+        :spec (fmod theta (* 2 PI))
+        (let ([P1 (* 4 (! :precision binary64 7.8539812564849853515625e-01))]
+              [P2 (* 4 (! :precision binary64 3.7748947079307981766760e-08))]
+              [P3 (* 4 (! :precision binary64 2.6951514290790594840552e-15))])
+          (let ([TwoPi (* 2 (+ P1 (+ P2 P3)))])
+            (let ([y (* 2 (floor (/ theta TwoPi)))])
+              (let ([r (- (- (- theta (* y P1)) (* y P2)) (* y P3))])
+                (if (> r PI) (- (- (- r (* 2 P1)) (* 2 P2)) (* 2 P3))
+                    (if (< r (- PI)) (+ (+ (+ r (* 2 P1)) (* 2 P2)) (* 2 P3))
+                        r)))))))
+
+(FPCore (theta)
+        :name gsl_sf_angle_restrict_symm
+        :spec (fmod theta (* 2 PI))
+        (let ([P1 (! :precision binary32 :rm RoundToZero PI)])
+          (let ([P2 (! :precision binary32 :rm RoundToZero (- (! :precision real PI) P1))])
+            (let ([P3 (! :precision binary64 (- (! :precision real PI)
+                                                (! :precision binary64 (+ P1 P2)) ; equivalent to :precision real
+                                                ))])
+              (let ([TwoPi (* 2 (+ P1 (+ P2 P3)))])
+                (let ([y (* 2 (floor (/ theta TwoPi)))])
+                  (let ([r (- (- (- theta (* y P1)) (* y P2)) (* y P3))])
+                    (if (> r PI) (- (- (- r (* 2 P1)) (* 2 P2)) (* 2 P3))
+                        (if (< r (- PI)) (+ (+ (+ r (* 2 P1)) (* 2 P2)) (* 2 P3))
+                            r)))))))))
