@@ -213,13 +213,13 @@ def floor(x, min_n = -1075, max_p = 53):
     # to be so, i.e. floor(1.00000000000~) could be 0 or 1 depending
     # on which way we rounded, even though at that precision ulps are
     # relatively small.
-    
+
     inexact = (x.inexact or result.inexact) and min_n < 0
 
     #TODO technically this could do clever things with the interval
     return Sink(result, inexact=inexact, full=False, sided=False)
 
-        
+
 # helpers to produce some useful constants
 
 def pi(p):
