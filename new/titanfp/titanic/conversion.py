@@ -397,9 +397,9 @@ def numeric_to_mantissa_exp(x):
     """
     if isinstance(x, int):
         return (x, 0)
-    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(np.float64):
+    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(x, np.float64):
         return float_to_mantissa_exp(x)
-    elif isinstance(f, mpfr_t):
+    elif isinstance(x, mpfr_t):
         return mpfr_to_mantissa_exp(x)
     else:
         raise TypeError('{}: not a numeric type'.format(repr(x)))
@@ -412,10 +412,10 @@ def numeric_to_signed_mantissa_exp(x):
     """
     if isinstance(x, int):
         return (x < 0, abs(x), 0)
-    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(np.float64):
+    elif isinstance(x, float) or isinstance(x, np.float16) or isinstance(x, np.float32) or isinstance(x, np.float64):
         m, exp = float_to_mantissa_exp(x)
         return (is_neg(x), abs(m), exp)
-    elif isinstance(f, mpfr_t):
+    elif isinstance(x, mpfr_t):
         m, exp = mpfr_to_mantissa_exp(x)
         return (is_neg(x), abs(m), exp)
     else:
