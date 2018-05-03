@@ -16,6 +16,13 @@
                                   (! :precision binary64 (+ x n))
                                   n))))
 
+(FPCore (x)
+        :name round
+        :spec (round x)
+        (let ([n (! :precision binary64 6755399441055744)])
+          (- (! :precision binary64 (+ x n))
+             n)))
+
 (FPCore (theta)
         :name gsl_sf_angle_restrict_symm
         :spec (fmod theta (* 2 PI))

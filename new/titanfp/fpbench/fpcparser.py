@@ -128,29 +128,32 @@ def propToSexp(p):
     else:
         return str(p)
 
+
 class FPCore(object):
-    def __init__(self, inputs, e, props={}, core_id=None):
-        # cross-core ID is not represented yet
+    def __init__(self, inputs, e, props={}):
         self.inputs = inputs
         self.e = e
         self.props = props
-        self.name = self.props.get(':name', None)
-        self.pre = self.props.get(':pre', None)
+        self.name = self.props.get('name', None)
+        self.pre = self.props.get('pre', None)
+        self.spec = self.props.get('spec', None)
+        self.prec = self.props.get('prec', None)
+        self.rm = self.props.get('rm', None)
 
     def __str__(self):
         return 'FPCore ({})\n  name: {}\n   pre: {}\n  {}'.format(
             ' '.join(self.inputs), self.name, self.pre, self.e)
 
     def __repr__(self):
-        return 'FPCoreObject(\n  {},\n  {},\n  {}\n)'.format(
-            repr(self.inputs), repr(self.props), repr(self.e))
+        return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
+            repr(self.inputs), repr(self.e), repr(self.props))
 
-    def _sexp(self):
+    @property
+    def sexp(self):
         return '(FPCore ({}) {} {})'.format(
             ' '.join(self.inputs),
             ' '.join(name + ' ' + propToSexp(prop) for name, prop in self.props.items()),
             str(self.e))
-    sexp = property(_sexp)
 
 
 class Visitor(FPCoreVisitor):
@@ -158,36 +161,50 @@ class Visitor(FPCoreVisitor):
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
     def visitFpcore(self, ctx) -> FPCore:
-        # core_id = ctx.cid.text if ctx.cid is not None else None
-        # # need a real error strategy
-        # if core_id in reserved_constructs:
-        #     raise ValueError('name {} is reserved'.format(core_id))
-
-        core_id = None
-
-        inputs = [x.text for x in ctx.inputs]
+        inputs = [arg.accept(self) for arg in ctx.inputs]
         input_set = set()
-        for x in inputs:
-            if x in reserved_constants:
+        for arg, props in inputs:
+            if arg in reserved_constants:
                 raise ValueError('argument name {} is reserved'.format(x))
-            elif x in input_set:
+            elif arg in input_set:
                 raise ValueError('duplicate argument name {}'.format(x))
             else:
-                input_set.add(x)
+                input_set.add(arg)
 
         props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
         e = ctx.e.accept(self)
-        return FPCore(inputs, e, props=props, core_id=core_id)
+        return FPCore(inputs, e, props=props)
 
-    def visitExprNumeric(self, ctx) -> ast.Expr:
+    def visitArgument(self, ctx):
+        return ctx.name.text, {name : x for name, x in (prop.accept(self) for prop in ctx.props)}
+
+    def visitRoundedNumber(self, ctx) -> ast.Expr:
         return ast.Val(ctx.n.text)
 
-    def visitExprSymbolic(self, ctx) -> ast.Expr:
+    def visitRoundedHexnum(self, ctx) -> ast.Expr:
+        return ast.Val(ctx.n.text)
+
+    def visitRoundedSymbolic(self, ctx) -> ast.Expr:
         x = ctx.x.text
         if x in reserved_constants:
             return reserved_constants[x]
         else:
             return ast.Var(ctx.x.text)
+
+    def visitRoundedDigits(self, ctx) -> ast.Expr:
+        # some crude validity checking; note this does not allow exponents like 1e3
+        e = int(ctx.e.text)
+        b = int(ctx.b.text)
+        if b < 2:
+            raise ValueError('base must be >= 2, got {}'.format(repr(b)))
+        return ast.Digits(ctx.m.text, ctx.e.text, ctx.b.text)
+
+    def visitRoundedOp(self, ctx):
+        op = ctx.op.text
+        if op in reserved_constructs:
+            return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
+        else:
+            raise ValueError('unsupported: call to FPCore operator {}'.format(op))
 
     def visitExprIf(self, ctx) -> ast.Expr:
         return ast.If(
@@ -213,24 +230,35 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
-    def visitExprOp(self, ctx):
-        op = ctx.op.text
-        if op in reserved_constructs:
-            return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
-        else:
-            raise ValueError('unsupported: call to core operator {}'.format(op))
+    def visitExprExplicit(self, ctx) -> ast.Expr:
+        props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
+        body = ctx.body.accept(self)
+        body.props = props
+        return body
 
-    def visitExprSub(self, ctx):
-        return ctx.sub.accept(self)
+    def visitExprImplicit(self, ctx) -> ast.Expr:
+        return ctx.body.accept(self)
 
     def visitPropStr(self, ctx):
-        return ctx.name.text, ctx.s.text[1:-1]
+        name = ctx.name.text
+        if name.startswith(':'):
+            return name[1:], ctx.s.text[1:-1]
+        else:
+            raise ValueError('bad keyword {} in FPCore property'.format(name))
 
     def visitPropList(self, ctx):
-        return ctx.name.text, [x.text for x in ctx.xs]
+        name = ctx.name.text
+        if name.startswith(':'):
+            return name[1:], [x.text for x in ctx.xs]
+        else:
+            raise ValueError('bad keyword {} in FPCore property'.format(name))
 
     def visitPropExpr(self, ctx):
-        return ctx.name.text, ctx.e.accept(self)
+        name = ctx.name.text
+        if name.startswith(':'):
+            return name[1:], ctx.e.accept(self)
+        else:
+            raise ValueError('bad keyword {} in FPCore property'.format(name))
 
 
 def parse(s):

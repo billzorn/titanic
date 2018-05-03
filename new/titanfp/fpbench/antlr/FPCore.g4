@@ -2,36 +2,41 @@ grammar FPCore;
 
 parse : fpcore* EOF ;
 
-// We break the standard by allowing cores to cores to have names,
-// which can be referred to as operators in other cores.
-fpcore : '(' 'FPCore' '(' (inputs+=SYMBOL)* ')' (props+=prop)* e=expr ')' ;
+fpcore : '(' 'FPCore' '(' (inputs+=argument)* ')' (props+=prop)* e=expr ')' ;
+
+argument
+    : name=SYMBOL
+    | ( '!' (props+=prop)* name=SYMBOL )
+    ;
+
+rounded_expr
+    : n=NUMBER # RoundedNumber
+    | n=HEXNUM # RoundedHexnum
+    // Variables and constants both appear as symbols.
+    | x=SYMBOL # RoundedSymbolic
+    | '(' 'digits' m=NUMBER e=NUMBER b=NUMBER ')' # RoundedDigits
+    | '(' op=SYMBOL (args+=expr)* ')' # RoundedOp
+    ;
 
 expr
-    : n=NUMBER # ExprNumeric
-        // A symbolic expression can be either a variable or a constant.
-    | x=SYMBOL # ExprSymbolic
-        // if statements look like applications, so we give them
-        // higher precedence.
-    | '(' 'if' cond=expr then_body=expr else_body=expr ')'                                 # ExprIf
-    | '(' 'let' '(' ('[' xs+=SYMBOL es+=expr ']')* ')' body=expr ')'                       # ExprLet
+    : '(' 'if' cond=expr then_body=expr else_body=expr ')' # ExprIf
+    | '(' 'let' '(' ('[' xs+=SYMBOL es+=expr ']')* ')' body=expr ')' # ExprLet
     | '(' 'while' cond=expr '(' ('[' xs+=SYMBOL e0s+=expr es+=expr ']')* ')' body=expr ')' # ExprWhile
-        // We allow nullary application here, as function calls to other cores are
-        // the same as primitive operators according to this grammar.
-    | '(' op=SYMBOL (args+=expr)* (props+=prop)* ')' # ExprOp
-        // We allow an expression to be wrapped in parentheses so that properties
-        // can be applied to it. Note that this is different from specifying properties
-        // of an operation.
-    | '(' subexpr=expr (props+=prop)* ')' # ExprSub
+    | '(' '!' (props+=prop)* body=rounded_expr ')' # ExprExplicit
+    // This form should go last, as if statements can be confused with operations.
+    | body=rounded_expr # ExprImplicit
     ;
 
+// Keywords in properties are not required by the grammar to start with a colon;
+// it's up to the visitor to check that.
 prop
-    : name=SYMBOL s=STRING              # PropStr
+    : name=SYMBOL s=STRING # PropStr
     | name=SYMBOL '(' (xs+=SYMBOL)* ')' # PropList
-    | name=SYMBOL e=expr                # PropExpr
+    | name=SYMBOL e=expr # PropExpr
     ;
 
-// As described in the FPCore 1.0 standard, with some minor fixes.
 NUMBER : [-+]? [0-9]+ ('.' [0-9]+)? ('e' [-+]?[0-9]+)? ;
+HEXNUM : [-+]? '0' [xX] [0-9a-fA-F]+ ('.' [0-9a-fA-F]+)? ('p' [-+]?[0-9]+) ;
 SYMBOL : [a-zA-Z~!@$%^&*_\-+=<>.?/:] [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]* ;
 STRING : '"' ([\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [\u0022\u005c])* '"' ;
 

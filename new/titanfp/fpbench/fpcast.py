@@ -8,12 +8,12 @@ import typing
 
 class Expr(object):
     name: str = 'Expr'
+    props = {}
 
 class NaryExpr(Expr):
     name: str = 'NaryExpr'
 
     def __init__(self, *children: Expr) -> None:
-        super().__init__()
         self.children: typing.List[Expr] = children
 
     def __str__(self):
@@ -26,14 +26,12 @@ class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'
 
     def __init__(self, child0: Expr) -> None:
-        super().__init__()
         self.children: typing.List[Expr] = [child0,]
 
 class BinaryExpr(NaryExpr):
     name: str = 'BinaryExpr'
 
     def __init__(self, child0: Expr, child1: Expr) -> None:
-        super().__init__()
         self.children: typing.List[Expr] = [child0, child1]
 
 class ValueExpr(Expr):
@@ -42,8 +40,7 @@ class ValueExpr(Expr):
     # All values (variables, constants, or numbers) are represented as strings
     # in the AST.
     def __init__(self, value: str) -> None:
-        super().__init__()
-        self.value = value
+        self.value: str = value
 
     def __str__(self):
         return self.value
@@ -60,6 +57,14 @@ class Val(ValueExpr):
 class Var(ValueExpr):
     name: str = 'Var'
 
+class Digits(Expr):
+    name: str = 'digits'
+
+    def __init__(self, m: str, e: str, b: str) -> None:
+        self.m: str = m
+        self.e: int = int(e)
+        self.b: int = int(b)
+
 
 # control flow
 
@@ -67,14 +72,20 @@ class If(NaryExpr):
     name: str = 'if'
 
     def __init__(self, cond: Expr, then_body: Expr, else_body: Expr) -> None:
-        super().__init__()
-        self.children: typing.List[Expr] = [cond, then_body, else_body]
+        self.cond: Expr = cond
+        self.then_body: Expr = then_body
+        self.else_body: Expr = else_body
 
+    def __str__(self):
+        return '(' + type(self).name + ' ' + str(self.cond) + ' ' + str(self.then_body) + ' ' + str(self.else_body) + ')'
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
+        
 class Let(Expr):
     name: str = 'let'
 
     def __init__(self, let_bindings: typing.List[typing.Tuple[str, Expr]], body: Expr) -> None:
-        super().__init__()
         self.let_bindings: typing.List[typing.Tuple[str, Expr]] = let_bindings
         self.body: Expr = body
 
@@ -90,7 +101,6 @@ class While(Expr):
     name: str = 'while'
 
     def __init__(self, cond: Expr, while_bindings: typing.List[typing.Tuple[str, Expr, Expr]], body: Expr) -> None:
-        super.__init__()
         self.cond: Expr = cond
         self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
         self.body: Expr = body
@@ -132,7 +142,7 @@ class Fmod(BinaryExpr):
 
 class Floor(UnaryExpr):
     name: str = 'floor'
-    
+
 # comparison
 
 class LT(NaryExpr):
