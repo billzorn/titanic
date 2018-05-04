@@ -20,13 +20,13 @@ def interpret(core, args, ctx=None):
 
     if ctx is None:
         ctx = EvalCtx(props=core.props)
-    
+
     for arg, (name, props) in zip(args, core.inputs):
         if props:
             local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=props)
         else:
             local_ctx = ctx
-            
+
         value = sinking.Sink(arg, min_n=local_ctx.n, max_p=local_ctx.p)
         ctx.let([(name, value)])
 
@@ -41,7 +41,7 @@ def evaluate(e, ctx):
         local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
     else:
         local_ctx = ctx
-        
+
     # ValueExpr
 
     if isinstance(e, ast.Val):
@@ -57,7 +57,7 @@ def evaluate(e, ctx):
             return value.ieee_754(local_ctx.w, local_ctx.p)
 
     # and Digits
-        
+
     elif isinstance(e, ast.Digits):
         # TODO yolo
         spare_bits = 16
@@ -70,7 +70,7 @@ def evaluate(e, ctx):
                                    min_n = local_ctx.n - spare_bits,
                                    max_p = local_ctx.p + spare_bits)
         return gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
-        
+
     # control flow
 
     elif isinstance(e, ast.If):
@@ -116,7 +116,7 @@ def evaluate(e, ctx):
             return gmpmath.floor(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Fmod):
-            return gmpmath.floor(*children, min_n=n, max_p=p)
+            return gmpmath.fmod(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Pow):
             return gmpmath.pow(*children, min_n=n, max_p=p)
@@ -161,7 +161,7 @@ def evaluate(e, ctx):
                     if not x != y:
                         return False
             return True
-        
+
         elif isinstance(e, ast.Expr):
             raise ValueError('unimplemented: {}'.format(repr(e)))
 

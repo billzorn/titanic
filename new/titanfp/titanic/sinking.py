@@ -289,6 +289,8 @@ class Sink(object):
     def is_zero(self):
         return self._c == 0
 
+    def is_integer(self):
+        return self._exp >= 0 or self._c & bitmask(-self._exp) == 0
 
     def __init__(self,
                  # The base value of the sink, either as a sink to copy

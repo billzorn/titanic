@@ -8,34 +8,27 @@ from ..titanic import gmpmath
 from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
-
-class EvalCtx(object):
-    
-    def __init__(self, w=11, p=53):
-        # IEEE 754-like
-        self.w = w
-        self.p = p
-        self.emax = (1 << (self.w - 1)) - 1
-        self.emin = 1 - self.emax
-        self.n = self.emin - self.p
-        # variables and stuff
-        self.bindings = {}
-
-    def clone(self):
-        copy = EvalCtx(w=self.w, p=self.p)
-        copy.bindings.update(self.bindings)
-        return copy
+from .evalctx import EvalCtx
 
 
-def interpret(core, args, ctx):
-    """Main FPCore interpreter."""
+def interpret(core, args, ctx=None):
+    """FPCore interpreter for "optimistic" Titanic sinking-point."""
 
-    varnames = core.inputs
-    if len(varnames) != len(args):
+    if len(core.inputs) != len(args):
         raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
-                         .format(len(args), len(varnames), ' '.join(varnames)))
+                         .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
-    ctx.bindings.update(zip(varnames, [sinking.Sink(arg, max_p=ctx.p, min_n=ctx.n) for arg in args]))
+    if ctx is None:
+        ctx = EvalCtx(props=core.props)
+
+    for arg, (name, props) in zip(args, core.inputs):
+        if props:
+            local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=props)
+        else:
+            local_ctx = ctx
+
+        value = sinking.Sink(arg, min_n=local_ctx.n, max_p=local_ctx.p)
+        ctx.let([(name, value)])
 
     return evaluate(core.e, ctx)
 
@@ -43,28 +36,54 @@ def interpret(core, args, ctx):
 def evaluate(e, ctx):
     """Recursive expression evaluator, with much isinstance()."""
 
+    # Handle annotations for precision-specific computations.
+    if e.props:
+        local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
+    else:
+        local_ctx = ctx
+
     # ValueExpr
 
     if isinstance(e, ast.Val):
         # TODO precision
-        return sinking.Sink(e.value, max_p=ctx.p, min_n=ctx.n)
+        return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p)
 
     elif isinstance(e, ast.Var):
-        return ctx.bindings[e.value]
+        # TODO better rounding and stuff
+        value = ctx.bindings[e.value]
+        if local_ctx is ctx:
+            return value
+        else:
+            return value.ieee_754(local_ctx.w, local_ctx.p)
+
+    # and Digits
+
+    elif isinstance(e, ast.Digits):
+        # TODO yolo
+        spare_bits = 16
+        base = sinking.Sink(e.b)
+        exponent = sinking.Sink(e.e)
+        scale = gmpmath.pow(base, exponent,
+                            min_n = -(base.bit_length() * exponent) - spare_bits,
+                            max_p = local_ctx.w + local_ctx.p + spare_bits)
+        significand = sinking.Sink(e.m,
+                                   min_n = local_ctx.n - spare_bits,
+                                   max_p = local_ctx.p + spare_bits)
+        return gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
 
     # control flow
 
     elif isinstance(e, ast.If):
-        if evaluate(e.children[0], ctx):
-            return evaluate(e.children[1], ctx)
+        if evaluate(e.cond, ctx):
+            return evaluate(e.then_body, ctx)
         else:
-            return evaluate(e.children[2], ctx)
+            return evaluate(e.else_body, ctx)
 
     elif isinstance(e, ast.Let):
         # somebody has to clone the context, to prevent let bindings in the subexpressions
         # from contaminating each other or the result
         bindings = [(name, evaluate(expr, ctx.clone())) for name, expr in e.let_bindings]
-        ctx.bindings.update(bindings)
+        ctx.let(bindings)
         return evaluate(e.body, ctx)
 
     # Unary/Binary/NaryExpr
@@ -77,42 +96,110 @@ def evaluate(e, ctx):
             return -children[0]
 
         elif isinstance(e, ast.Sqrt):
-            n = ctx.n
-            p = min(child._p if child._inexact else ctx.p for child in children)
-            # p = min(children[0]._p, ctx.p) if children[0]._inexact else ctx.p
-            return gmpmath.withnprec(gmp.sqrt, *children, min_n=n, max_p=p)
+            n = local_ctx.n
+            p = min(child.p if child.inexact else local_ctx.p for child in children)
+            return gmpmath.sqrt(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Add):
-            n = max(child._n if child._inexact else ctx.n for child in children)
-            p = ctx.p
-            return gmpmath.withnprec(gmp.add, *children, min_n=n, max_p=p)
+            n = max(child.n if child.inexact else local_ctx.n for child in children)
+            p = local_ctx.p
+            return gmpmath.add(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Sub):
-            n = max(child._n if child._inexact else ctx.n for child in children)
-            p = ctx.p
-            return gmpmath.withnprec(gmp.sub, *children, min_n=n, max_p=p)
+            n = max(child.n if child.inexact else local_ctx.n for child in children)
+            p = local_ctx.p
+            return gmpmath.sub(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Mul):
-            n = ctx.n
-            p = min(child._p if child._inexact else ctx.p for child in children)
-            return gmpmath.withnprec(gmp.mul, *children, min_n=n, max_p=p)
+            n = local_ctx.n
+            p = min(child.p if child.inexact else local_ctx.p for child in children)
+            return gmpmath.mul(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Div):
-            n = ctx.n
-            p = min(child._p if child._inexact else ctx.p for child in children)
-            return gmpmath.withnprec(gmp.div, *children, min_n=n, max_p=p)
+            n = local_ctx.n
+            p = min(child.p if child.inexact else local_ctx.p for child in children)
+            return gmpmath.div(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.Floor):
-            n = max(child._n if child._inexact else max(ctx.n, -1) for child in children)
-            p = ctx.p
-            return gmpmath.withnprec(gmp.floor, *children, min_n=n, max_p=p)
+            child = children[0]
+            # floor always returns an integer, with a corresponding n value of -1
+            n = max(child.n if child.inexact else local_ctx.n, -1)
+            p = local_ctx.p
+            result = gmpmath.floor(*children, min_n=n, max_p=p)
+            # Special case: if the input is inexactly an integer, we don't know which number
+            # we should return from floor.
+            # TODO: get rounding modes and interval bounds right.
+            if result.exact and child.inexact and child.is_integer():
+                return result.explode()
+            else:
+                return result
 
-        # HACK
-        elif isinstance(e, ast.GT):
-            return children[0] > children[1]
+        elif isinstance(e, ast.Fmod):
+            numerator = children[0]
+            modulus = children[1]
+            # fmod is effectively a subtraction.
+            # There are two ways we could get a limited n-value: either from the
+            # numerator itself, as captured by the setting for n, or from the
+            # multiplication. The multiplied value will have the same exponent as the
+            # numerator, so we can capture that limitation on n by limiting p.
+            n = numerator.n if numerator.inexact else local_ctx.n
+            p = modulus.p if modulus.inexact else local_ctx.p
+            return gmpmath.fmod(*children, min_n=n, max_p=p)
+
+        elif isinstance(e, ast.Pow):
+            # I believe we can use the same rules as for multiplication.
+            # It might be more complicated.
+            n = local_ctx.n
+            p = min(child.p if child.inexact else local_ctx.p for child in children)
+            return gmpmath.pow(*children, min_n=n, max_p=p)
+
+        elif isinstance(e, ast.Sin):
+            child = children[0]
+            # To compute Sin accurately, we essentially need to compute fmod against pi.
+            # This means that the precision of the output is related to the significance of the
+            # input's n value vs pi.
+            n = local_ctx.n
+            p = max(min(0 - child.n, local_ctx.p), 0)
+            return gmpmath.sin(*children, min_n=n, max_p=p)
+
         elif isinstance(e, ast.LT):
-            return children[0] < children[1]
-            
+            for x, y in zip(children, children[1:]):
+                if not x < y:
+                    return False
+            return True
+
+        elif isinstance(e, ast.GT):
+            for x, y in zip(children, children[1:]):
+                if not x > y:
+                    return False
+            return True
+
+        elif isinstance(e, ast.LEQ):
+            for x, y in zip(children, children[1:]):
+                if not x <= y:
+                    return False
+            return True
+
+        elif isinstance(e, ast.GEQ):
+            for x, y in zip(children, children[1:]):
+                if not x >= y:
+                    return False
+            return True
+
+        elif isinstance(e, ast.EQ):
+            for x in children:
+                for y in children[1:]:
+                    if not x == y:
+                        return False
+            return True
+
+        elif isinstance(e, ast.NEQ):
+            for x in children:
+                for y in children[1:]:
+                    if not x != y:
+                        return False
+            return True
+
         elif isinstance(e, ast.Expr):
             raise ValueError('unimplemented: {}'.format(repr(e)))
 
