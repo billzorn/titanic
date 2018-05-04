@@ -32,6 +32,7 @@ expr
 prop
     : name=SYMBOL s=STRING # PropStr
     | name=SYMBOL '(' (xs+=SYMBOL)* ')' # PropList
+    // Properties specified as symbols will end up being parsed as implicit symbolic expressions.
     | name=SYMBOL e=expr # PropExpr
     ;
 

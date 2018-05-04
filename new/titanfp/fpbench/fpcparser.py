@@ -1,5 +1,6 @@
 # all the things you wish you didn't know about floating point
 
+
 import typing
 
 import antlr4
@@ -130,10 +131,14 @@ def propToSexp(p):
 
 
 class FPCore(object):
-    def __init__(self, inputs, e, props={}):
+    def __init__(self, inputs, e, props = None):
         self.inputs = inputs
         self.e = e
-        self.props = props
+        if props is None:
+            self.props = {}
+        else:
+            self.props = props
+
         self.name = self.props.get('name', None)
         self.pre = self.props.get('pre', None)
         self.spec = self.props.get('spec', None)
@@ -142,7 +147,8 @@ class FPCore(object):
 
     def __str__(self):
         return 'FPCore ({})\n  name: {}\n   pre: {}\n  {}'.format(
-            ' '.join(self.inputs), self.name, self.pre, self.e)
+            ' '.join((ast.annotate(name, props) for name, props in self.inputs)),
+            self.name, self.pre, self.e)
 
     def __repr__(self):
         return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
@@ -150,9 +156,9 @@ class FPCore(object):
 
     @property
     def sexp(self):
-        return '(FPCore ({}) {} {})'.format(
-            ' '.join(self.inputs),
-            ' '.join(name + ' ' + propToSexp(prop) for name, prop in self.props.items()),
+        return '(FPCore ({}) {}{})'.format(
+            ' '.join((ast.annotate(name, props) for name, props in self.inputs)),
+            ''.join(':' + name + ' ' + propToSexp(prop) + ' ' for name, prop in self.props.items()),
             str(self.e))
 
 
@@ -162,14 +168,15 @@ class Visitor(FPCoreVisitor):
 
     def visitFpcore(self, ctx) -> FPCore:
         inputs = [arg.accept(self) for arg in ctx.inputs]
+
         input_set = set()
-        for arg, props in inputs:
-            if arg in reserved_constants:
-                raise ValueError('argument name {} is reserved'.format(x))
-            elif arg in input_set:
-                raise ValueError('duplicate argument name {}'.format(x))
+        for name, props in inputs:
+            if name in reserved_constants:
+                raise ValueError('argument name {} is reserved'.format(name))
+            elif name in input_set:
+                raise ValueError('duplicate argument name {}'.format(name))
             else:
-                input_set.add(arg)
+                input_set.add(name)
 
         props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
         e = ctx.e.accept(self)
@@ -252,6 +259,15 @@ class Visitor(FPCoreVisitor):
             return name[1:], [x.text for x in ctx.xs]
         else:
             raise ValueError('bad keyword {} in FPCore property'.format(name))
+
+    # # This seems like a good idea, but it means prop symbols will print back out as
+    # # strings, as we have no way to distinguish them.
+    # def visitPropSym(self, ctx):
+    #     name = ctx.name.text
+    #     if name.startswith(':'):
+    #         return name[1:], ctx.s.text
+    #     else:
+    #         raise ValueError('bad keyword {} in FPCore property'.format(name))
 
     def visitPropExpr(self, ctx):
         name = ctx.name.text

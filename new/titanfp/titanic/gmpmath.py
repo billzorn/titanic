@@ -246,3 +246,23 @@ def pi(p):
         ):
             x = gmp.const_pi()
     return Sink(x, inexact=True, sided=False, full=False)
+
+def mpfr(x, p):
+    # TODO no support for rounding modes
+    if p < 2:
+        raise ValueError('precision must be at least 2')
+    else:
+        with gmp.context(
+                    precision=p,
+                    emin=gmp.get_emin_min(),
+                    emax=gmp.get_emax_max(),
+                    trap_underflow=True,
+                    trap_overflow=True,
+                    trap_inexact=False,
+                    trap_invalid=True,
+                    trap_erange=True,
+                    trap_divzero=True,
+                    trap_expbound=True,
+        ):
+            r = gmp.mpfr(x)
+        return r

@@ -4,49 +4,67 @@
 import typing
 
 
+# pretty printer for properties
+def annotate(s, props):
+    if props:
+        return '(! ' + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in props.items())) + s + ')'
+    else:
+        return s
+
+
 # base ast classes
 
 class Expr(object):
     name: str = 'Expr'
-    props = {}
 
 class NaryExpr(Expr):
     name: str = 'NaryExpr'
+    props = None
 
-    def __init__(self, *children: Expr) -> None:
+    def __init__(self, *children: Expr, props = None) -> None:
         self.children: typing.List[Expr] = children
+        if props is None:
+            self.props = {}
+        else:
+            self.props = props
 
     def __str__(self):
         return '(' + type(self).name + ''.join((' ' + str(child) for child in self.children)) + ')'
 
     def __repr__(self):
-        return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
+        return (type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children))
+                + ' props=' + repr(self.props) + ')')
 
 class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'
 
-    def __init__(self, child0: Expr) -> None:
-        self.children: typing.List[Expr] = [child0,]
+    def __init__(self, child0: Expr, props = None) -> None:
+        super().__init__(child0, props=props)
 
 class BinaryExpr(NaryExpr):
     name: str = 'BinaryExpr'
 
-    def __init__(self, child0: Expr, child1: Expr) -> None:
-        self.children: typing.List[Expr] = [child0, child1]
+    def __init__(self, child0: Expr, child1: Expr, props = None) -> None:
+        super().__init__(child0, child1, props=props)
 
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
+    props = None
 
     # All values (variables, constants, or numbers) are represented as strings
     # in the AST.
-    def __init__(self, value: str) -> None:
+    def __init__(self, value: str, props = None) -> None:
         self.value: str = value
+        if props is None:
+            self.props = {}
+        else:
+            self.props = props
 
     def __str__(self):
-        return self.value
+        return annotate(self.value, self.props)
 
     def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.value) + ')'
+        return type(self).__name__ + '(' + repr(self.value) + ', props=' + repr(self.props) + ')'
 
 
 # values
@@ -59,16 +77,28 @@ class Var(ValueExpr):
 
 class Digits(Expr):
     name: str = 'digits'
+    props = None
 
-    def __init__(self, m: str, e: str, b: str) -> None:
+    def __init__(self, m: str, e: str, b: str, props = None) -> None:
         self.m: str = m
         self.e: int = int(e)
         self.b: int = int(b)
+        if props is None:
+            self.props = {}
+        else:
+            self.props = props
+
+    def __str__(self):
+        return annotate(self.m + '*' + str(self.b) + '**' + str(self.e), self.props)
+
+    def __repr__(self):
+        return (type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b)
+                + ', props=' + repr(self.props) + ')')
 
 
 # control flow
 
-class If(NaryExpr):
+class If(Expr):
     name: str = 'if'
 
     def __init__(self, cond: Expr, then_body: Expr, else_body: Expr) -> None:
@@ -81,7 +111,7 @@ class If(NaryExpr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
-        
+
 class Let(Expr):
     name: str = 'let'
 
