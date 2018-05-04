@@ -250,7 +250,7 @@ def pow(x, y, min_n = -1075, max_p = 53):
     return Sink(result, inexact=inexact, full=False, sided=False)
 
 
-def sin(x, y, min_n = -1075, max_p = 53):
+def sin(x, min_n = -1075, max_p = 53):
     """Compute sin(x), rounding according to min_n and max_p.
     TODO: rounding modes
     """

@@ -21,8 +21,13 @@ fpc_fmod2pi = fpcparser.compile(
 )
 """)[0]
 
+fpc_sinpow = fpcparser.compile(
+"""(FPCore (x) (sin (pow 2 x)))
+""")[0]
+
 floatctx = evalctx.EvalCtx(props={'precision':'binary32'})
 doublectx = evalctx.EvalCtx(props={'precision':'binary64'})
+bigctx = evalctx.EvalCtx(w = 20, p = 16360)
 
 def compare(core, *inputs, ctx=None):
     result_ieee = ieee754.interpret(core, inputs, ctx).collapse()

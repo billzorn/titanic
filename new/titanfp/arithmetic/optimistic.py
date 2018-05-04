@@ -158,8 +158,9 @@ def evaluate(e, ctx):
             # To compute Sin accurately, we essentially need to compute fmod against pi.
             # This means that the precision of the output is related to the significance of the
             # input's n value vs pi.
+
             n = local_ctx.n
-            p = max(min(0 - child.n, local_ctx.p), 0)
+            p = max(min(0 - child.n if child.inexact else local_ctx.p, local_ctx.p), 0)
             return gmpmath.sin(*children, min_n=n, max_p=p)
 
         elif isinstance(e, ast.LT):
