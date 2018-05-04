@@ -90,6 +90,9 @@ def evaluate(e, ctx):
 
     else:
         children = [evaluate(child, ctx) for child in e.children]
+        print(e)
+        print(children)
+        print('')
 
         if isinstance(e, ast.Neg):
             # always exact

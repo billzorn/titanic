@@ -28,8 +28,12 @@ def withnprec(op, *args, min_n = -1075, max_p = 53,
     be supported.
     """
 
-    # the precision we want to use is p, +1 to determine RNE behavior from RTZ
-    prec = max(2, max_p + 1)
+    if max_p < 0:
+        raise ValueError('cannot compute a result with less than 0 max precision, got {}'.format(repr(max_p)))
+
+    # The precision we want to compute with is at least p+1, to determine RNE behavior from RTZ.
+    # We use max_p + 2 to ensure the quantity is at least 2 for mpfr.
+    prec = max_p + 2
 
     # This context allows us to tolerate inexactness, but no other surprising behavior. Those
     # cases should be handled explicitly per operation.
@@ -60,22 +64,29 @@ def withnprec(op, *args, min_n = -1075, max_p = 53,
     n = exp - 1
     e = n + mbits
     target_n = max(e - max_p, min_n)
+    xbits = target_n - n
 
     # Split the result into 3 components: sign, significant bits (rounded down), and half bit
 
     negative = conversion.is_neg(candidate)
     c = abs(m)
 
-    sig = c >> 1
-    half = c & 1
+    sig = c >> xbits
+    half_x = c & bitmask(xbits)
+    half = half_x >> (xbits - 1)
+    x = half_x & bitmask(xbits - 1)
 
     # Now we need to decide how to round. The value we have in sig was rounded toward zero, so we
     # look at the half bit and the inexactness of the operation to decide if we should round away.
 
     if half > 0:
-        # greater than halfway away implied by inexactness
-        if op_inexact:
-            sig += 1
+        # greater than halfway away implied by inexactness, or demonstrated by nonzero xbits
+        if x > 0 or op_inexact:
+            # if we have no precision, round away by increasing n
+            if max_p == 0:
+                target_n += 1
+            else:
+                sig += 1
         # TODO: hardcoded RNE
         elif sig & 1 > 0:
             sig += 1
@@ -91,7 +102,7 @@ def withnprec(op, *args, min_n = -1075, max_p = 53,
         sig >>= 1
         target_n += 1
 
-    result_inexact = half > 0 or op_inexact
+    result_inexact = half > 0 or x > 0 or op_inexact
     result_sided = sig == 0 and not result_inexact
 
     return Sink(c=sig,
@@ -140,6 +151,9 @@ def sub(x, y, min_n = -1075, max_p = 53):
                        min_n=min_n, max_p=max_p)
 
     inexact = x.inexact or y.inexact or result.inexact
+
+    print(x.to_mpfr(), y.to_mpfr(), min_n, max_p)
+    print(result)
 
     #TODO technically this could do clever things with the interval
     return Sink(result, inexact=inexact, full=False, sided=False)
