@@ -16,10 +16,10 @@ def annotate(s, props):
 
 class Expr(object):
     name: str = 'Expr'
+    props = None
 
 class NaryExpr(Expr):
     name: str = 'NaryExpr'
-    props = None
 
     def __init__(self, *children: Expr, props = None) -> None:
         self.children: typing.List[Expr] = children
@@ -32,8 +32,11 @@ class NaryExpr(Expr):
         return '(' + type(self).name + ''.join((' ' + str(child) for child in self.children)) + ')'
 
     def __repr__(self):
-        return (type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children))
-                + ' props=' + repr(self.props) + ')')
+        if self.props:
+            return (type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children))
+                    + ' props=' + repr(self.props) + ')')
+        else:
+            return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
 
 class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'
@@ -49,7 +52,6 @@ class BinaryExpr(NaryExpr):
 
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
-    props = None
 
     # All values (variables, constants, or numbers) are represented as strings
     # in the AST.
@@ -64,8 +66,10 @@ class ValueExpr(Expr):
         return annotate(self.value, self.props)
 
     def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.value) + ', props=' + repr(self.props) + ')'
-
+        if self.props:
+            return type(self).__name__ + '(' + repr(self.value) + ', props=' + repr(self.props) + ')'
+        else:
+            return type(self).__name__ + '(' + repr(self.value) + ')'
 
 # values
 
@@ -77,7 +81,6 @@ class Var(ValueExpr):
 
 class Digits(Expr):
     name: str = 'digits'
-    props = None
 
     def __init__(self, m: str, e: str, b: str, props = None) -> None:
         self.m: str = m
@@ -92,8 +95,11 @@ class Digits(Expr):
         return annotate(self.m + '*' + str(self.b) + '**' + str(self.e), self.props)
 
     def __repr__(self):
-        return (type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b)
-                + ', props=' + repr(self.props) + ')')
+        if self.props:
+            return (type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b)
+                    + ', props=' + repr(self.props) + ')')
+        else:
+            return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
 
 
 # control flow
@@ -167,11 +173,18 @@ class Div(BinaryExpr):
 
 # more arithmetic
 
+class Floor(UnaryExpr):
+    name: str = 'floor'
+
 class Fmod(BinaryExpr):
     name: str = 'fmod'
 
-class Floor(UnaryExpr):
-    name: str = 'floor'
+class Pow(BinaryExpr):
+    name: str = 'fmod'
+
+class Sin(UnaryExpr):
+    name: str = 'sin'
+
 
 # comparison
 

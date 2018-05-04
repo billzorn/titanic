@@ -56,7 +56,7 @@ reserved_constructs = {
     'atanh' : _reserve('unimplemented: atanh'),
     'cos' : _reserve('unimplemented: cos'),
     'cosh' : _reserve('unimplemented: cosh'),
-    'sin' : _reserve('unimplemented: sin'),
+    'sin' : ast.Sin,
     'sinh' : _reserve('unimplemented: sinh'),
     'tan' : _reserve('unimplemented: tan'),
     'tanh' : _reserve('unimplemented: tanh'),
@@ -71,7 +71,7 @@ reserved_constructs = {
     # powers
     'cbrt' : _reserve('unimplemented: cbrt'),
     'hypot' : _reserve('unimplemented: hypot'),
-    'pow' : _reserve('unimplemented: pow'),
+    'pow' : ast.Pow,
     # other
     'erf' : _reserve('unimplemented: erf'),
     'erfc' : _reserve('unimplemented: erfc'),

@@ -184,19 +184,6 @@ def sqrt(x, min_n = -1075, max_p = 53):
     return Sink(result, inexact=inexact, full=False, sided=False)
 
 
-def fmod(x, y, min_n = -1075, max_p = 53):
-    """Compute the remainder of x mod y, rounding according to min_n and max_p.
-    TODO: rounding modes
-    """
-    result = withnprec(gmp.fmod, x.to_mpfr(), y.to_mpfr(),
-                       min_n=min_n, max_p=max_p)
-
-    inexact = x.inexact or y.inexact or result.inexact
-
-    #TODO technically this could do clever things with the interval
-    return Sink(result, inexact=inexact, full=False, sided=False)
-
-
 def floor(x, min_n = -1075, max_p = 53):
     """Take the floor of x, rounding according to min_n and max_p.
     TODO: rounding modes
@@ -214,7 +201,46 @@ def floor(x, min_n = -1075, max_p = 53):
     # on which way we rounded, even though at that precision ulps are
     # relatively small.
 
-    inexact = (x.inexact or result.inexact) and min_n < 0
+    inexact = (x.inexact or result.inexact) and min_n >= 0
+
+    #TODO technically this could do clever things with the interval
+    return Sink(result, inexact=inexact, full=False, sided=False)
+
+
+def fmod(x, y, min_n = -1075, max_p = 53):
+    """Compute the remainder of x mod y, rounding according to min_n and max_p.
+    TODO: rounding modes
+    """
+    result = withnprec(gmp.fmod, x.to_mpfr(), y.to_mpfr(),
+                       min_n=min_n, max_p=max_p)
+
+    inexact = x.inexact or y.inexact or result.inexact
+
+    #TODO technically this could do clever things with the interval
+    return Sink(result, inexact=inexact, full=False, sided=False)
+
+
+def pow(x, y, min_n = -1075, max_p = 53):
+    """Raise x ** y, rounding according to min_n and max_p.
+    TODO: rounding modes
+    """
+    result = withnprec(lambda x, y: x**y, x.to_mpfr(), y.to_mpfr(),
+                       min_n=min_n, max_p=max_p)
+
+    inexact = x.inexact or y.inexact or result.inexact
+
+    #TODO technically this could do clever things with the interval
+    return Sink(result, inexact=inexact, full=False, sided=False)
+
+
+def sin(x, y, min_n = -1075, max_p = 53):
+    """Compute sin(x), rounding according to min_n and max_p.
+    TODO: rounding modes
+    """
+    result = withnprec(gmp.sin, x.to_mpfr(),
+                       min_n=min_n, max_p=max_p)
+
+    inexact = x.inexact or result.inexact
 
     #TODO technically this could do clever things with the interval
     return Sink(result, inexact=inexact, full=False, sided=False)
