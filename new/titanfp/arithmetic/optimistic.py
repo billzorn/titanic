@@ -90,9 +90,6 @@ def evaluate(e, ctx):
 
     else:
         children = [evaluate(child, ctx) for child in e.children]
-        print(e)
-        print(children)
-        print('')
 
         if isinstance(e, ast.Neg):
             # always exact
@@ -208,26 +205,3 @@ def evaluate(e, ctx):
 
         else:
             raise ValueError('what is this: {}'.format(repr(e)))
-
-
-from ..fpbench import fpcparser
-
-fpc_minimal = fpcparser.compile(
-"""(FPCore (a b) (- (+ a b) a))
-""")[0]
-
-fpc_example = fpcparser.compile(
-"""(FPCore (a b c)
- :name "NMSE p42, positive"
- :cite (hamming-1987 herbie-2015)
- :fpbench-domain textbook
- :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
- (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
-""")[0]
-
-fpc_fmod2pi = fpcparser.compile(
-"""(FPCore ()
- (- (* 2 (+ (+ (* 4 7.8539812564849853515625e-01) (* 4 3.7748947079307981766760e-08)) (* 4 2.6951514290790594840552e-15)))
-    (* 2 PI))
-)
-""")[0]

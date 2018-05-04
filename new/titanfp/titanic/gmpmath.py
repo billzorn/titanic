@@ -71,10 +71,16 @@ def withnprec(op, *args, min_n = -1075, max_p = 53,
     negative = conversion.is_neg(candidate)
     c = abs(m)
 
-    sig = c >> xbits
-    half_x = c & bitmask(xbits)
-    half = half_x >> (xbits - 1)
-    x = half_x & bitmask(xbits - 1)
+    if c > 0:
+        sig = c >> xbits
+        half_x = c & bitmask(xbits)
+        half = half_x >> (xbits - 1)
+        x = half_x & bitmask(xbits - 1)
+    else:
+        sig = 0
+        half_x = 0
+        half = 0
+        x = 0
 
     # Now we need to decide how to round. The value we have in sig was rounded toward zero, so we
     # look at the half bit and the inexactness of the operation to decide if we should round away.
@@ -151,9 +157,6 @@ def sub(x, y, min_n = -1075, max_p = 53):
                        min_n=min_n, max_p=max_p)
 
     inexact = x.inexact or y.inexact or result.inexact
-
-    print(x.to_mpfr(), y.to_mpfr(), min_n, max_p)
-    print(result)
 
     #TODO technically this could do clever things with the interval
     return Sink(result, inexact=inexact, full=False, sided=False)
