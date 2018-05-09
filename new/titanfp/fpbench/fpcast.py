@@ -180,7 +180,7 @@ class Fmod(BinaryExpr):
     name: str = 'fmod'
 
 class Pow(BinaryExpr):
-    name: str = 'fmod'
+    name: str = 'pow'
 
 class Sin(UnaryExpr):
     name: str = 'sin'
