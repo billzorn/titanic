@@ -806,6 +806,18 @@ class Sink(object):
             return conversion.float_from_mantissa_exp(rounded.c, rounded.n + 1, ftype=ftype)
 
 
+    def to_math(self):
+        # TODO assumes exactness
+        if self.is_zero():
+            return '0'
+        elif self.is_integer() and self.exp < 0:
+            return str(self.m >> -self.exp)
+        elif self.is_integer() and self.exp < 32: # TODO some reasonable threshold
+            return str(self.m << self.exp)
+        else:
+            return '{:d} * 2^{:d}'.format(self.m, self.exp)
+
+
     # core arith and comparison
 
 

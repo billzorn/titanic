@@ -1,5 +1,6 @@
 from .fpbench import fpcparser
-from .arithmetic import ieee754, optimistic, evalctx
+from .arithmetic import ieee754, optimistic, np, evalctx
+from .titanic import sinking
 
 fpc_minimal = fpcparser.compile(
 """(FPCore (a b) (- (+ a b) a))
@@ -17,12 +18,12 @@ fpc_example = fpcparser.compile(
 fpc_fmod2pi = fpcparser.compile(
 """(FPCore ()
  (- (* 2 (+ (+ (* 4 7.8539812564849853515625e-01) (* 4 3.7748947079307981766760e-08)) (* 4 2.6951514290790594840552e-15)))
-    (* 2 PI))
+    (* 2 3.14159))
 )
 """)[0]
 
 fpc_sinpow = fpcparser.compile(
-"""(FPCore (x) (sin (pow 2 x)))
+    """(FPCore (x) (sin (pow 2 100.1)))
 """)[0]
 
 floatctx = evalctx.EvalCtx(props={'precision':'binary32'})
@@ -32,4 +33,12 @@ bigctx = evalctx.EvalCtx(w = 20, p = 16360)
 def compare(core, *inputs, ctx=None):
     result_ieee = ieee754.interpret(core, inputs, ctx).collapse()
     result_sink = optimistic.interpret(core, inputs, ctx)
-    print(result_ieee, result_sink)
+    result_np = np.interpret(core, inputs, ctx)
+    print(result_ieee, result_sink, result_np)
+    print(result_ieee == sinking.Sink(result_np))
+
+
+
+
+
+from .arithmetic import core2math

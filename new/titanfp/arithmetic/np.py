@@ -1,12 +1,22 @@
-"""Emulated IEEE 754 floating-point arithmetic.
+"""Use numpy to interpret FPCores.
 """
 
-import gmpy2 as gmp
+import numpy as np
 
-from ..titanic import gmpmath
-from ..titanic import sinking
 from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
+
+
+def _np_typeof(ctx):
+    if ctx.w == 11 and ctx.p == 53:
+        return np.float64
+    elif ctx.w == 8 and ctx.p == 24:
+        return np.float32
+    elif ctx.w == 5 and ctx.p == 11:
+        return np.float16
+    else:
+        raise ValueError('context with w={}, p={} does not correspond to a numpy float type'
+                         .format(ctx.w, ctx.p))
 
 
 def interpret(core, args, ctx=None):
@@ -25,7 +35,9 @@ def interpret(core, args, ctx=None):
         else:
             local_ctx = ctx
 
-        value = sinking.Sink(arg, min_n=local_ctx.n, max_p=local_ctx.p)
+        # TODO: numpy rounding!
+        ftype = _np_typeof(local_ctx)
+        value = ftype(arg)
         ctx.let([(name, value)])
 
     return evaluate(core.e, ctx)
@@ -40,19 +52,17 @@ def evaluate(e, ctx):
     else:
         local_ctx = ctx
 
+    ftype = _np_typeof(local_ctx)
+
     # ValueExpr
 
     if isinstance(e, ast.Val):
-        # TODO precision
-        return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p)
+        # TODO numpy rounding!
+        return ftype(e.value)
 
     elif isinstance(e, ast.Var):
         # TODO better rounding and stuff
-        value = ctx.bindings[e.value]
-        if local_ctx is ctx:
-            return value
-        else:
-            return value.ieee_754(local_ctx.w, local_ctx.p)
+        return ftype(ctx.bindings[e.value])
 
     # and Digits
 
@@ -67,7 +77,8 @@ def evaluate(e, ctx):
         significand = sinking.Sink(e.m,
                                    min_n = local_ctx.n - spare_bits,
                                    max_p = local_ctx.p + spare_bits)
-        return gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
+        r = gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
+        return r.to_float(ftype)
 
     # control flow
 
@@ -96,31 +107,31 @@ def evaluate(e, ctx):
             return -children[0]
 
         elif isinstance(e, ast.Sqrt):
-            return gmpmath.sqrt(*children, min_n=n, max_p=p)
+            return np.sqrt(children[0])
 
         elif isinstance(e, ast.Add):
-            return gmpmath.add(*children, min_n=n, max_p=p)
+            return np.add(*children)
 
         elif isinstance(e, ast.Sub):
-            return gmpmath.sub(*children, min_n=n, max_p=p)
+            return children[0] - children[1]
 
         elif isinstance(e, ast.Mul):
-            return gmpmath.mul(*children, min_n=n, max_p=p)
+            return children[0] * children[1]
 
         elif isinstance(e, ast.Div):
-            return gmpmath.div(*children, min_n=n, max_p=p)
+            return children[0] / children[1]
 
         elif isinstance(e, ast.Floor):
-            return gmpmath.floor(*children, min_n=n, max_p=p)
+            return np.floor(*children)
 
         elif isinstance(e, ast.Fmod):
-            return gmpmath.fmod(*children, min_n=n, max_p=p)
+            return np.fmod(*children)
 
         elif isinstance(e, ast.Pow):
-            return gmpmath.pow(*children, min_n=n, max_p=p)
+            return children[0] ** children[1]
 
         elif isinstance(e, ast.Sin):
-            return gmpmath.sin(*children, min_n=n, max_p=p)
+            return np.sin(*children)
 
         elif isinstance(e, ast.LT):
             for x, y in zip(children, children[1:]):
@@ -165,26 +176,3 @@ def evaluate(e, ctx):
 
         else:
             raise ValueError('what is this: {}'.format(repr(e)))
-
-
-from ..fpbench import fpcparser
-
-fpc_minimal = fpcparser.compile(
-"""(FPCore (a b) (- (+ a b) a))
-""")[0]
-
-fpc_example = fpcparser.compile(
-"""(FPCore (a b c)
- :name "NMSE p42, positive"
- :cite (hamming-1987 herbie-2015)
- :fpbench-domain textbook
- :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
- (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
-""")[0]
-
-fpc_fmod2pi = fpcparser.compile(
-"""(FPCore ()
- (- (* 2 (+ (+ (* 4 7.8539812564849853515625e-01) (* 4 3.7748947079307981766760e-08)) (* 4 2.6951514290790594840552e-15)))
-    (* 2 PI))
-)
-""")[0]
