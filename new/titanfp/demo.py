@@ -2,6 +2,9 @@ from .fpbench import fpcparser
 from .arithmetic import ieee754, optimistic, np, evalctx
 from .titanic import sinking
 
+from .arithmetic import core2math
+from .titanic import wolfmath
+
 fpc_minimal = fpcparser.compile(
 """(FPCore (a b) (- (+ a b) a))
 """)[0]
@@ -30,6 +33,8 @@ floatctx = evalctx.EvalCtx(props={'precision':'binary32'})
 doublectx = evalctx.EvalCtx(props={'precision':'binary64'})
 bigctx = evalctx.EvalCtx(w = 20, p = 16360)
 
+repl = wolfmath.MathRepl()
+
 def compare(core, *inputs, ctx=None):
     result_ieee = ieee754.interpret(core, inputs, ctx).collapse()
     result_sink = optimistic.interpret(core, inputs, ctx)
@@ -37,8 +42,16 @@ def compare(core, *inputs, ctx=None):
     print(result_ieee, result_sink, result_np)
     print(result_ieee == sinking.Sink(result_np))
 
+    math_args, math_expr = core2math.compile(core)
 
+    math_inputs = []
+    for arg, name in zip(inputs, math_args):
+        # TODO always uses double, hmmm
+        value = sinking.Sink(arg)
+        math_inputs.append([name, value.to_math()])
 
+    core_expr = 'With[{{{}}}, {}]'.format(', '.join((name + ' = ' + value for name, value in math_inputs)), math_expr)
 
-
-from .arithmetic import core2math
+    # TODO also always double
+    result_exact = repl.evaluate_to_sink(core_expr)
+    print(result_exact)
