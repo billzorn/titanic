@@ -12,7 +12,7 @@ def _mathprompt(i):
     return 'In[{:d}]:= '.format(i)
 
 _outprompt = re.compile(r'Out\[[0-9]+\]= ')
-_sinkdigits = re.compile(r'\{\{([01, ]*)\}, ([+-]?[0-9+]), \{(True|False), (True|False)\}\}')
+_sinkdigits = re.compile(r'\{\{([01, ]*)\}, ([+-]?[0-9]+), \{(True|False), (True|False)\}\}')
 _digitsep = re.compile(r'[, ]')
 
 class MathRepl(object):
