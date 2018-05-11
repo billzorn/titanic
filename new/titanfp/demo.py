@@ -23,7 +23,7 @@ fpc_fmod2pi = fpcparser.compile(
 """)[0]
 
 fpc_sinpow = fpcparser.compile(
-    """(FPCore (x) (sin (pow 2 100.1)))
+    """(FPCore (x) (sin (pow 2 x)))
 """)[0]
 
 floatctx = evalctx.EvalCtx(props={'precision':'binary32'})

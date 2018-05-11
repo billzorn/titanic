@@ -166,6 +166,18 @@ def mul(x, y, min_n = -1075, max_p = 53):
     """Multiply two sinks, rounding according to min_n and max_p.
     TODO: rounding modes
     """
+
+    # special case for the exponent of zero
+    if x.is_zero() or y.is_zero():
+        e = x.e + y.e
+        return Sink(c = 0,
+                    exp = e + 1, # since for 0, e = n, and n = exp - 1
+                    negative = x.negative != y.negative,
+                    inexact = not (x.is_exactly_zero() or y.is_exactly_zero()),
+                    # TODO interval stuff
+                    sided = False,
+                    full = False)
+
     result = withnprec(gmp.mul, x.to_mpfr(), y.to_mpfr(),
                        min_n=min_n, max_p=max_p)
 
@@ -179,6 +191,21 @@ def div(x, y, min_n = -1075, max_p = 53):
     """Divide to sinks x / y, rounding according to min_n and max_p.
     TODO: rounding modes
     """
+
+    # special case for the exponent of zero
+    if x.is_zero():
+        e = x.e - y.e
+        return Sink(c = 0,
+                    exp = e + 1, # since for 0, e = n, and n = exp - 1
+                    negative = x.negative != y.negative,
+                    inexact = not x.is_exactly_zero(),
+                    # TODO interval stuff
+                    sided = False,
+                    full = False)
+
+    elif y.is_zero():
+        raise ZeroDivisionError('division by zero: {} / {}'.format(repr(x), repr(y)))
+
     result = withnprec(gmp.div, x.to_mpfr(), y.to_mpfr(),
                        min_n=min_n, max_p=max_p)
 
