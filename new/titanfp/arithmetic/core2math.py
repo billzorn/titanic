@@ -40,7 +40,9 @@ def compile(core, ctx=None):
         already_mangled[name] = mangled
         return mangled
 
-    return translate(core.e, ctx, mangle_name)
+    argnames = [mangle_name(name) for name, props in core.inputs]
+    
+    return argnames, translate(core.e, ctx, mangle_name)
 
 
 def translate(e, ctx, mangle_name):

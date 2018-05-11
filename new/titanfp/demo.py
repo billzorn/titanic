@@ -55,3 +55,4 @@ def compare(core, *inputs, ctx=None):
     # TODO also always double
     result_exact = repl.evaluate_to_sink(core_expr)
     print(result_exact)
+    print('')
