@@ -4,72 +4,66 @@
 import typing
 
 
-# pretty printer for properties
-def annotate(s, props):
-    if props:
-        return '(! ' + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in props.items())) + s + ')'
-    else:
-        return s
-
-
 # base ast classes
 
 class Expr(object):
     name: str = 'Expr'
-    props = None
 
 class NaryExpr(Expr):
     name: str = 'NaryExpr'
 
-    def __init__(self, *children: Expr, props = None) -> None:
+    def __init__(self, *children: Expr) -> None:
         self.children: typing.List[Expr] = children
-        if props is None:
-            self.props = {}
-        else:
-            self.props = props
 
     def __str__(self):
         return '(' + type(self).name + ''.join((' ' + str(child) for child in self.children)) + ')'
 
     def __repr__(self):
-        if self.props:
-            return (type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children))
-                    + ' props=' + repr(self.props) + ')')
-        else:
-            return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
+        return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
 
 class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'
 
-    def __init__(self, child0: Expr, props = None) -> None:
-        super().__init__(child0, props=props)
+    def __init__(self, child0: Expr) -> None:
+        super().__init__(child0)
 
 class BinaryExpr(NaryExpr):
     name: str = 'BinaryExpr'
 
-    def __init__(self, child0: Expr, child1: Expr, props = None) -> None:
-        super().__init__(child0, child1, props=props)
+    def __init__(self, child0: Expr, child1: Expr) -> None:
+        super().__init__(child0, child1)
 
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
 
-    # All values (variables, constants, or numbers) are represented as strings
-    # in the AST.
-    def __init__(self, value: str, props = None) -> None:
+    # All values (variables, constants, or numbers) are represented as strings in the AST.
+    def __init__(self, value: str) -> None:
         self.value: str = value
-        if props is None:
-            self.props = {}
-        else:
-            self.props = props
 
     def __str__(self):
-        return annotate(self.value, self.props)
+        return self.value
 
     def __repr__(self):
-        if self.props:
-            return type(self).__name__ + '(' + repr(self.value) + ', props=' + repr(self.props) + ')'
-        else:
-            return type(self).__name__ + '(' + repr(self.value) + ')'
+        return type(self).__name__ + '(' + repr(self.value) + ')'
+
+
+# rounding contexts
+
+class Ctx(Expr):
+    name: str = '!'
+
+    def __init__(self, props: dict, body: Expr) -> None:
+        self.props = props
+        self.body = body
+
+    def __str__(self):
+        return ('(' + type(self).name + ' '
+                + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in self.props.items()))
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
+
 
 # values
 
@@ -82,24 +76,16 @@ class Var(ValueExpr):
 class Digits(Expr):
     name: str = 'digits'
 
-    def __init__(self, m: str, e: str, b: str, props = None) -> None:
+    def __init__(self, m: str, e: str, b: str) -> None:
         self.m: str = m
         self.e: int = int(e)
         self.b: int = int(b)
-        if props is None:
-            self.props = {}
-        else:
-            self.props = props
 
     def __str__(self):
-        return annotate(self.m + '*' + str(self.b) + '**' + str(self.e), self.props)
+        return '(' + type(self).name + ' ' + self.m + ' ' + str(self.e) + ' ' + str(self.b) + ')'
 
     def __repr__(self):
-        if self.props:
-            return (type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b)
-                    + ', props=' + repr(self.props) + ')')
-        else:
-            return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
+        return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(str(self.e)) + ', ' + repr(str(self.b)) + ')'
 
 
 # control flow
@@ -148,6 +134,12 @@ class While(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+
+# cast is the identity function, used for repeated rounding
+
+class Cast(UnaryExpr):
+    name: str = 'cast'
 
 
 # arithmetic
@@ -217,3 +209,52 @@ class Or(NaryExpr):
 
 class Not(UnaryExpr):
     name: str = 'not'
+
+
+# fpcore objects and helpers
+
+class FPCore(object):
+    def __init__(self, inputs, e, props = None):
+        self.inputs = inputs
+        self.e = e
+        if props is None:
+            self.props = {}
+        else:
+            self.props = props
+
+        self.name = self.props.get('name', None)
+        self.pre = self.props.get('pre', None)
+        self.spec = self.props.get('spec', None)
+
+    def __str__(self):
+        return 'FPCore ({})\n  name: {}\n   pre: {}\n  spec: {}\n  {}'.format(
+            ' '.join((_annotate_input(name, props) for name, props in self.inputs)),
+            self.name, self.pre, self.spec, self.e)
+
+    def __repr__(self):
+        return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
+            repr(self.inputs), repr(self.e), repr(self.props))
+
+    @property
+    def sexp(self):
+        return '(FPCore ({}) {} {})'.format(
+            ' '.join((_annotate_input(name, props) for name, props in self.inputs)),
+            ''.join(':' + name + ' ' + _prop_to_sexp(prop) + ' ' for name, prop in self.props.items()),
+            str(self.e))
+
+def _annotate_input(name, props):
+    if props:
+        return '(! ' + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in props.items())) + name + ')'
+    else:
+        return name
+
+def _prop_to_sexp(p):
+    if isinstance(p, str):
+        return '"' + p + '"'
+    elif isinstance(p, list):
+        return '(' + ' '.join(p) + ')'
+    else:
+        return str(p)
+
+def _canonicalize_expr(e, props, whilelist={'precision', 'round'}, blacklist=set()):
+    raise ValueError('unimplemented')

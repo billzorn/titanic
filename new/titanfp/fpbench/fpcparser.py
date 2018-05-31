@@ -20,9 +20,12 @@ reserved_constructs = {
     # reserved
     'FPCore' : _reserve('reserved: FPCore'),
     # control flow (these asts are assembled directly in the visitor)
+    '!' : _reserve('reserved: !'),
+    'cast' : _reserve('reserved: cast'),
     'if' : _reserve('reserved: if'),
     'let' : _reserve('reserved: let'),
     'while' : _reserve('reserved: while'),
+    'digits' : _reserve('reserved: digits'),
 
     # ieee754 required arithmetic (negation is a special case of subtraction)
     '+' : ast.Add,
@@ -121,103 +124,77 @@ reserved_constants = {
 }
 
 
-def propToSexp(p):
-    if isinstance(p, str):
-        return '"' + p + '"'
-    elif isinstance(p, list):
-        return '(' + ' '.join(p) + ')'
-    else:
-        return str(p)
-
-
-class FPCore(object):
-    def __init__(self, inputs, e, props = None):
-        self.inputs = inputs
-        self.e = e
-        if props is None:
-            self.props = {}
-        else:
-            self.props = props
-
-        self.name = self.props.get('name', None)
-        self.pre = self.props.get('pre', None)
-        self.spec = self.props.get('spec', None)
-        self.prec = self.props.get('prec', None)
-        self.rm = self.props.get('rm', None)
-
-    def __str__(self):
-        return 'FPCore ({})\n  name: {}\n   pre: {}\n  {}'.format(
-            ' '.join((ast.annotate(name, props) for name, props in self.inputs)),
-            self.name, self.pre, self.e)
-
-    def __repr__(self):
-        return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
-            repr(self.inputs), repr(self.e), repr(self.props))
-
-    @property
-    def sexp(self):
-        return '(FPCore ({}) {}{})'.format(
-            ' '.join((ast.annotate(name, props) for name, props in self.inputs)),
-            ''.join(':' + name + ' ' + propToSexp(prop) + ' ' for name, prop in self.props.items()),
-            str(self.e))
+def _parse_props(visitor, props):
+    parsed = {}
+    for prop in props:
+        name, x = prop.accept(visitor)
+        if name in parsed:
+            raise ValueError('duplicate property {}'.format(name))
+        parsed[name] = x
+    return parsed
 
 
 class Visitor(FPCoreVisitor):
-    def visitParse(self, ctx) -> typing.List[FPCore]:
+    def visitParse(self, ctx) -> typing.List[ast.FPCore]:
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
-    def visitFpcore(self, ctx) -> FPCore:
+    def visitFpcore(self, ctx) -> ast.FPCore:
         inputs = [arg.accept(self) for arg in ctx.inputs]
 
         input_set = set()
         for name, props in inputs:
-            if name in reserved_constants:
-                raise ValueError('argument name {} is reserved'.format(name))
-            elif name in input_set:
+            if name in input_set:
                 raise ValueError('duplicate argument name {}'.format(name))
+            # # Maybe this is a useful feature?
+            # elif name in reserved_constants:
+            #     raise ValueError('argument name {} is reserved'.format(name))
             else:
                 input_set.add(name)
 
-        props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
+        props = _parse_props(self, ctx.props)
         e = ctx.e.accept(self)
-        return FPCore(inputs, e, props=props)
+
+        return ast.FPCore(inputs, e, props=props)
 
     def visitArgument(self, ctx):
-        return ctx.name.text, {name : x for name, x in (prop.accept(self) for prop in ctx.props)}
+        return ctx.name.text, _parse_props(self, ctx.props)
 
-    def visitRoundedNumber(self, ctx) -> ast.Expr:
-        return ast.Val(ctx.n.text)
+    def visitNumber(self, ctx) -> ast.Expr:
+        if ctx.n is not None:
+            return ast.Val(ctx.n.text)
+        else:
+            e = int(ctx.e.text)
+            b = int(ctx.b.text)
+            if b < 2:
+                raise ValueError('base must be >= 2, got {}'.format(repr(b)))
+            return ast.Digits(ctx.m.text, ctx.e.text, ctx.b.text)
 
-    def visitRoundedHexnum(self, ctx) -> ast.Expr:
-        return ast.Val(ctx.n.text)
+    def visitExprNum(self, ctx) -> ast.Expr:
+        return ctx.n.accept(self)
 
-    def visitRoundedSymbolic(self, ctx) -> ast.Expr:
+    def visitExprSym(self, ctx) -> ast.Expr:
         x = ctx.x.text
         if x in reserved_constants:
             return reserved_constants[x]
         else:
-            return ast.Var(ctx.x.text)
+            return ast.Var(x)
 
-    def visitRoundedDigits(self, ctx) -> ast.Expr:
-        # some crude validity checking; note this does not allow exponents like 1e3
-        e = int(ctx.e.text)
-        b = int(ctx.b.text)
-        if b < 2:
-            raise ValueError('base must be >= 2, got {}'.format(repr(b)))
-        return ast.Digits(ctx.m.text, ctx.e.text, ctx.b.text)
+    def visitExprCtx(self, ctx) -> ast.Expr:
+        return ast.Ctx(
+            _parse_props(self, ctx.props),
+            ctx.body.accept(self),
+        )
 
-    def visitRoundedOp(self, ctx):
-        op = ctx.op.text
-        if op in reserved_constructs:
-            return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
-        else:
-            raise ValueError('unsupported: call to FPCore operator {}'.format(op))
+    def visitExprCast(self, ctx) -> ast.Expr:
+        return ast.Cast(
+            ctx.body.accept(self),
+        )
 
     def visitExprIf(self, ctx) -> ast.Expr:
         return ast.If(
             ctx.cond.accept(self),
             ctx.then_body.accept(self),
-            ctx.else_body.accept(self)
+            ctx.else_body.accept(self),
         )
 
     def visitExprLet(self, ctx) -> ast.Expr:
@@ -237,14 +214,12 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
-    def visitExprExplicit(self, ctx) -> ast.Expr:
-        props = {name: x for name, x in (prop.accept(self) for prop in ctx.props)}
-        body = ctx.body.accept(self)
-        body.props = props
-        return body
-
-    def visitExprImplicit(self, ctx) -> ast.Expr:
-        return ctx.body.accept(self)
+    def visitExprOp(self, ctx):
+        op = ctx.op.text
+        if op in reserved_constructs:
+            return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
+        else:
+            raise ValueError('unsupported: call to FPCore operator {}'.format(op))
 
     def visitPropStr(self, ctx):
         name = ctx.name.text
@@ -297,7 +272,7 @@ def compfile(fname):
 
 
 def demo():
-    fpc_minimal = """(FPCore (a b) (- (+ a b) a))
+    fpc_minimal = """(FPCore () (+ 1 (digits 1 0 2)))
 """
     fpc_example = """(FPCore (a b c)
  :name "NMSE p42, positive"
@@ -306,9 +281,58 @@ def demo():
  :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
  (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
 """
+    fpc_big = """(FPCore ()
+ :name arclength
+ :precision binary128
+ (let ([n (! :precision integer 1000000)]
+       [dppi (! :precision PI PI)])
+   (let ([h (! :precision binary64 (/ dppi n))])
+     (while (<= i n)
+      ([s1
+        (! :precision binary64 0.0)
+        (let ([t2 (let ([x (! :precision binary64 (* i h))])
+                    ;; inlined body of fun
+                    (while (<= k 5)
+                     ([d0
+                       (! :precision binary32 2.0)
+                       (! :precision binary32 (* 2.0 d0))]
+                      [t0
+                       x
+                       (! :precision binary64 (+ t0 (/ (sin (* d0 x)) d0)))]
+                      [k 1 (+ k 1)])
+                     t0))])
+          (+ s1 (! :precision binary64 (sqrt (+ (* h h) (* (- t2 t1) (- t2 t1)))))))]
+       [t1
+        (! :precision binary64 0.0)
+        (let ([t2 (let ([x (! :precision binary64 (* i h))])
+                    ;; inlined body of fun
+                    (while (<= k 5)
+                     ([d0
+                       (! :precision binary32 2.0)
+                       (! :precision binary32 (* 2.0 d0))]
+                      [t0
+                       x
+                       (! :precision binary64 (+ t0 (/ (sin (* d0 x)) d0)))]
+                      [k 1 (+ k 1)])
+                     t0))])
+          t2)]
+       [i
+        (! :precision integer 1)
+        (! :precision integer (+ i 1))])
+      s1))))
+"""
 
     core = compile(fpc_minimal)[0]
     print(core)
+    print(core.sexp)
+    print(repr(core))
 
     core = compile(fpc_example)[0]
     print(core)
+    print(core.sexp)
+    print(repr(core))
+
+    core = compile(fpc_big)[0]
+    print(core)
+    print(core.sexp)
+    print(repr(core))
