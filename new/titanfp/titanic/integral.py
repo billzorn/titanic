@@ -510,10 +510,18 @@ if __name__ == "__main__":
                 x = m << shift
                 z = ctz(x)
 
+    import gmpy2 as gmp
+    def time_gmp_bit_scan1(e, mbits):
+        for m in range(1 << mbits):
+            for shift in range(e):
+                x = m << shift
+                z = gmp.bit_scan1(x)
+
     def time_blank(e, mbits):
         for m in range(1 << mbits):
             for shift in range(e):
                 x = m << shift
+                z = x
 
     def compare_e_m(e, mbits, reps, naive=False):
         print('for e={:d}, mbits={:d}, {:d} reps'.format(e, mbits, reps))
@@ -522,6 +530,7 @@ if __name__ == "__main__":
         print('  sqrt : {:.3f}'.format(timeit.timeit(lambda: time_sqrt(e, mbits), number=reps)))
         print('  log  : {:.3f}'.format(timeit.timeit(lambda: time_log(e, mbits), number=reps)))
         print('  fast : {:.3f}'.format(timeit.timeit(lambda: time_fast(e, mbits), number=reps)))
+        print('  gmp  : {:.3f}'.format(timeit.timeit(lambda: time_gmp_bit_scan1(e, mbits), number=reps)))
         print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_blank(e, mbits), number=reps)))
 
 
@@ -539,6 +548,12 @@ if __name__ == "__main__":
         else:
             return -1 << -n
 
+    import gmpy2 as gmp
+    def _bm4(n):
+        return gmp.bit_mask(n)
+    def _bm5(n):
+        return int(gmp.bit_mask(n))
+
     def time_bm(bm, minbits, maxbits):
         for i in range(minbits, maxbits):
             x = bm(i)
@@ -549,7 +564,7 @@ if __name__ == "__main__":
 
     def compare_bm(minbits, maxbits, reps):
         print('for {:d} to {:d} bits, {:d} reps'.format(minbits, maxbits, reps))
-        for impl in [_bm1, _bm2, _bm3]:
+        for impl in [_bm1, _bm2, _bm3, _bm4, _bm5]:
             print('  {:s} : {:.3f}'.format(repr(impl), timeit.timeit(lambda: time_bm(impl, minbits, maxbits), number=reps)))
         print('  blank: {:.3f}'.format(timeit.timeit(lambda: time_bm_blank(minbits, maxbits), number=reps)))
 
@@ -558,9 +573,13 @@ if __name__ == "__main__":
     test_range(2051, 4)
     test_range(8, 17)
 
-    # consensus: fast method works (how does it compare to gmpy2 mpz bit_scan1 ???)
+    # consensus: fast method works (but is still slower than mpz bit_scan1)
     compare_e_m(8, 16, 10, True)
     compare_e_m(2051, 4, 10, False)
 
     # consensus: performance is identical all of them, so use bm3 since it's the most general
     compare_bm(0, 65536, 100)
+
+    # Note: gmpy2 can create an mpz bitmask twice as fast as the pure python implementations,
+    # but the overhead of converting that to an integer is more than just creating the bitmask
+    # natively.
