@@ -7,8 +7,226 @@ import gmpy2 as gmp
 
 from .integral import bitmask
 from . import conversion
+from . import ops
 from .sinking import Sink
 
+
+def digital_to_mpfr(x):
+    if x.isnan:
+        with gmp.context(
+                precision=2,
+                emin=-1,
+                emax=1,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+            return gmp.mpfr('nan')
+    elif x.isinf:
+        if x.negative:
+            with gmp.context(
+                    precision=2,
+                    emin=-1,
+                    emax=1,
+                    trap_underflow=True,
+                    trap_overflow=True,
+                    trap_inexact=True,
+                    trap_invalid=True,
+                    trap_erange=True,
+                    trap_divzero=True,
+                    trap_expbound=True,
+            ):
+                return gmp.mpfr('-inf')
+        else:
+            with gmp.context(
+                    precision=2,
+                    emin=-1,
+                    emax=1,
+                    trap_underflow=True,
+                    trap_overflow=True,
+                    trap_inexact=True,
+                    trap_invalid=True,
+                    trap_erange=True,
+                    trap_divzero=True,
+                    trap_expbound=True,
+            ):
+                return gmp.mpfr('+inf')
+
+    m = x.m
+    exp = x.exp
+
+    mbits = m.bit_length()
+    ebits = exp.bit_length()
+
+    # Apparently a multiplication between a small precision 0 and a huge
+    # scale can raise a Type error indicating that gmp.mul() requires two
+    # mpfr arguments - we can avoid that case entirely by special-casing
+    # away the multiplication.
+    if mbits == 0:
+        with gmp.context(
+            precision=2,
+            emin=-1,
+            emax=1,
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+        ):
+            return gmp.mpfr(0)
+
+    else:
+        with gmp.context(
+                precision=max(2, ebits),
+                emin=min(-1, exp),
+                emax=max(1, ebits, exp + 1),
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+            scale = gmp.exp2(exp)
+
+        with gmp.context(
+                precision=max(2, mbits),
+                emin=min(-1, exp),
+                emax=max(1, mbits, exp + mbits),
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+            c = gmp.mpfr(m)
+            return gmp.mul(c, scale)
+
+
+def mpfr_to_digital(x):
+    if gmp.is_nan(x):
+        return Sink(
+            negative=False,
+            c=0,
+            exp=0,
+            nan=True,
+            rc=x.rc, # not clear what envelope properties mean here
+        )
+    elif gmp.is_infinite(x):
+        return Sink(
+            negative=gmp.is_signed(x),
+            c=0,
+            exp=0,
+            inf=True,
+            rc=x.rc,
+        )
+
+    m, exp = x.as_mantissa_exp()
+    negative = gmp.is_signed(x)
+    c = int(abs(m))
+    exp = int(exp)
+    rc = x.rc
+
+    return Sink(
+        negative=negative,
+        c=c,
+        exp=exp,
+        inexact=(rc != 0),
+        rc=rc,
+    )
+
+
+def _fdim(x1, x2):
+    raise ValueError('fdim: emulated')
+
+gmp_ops = [
+    gmp.add,
+    gmp.sub,
+    gmp.mul,
+    gmp.div,
+    lambda x: -x,
+    gmp.sqrt,
+    gmp.fma,
+    gmp.copy_sign,
+    lambda x: abs(x),
+    _fdim,
+    lambda x1, x2: max(x1, x2),
+    lambda x1, x2: min(x1, x2),
+    gmp.fmod,
+    gmp.remainder,
+    gmp.ceil,
+    gmp.floor,
+    gmp.rint,
+    gmp.round_away,
+    gmp.trunc,
+    gmp.acos,
+    gmp.acosh,
+    gmp.asin,
+    gmp.asinh,
+    gmp.atan,
+    gmp.atan2,
+    gmp.atanh,
+    gmp.cos,
+    gmp.cosh,
+    gmp.sin,
+    gmp.sinh,
+    gmp.tan,
+    gmp.tanh,
+    gmp.exp,
+    gmp.exp2,
+    gmp.expm1,
+    gmp.log,
+    gmp.log10,
+    gmp.log1p,
+    gmp.log2,
+    gmp.cbrt,
+    gmp.hypot,
+    lambda x1, x2: x1 ** x2,
+    gmp.erf,
+    gmp.erfc,
+    lambda x: gmp.lgamma(x)[0],
+    gmp.gamma,
+]
+
+
+def compute(opcode, *args, prec=54):
+    """Compute op(*args), with up to prec bits of precision.
+    op is specified via opcode, and arguments are universal digital numbers.
+    Arguments are treated as exact: the inexactness and result code of the result
+    only reflect what happened during this single operation.
+    Result is truncated towards 0, but will have inexactness and result code set
+    for further rounding.
+    Might not do the right thing for special values like nan.
+    """
+    op = gmp_ops[opcode]
+    inputs = [digital_to_mpfr(arg) for arg in args]
+    with gmp.context(
+            precision=prec,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ) as gmpctx:
+        result = op(*inputs)
+
+    return mpfr_to_digital(result)
+    
 
 def withnprec(op, *args, min_n = -1075, max_p = 53,
                emin = gmp.get_emin_min(), emax = gmp.get_emax_max()):

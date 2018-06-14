@@ -40,6 +40,7 @@ def compare(core, *inputs, ctx=None):
     result_sink = optimistic.interpret(core, inputs, ctx)
     result_np = np.interpret(core, inputs, ctx)
     print(result_ieee, result_sink, result_np)
+    print(repr(result_sink))
     print(result_ieee == sinking.Sink(result_np))
 
     math_args, math_expr = core2math.compile(core)
@@ -56,3 +57,39 @@ def compare(core, *inputs, ctx=None):
     result_exact = repl.evaluate_to_sink(core_expr)
     print(result_exact)
     print('')
+
+
+import numpy
+
+def floats_near(s, n):
+    f = sinking.Sink(numpy.float32(s))
+    nearby = []
+
+    for i in range(n):
+        nearby.append(f)
+        f = f.away()
+
+    return nearby
+
+def get_vertices(f):
+    result_ieee = sinking.Sink(np.interpret(fpc_sinpow, [f.to_float(numpy.float32)], floatctx))
+    result_double = ieee754.interpret(fpc_sinpow, [f], doublectx)
+    result_sink = optimistic.interpret(fpc_sinpow, [f], floatctx)
+    print(result_ieee, result_double, result_sink)
+    narrowed = result_sink.narrow(n=result_sink.n - 1)
+    return ['Point[{{{}, {}}}, VertexColors -> {{{}}}]'.format(f.to_math(), y.to_math(), color)
+            for y, color in [[result_ieee, 'Black'], [narrowed.above(), 'Red'], [narrowed.below(), 'Red']]]
+
+def make_plot(s, n):
+    fs = floats_near(s, n)
+    points = []
+    for f in fs:
+        points += get_vertices(f)
+
+    plot_cmd = 'Export["test.pdf", Plot[Sin[2^x], {{x, {}, {}}}, PlotLabel -> "sin(2^x)", Epilog -> {{PointSize[0.02], {}}}], ImageResolution -> 1200]'.format(
+        fs[0].to_math(),
+        fs[-1].to_math(),
+        ', '.join(p for p in points))
+
+    print(plot_cmd)
+    print(repl.run(plot_cmd))

@@ -1,8 +1,33 @@
 """Sinking point -
 A discrete approximation of real numbers with explicit significance tracking.
 Implemented really badly in one file.
-"""
 
+TODO:
+
+in digital.py:
+  - representation
+  - reading in from int / mpfr / string
+  - reading in from digital, clone and update
+  - comparison
+  - trivial bit manipulations like neg and abs
+  - rounding? round only via w / p
+  - output? to_mpfr? to_string? to_ieee? to_posit?
+
+in conversion.py:
+  - to / from mantissa_exp form
+  - universal is_neg, etc. ?
+  - extract payload
+
+Where to put OP / RM identifiers?
+
+in xxxmath.py:
+  - numeric engine: given opcode, inputs as sink, precision,
+    produce another sink with rounding status
+
+in arithmetic:
+  - round specifically to ieee / posit
+  - arith wrappers that can use either backend, and do the correct rounding / special case behavior
+"""
 
 import typing
 import sys
@@ -232,10 +257,12 @@ class Sink(object):
     @property
     def isinf(self):
         """Is this value infinite?"""
+        return self._isinf
 
     @property
     def isnan(self):
         """Is this value NaN?"""
+        return self._isnan
 
 
     # rounding envelopes and inexactness
@@ -244,6 +271,7 @@ class Sink(object):
     _interval_sided : bool = None # envelope interval position
     _interval_open_top : bool = None # is the top bound exclusive?
     _interval_open_bottom : bool = None # ditto for the bottom bound
+    _rc : int = None # as MPFR result code. 0 if value is exact, -1 if rounded up, 1 if rounded down.
 
     # views for interval properties
 
@@ -280,6 +308,13 @@ class Sink(object):
         """
         return self._interval_open_bottom
 
+    @property
+    def rc(self):
+        """Result code. -1 if this value was rounded up, 1 if it was rounded down,
+        0 if the value was computed exactly or rounding direction is unknown.
+        """
+        return self._rc
+
 
     # other useful properties
 
@@ -313,6 +348,7 @@ class Sink(object):
                  sided=None,
                  open_top=None,
                  open_bottom=None,
+                 rc=None,
                  # rounding properties; ignored unless parsing a string
                  max_p=None,
                  min_n=None,
@@ -363,6 +399,11 @@ class Sink(object):
                 self._interval_open_top = bool(open_top)
                 self._interval_open_bottom = bool(open_bottom)
 
+                if rc is None:
+                    self._rc = 0
+                else:
+                    self._rc = rc
+
             # copy from existing sink
             else:
                 if m is not None and (c is not None or negative is not None):
@@ -388,6 +429,7 @@ class Sink(object):
                 self._interval_sided = sided if sided is not None else base.interval_sided
                 self._interval_open_top = open_top if open_top is not None else base.interval_open_top
                 self._interval_open_bottom = open_bottom if open_bottom is not None else base.interval_open_bottom
+                self._rc = rc if rc is not None else base.rc
 
         # convert another representation into sinking point
         else:
@@ -440,6 +482,10 @@ class Sink(object):
             return '{}{}{}'.format(s, '~' if self._inexact else '', sexp)
             # return '{}{}'.format(rep, '~@{:d}'.format(self.n) if self._inexact else '')
 
+
+    def round_m(self, max_p, min_n=None):
+        #TODO: make this better
+        return self.widen(max_p=max_p, min_n=min_n)
 
     # core envelope operations
 

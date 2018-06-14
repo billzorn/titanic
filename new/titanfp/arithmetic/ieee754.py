@@ -4,9 +4,32 @@
 import gmpy2 as gmp
 
 from ..titanic import gmpmath
+from ..titanic import wolfmath
 from ..titanic import sinking
+from ..titanic import ops
 from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
+
+USE_GMP = True
+USE_MATH = True
+
+def add(x1, x2, ctx):
+    prec = max(2, ctx.p + 1)
+    if USE_GMP:
+        result_gmp = gmpmath.compute(ops.OP.add, x1, x2, prec=prec)
+        result = result_gmp
+    if USE_MATH:
+        result_math = wolfmath.compute(ops.OP.add, x1, x2, prec=prec)
+        result = result_math
+    if USE_GMP and USE_MATH:
+        if not result_gmp == result_math:
+            print(result_gmp)
+            print(result_math)
+            print('--')
+    if result is None:
+        raise ValueError('no backend specified')
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return sinking.Sink(result.round_m(max_p=ctx.p, min_n=ctx.n), inexact=inexact)
 
 
 def interpret(core, args, ctx=None):
@@ -34,25 +57,19 @@ def interpret(core, args, ctx=None):
 def evaluate(e, ctx):
     """Recursive expression evaluator, with much isinstance()."""
 
-    # Handle annotations for precision-specific computations.
-    if e.props:
-        local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
-    else:
-        local_ctx = ctx
-
     # ValueExpr
 
     if isinstance(e, ast.Val):
         # TODO precision
-        return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p)
+        return sinking.Sink(e.value, min_n=ctx.n, max_p=ctx.p)
 
     elif isinstance(e, ast.Var):
         # TODO better rounding and stuff
         value = ctx.bindings[e.value]
-        if local_ctx is ctx:
+        if ctx is ctx:
             return value
         else:
-            return value.ieee_754(local_ctx.w, local_ctx.p)
+            return value.ieee_754(ctx.w, ctx.p)
 
     # and Digits
 
@@ -63,13 +80,16 @@ def evaluate(e, ctx):
         exponent = sinking.Sink(e.e)
         scale = gmpmath.pow(base, exponent,
                             min_n = -(base.bit_length() * exponent) - spare_bits,
-                            max_p = local_ctx.w + local_ctx.p + spare_bits)
+                            max_p = ctx.w + ctx.p + spare_bits)
         significand = sinking.Sink(e.m,
-                                   min_n = local_ctx.n - spare_bits,
-                                   max_p = local_ctx.p + spare_bits)
-        return gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
+                                   min_n = ctx.n - spare_bits,
+                                   max_p = ctx.p + spare_bits)
+        return gmpmath.mul(significand, scale, min_n=ctx.n, max_p=ctx.p)
 
     # control flow
+
+    elif isinstance(e, ast.Ctx):
+        return evaluate(e.body, EvalCtx(props=e.props))
 
     elif isinstance(e, ast.If):
         if evaluate(e.cond, ctx):
@@ -88,8 +108,8 @@ def evaluate(e, ctx):
 
     else:
         children = [evaluate(child, ctx) for child in e.children]
-        n = local_ctx.n
-        p = local_ctx.p
+        n = ctx.n
+        p = ctx.p
 
         if isinstance(e, ast.Neg):
             # always exact
