@@ -144,7 +144,11 @@ class MathRepl(object):
     def run(self, cmd):
         self.i += 1
         self.repl.prompt = _mathprompt(self.i)
+        # print(cmd)
+        # print('--')
         output = self.repl.run_command(cmd)
+        # print(output)
+        # print('==\n')
         prefmatch = _outprompt.search(output)
         if prefmatch is None:
             raise ValueError('missing output prompt, got:\n{}'.format(output))
@@ -162,7 +166,7 @@ class MathRepl(object):
         if len(expr) <= 0:
             raise ValueError('cannot evaluate empty expression')
 
-        cmd = 'With[{{EXACT = {:s}}}, With[{{DIGITS = RealDigits[EXACT, 2, {:d}]}}, With[{{ROUNDED = FromDigits[DIGITS, 2]}}, {{DIGITS, EXACT < 0, ROUNDED != EXACT}}]]]'.format(expr, prec)
+        cmd = 'With[{{EXACT = {:s}}}, With[{{DIGITS = RealDigits[EXACT, 2, {:d}]}}, With[{{ROUNDED = FromDigits[DIGITS, 2], NEGATIVE = EXACT < 0}}, {{DIGITS, NEGATIVE, If[NEGATIVE, -ROUNDED != EXACT, ROUNDED != EXACT]}}]]]'.format(expr, prec)
         output = self.run(cmd)
 
         return output

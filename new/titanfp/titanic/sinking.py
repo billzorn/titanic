@@ -327,6 +327,21 @@ class Sink(object):
     def is_integer(self):
         return self._exp >= 0 or self._c & bitmask(-self._exp) == 0
 
+    def is_identical_to(self, x):
+        return (
+            self._c == x._c
+            and self._exp == x._exp
+            and self._negative == x._negative
+            and self._isinf == x._isinf
+            and self._isnan == x._isnan
+            and self._inexact == x._inexact
+            and self._interval_full == x._interval_full
+            and self._interval_sided == x._interval_sided
+            and self._interval_open_top == x._interval_open_top
+            and self._interval_open_bottom == x._interval_open_bottom
+            and self._rc == x._rc
+        )
+
     def __init__(self,
                  # The base value of the sink, either as a sink to copy
                  # or a string / float / mpfr to parse.
@@ -460,8 +475,8 @@ class Sink(object):
 
 
     def __repr__(self):
-        return 'Sink({}, c={}, exp={},  negative={}, inexact={}, full={}, sided={})'.format(
-            self.to_mpfr(), self.c, self.exp, self.negative, self.inexact, self.interval_full, self.interval_sided,
+        return 'Sink({}, c={}, exp={},  negative={}, inexact={}, full={}, sided={}, rc={})'.format(
+            self.to_mpfr(), self.c, self.exp, self.negative, self.inexact, self.interval_full, self.interval_sided, self.rc,
         )
 
     def __str__(self):
@@ -869,6 +884,10 @@ class Sink(object):
 
     def __neg__(self):
         return Sink(self, negative=not self.negative)
+
+
+    def __abs__(self):
+        return Sink(self, negative=False)
 
 
     def compareto(self, x, strict=True):

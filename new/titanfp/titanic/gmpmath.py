@@ -226,7 +226,7 @@ def compute(opcode, *args, prec=54):
         result = op(*inputs)
 
     return mpfr_to_digital(result)
-    
+
 
 def withnprec(op, *args, min_n = -1075, max_p = 53,
                emin = gmp.get_emin_min(), emax = gmp.get_emax_max()):
@@ -539,18 +539,29 @@ def mpfr(x, p):
     # TODO no support for rounding modes
     if p < 2:
         raise ValueError('precision must be at least 2')
-    else:
-        with gmp.context(
-                    precision=p,
-                    emin=gmp.get_emin_min(),
-                    emax=gmp.get_emax_max(),
-                    trap_underflow=True,
-                    trap_overflow=True,
-                    trap_inexact=False,
-                    trap_invalid=True,
-                    trap_erange=True,
-                    trap_divzero=True,
-                    trap_expbound=True,
-        ):
-            r = gmp.mpfr(x)
-        return r
+
+    if isinstance(x, str):
+        x = x.upper()
+
+    with gmp.context(
+            precision=p,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ):
+        if x == 'E':
+            return gmp.exp(1)
+        elif x == 'PI':
+            return gmp.const_pi()
+        elif x == 'LN2':
+            return gmp.const_log2()
+        else:
+            return gmp.mpfr(x)

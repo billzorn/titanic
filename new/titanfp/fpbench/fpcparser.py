@@ -50,7 +50,7 @@ reserved_constructs = {
     'round' : _reserve('unimplemented: round'),
     'trunc' : _reserve('unimplemented: trunc'),
     # trig
-    'acos' : _reserve('unimplemented: acos'),
+    'acos' : ast.Acos,
     'acosh' : _reserve('unimplemented: acosh'),
     'asin' : _reserve('unimplemented: asin'),
     'asinh' : _reserve('unimplemented: asinh'),

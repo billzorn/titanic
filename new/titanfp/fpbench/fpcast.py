@@ -177,6 +177,9 @@ class Pow(BinaryExpr):
 class Sin(UnaryExpr):
     name: str = 'sin'
 
+class Acos(UnaryExpr):
+    name: str = 'acos'
+
 
 # comparison
 
