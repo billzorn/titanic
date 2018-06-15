@@ -224,7 +224,7 @@ class Sink(object):
     def e(self):
         """IEEE 754 style exponent.
         If the significand is interpreted as a binary-point number x between 1 and 2,
-        i.e. 1.10011100 etc. then the real value is x * 2**e.
+        i.e. x = 1.10011100 etc. then the real value is x * 2**e.
         """
         return (self._exp - 1) + self._c.bit_length()
 

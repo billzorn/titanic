@@ -1,7 +1,5 @@
-"""Emulated IEEE 754 floating-point arithmetic.
+"""Emulated Posit arithmetic.
 """
-
-import gmpy2 as gmp
 
 from ..titanic import gmpmath
 from ..titanic import wolfmath
@@ -9,12 +7,12 @@ from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
 from ..titanic.ops import OP
-from .evalctx import IEEECtx
+from .evalctx import PositCtx
 
 
 USE_GMP = True
 USE_MATH = True
-DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53)
+DEFAULT_POSIT_CTX = PositCtx(es=4, nbits=64)
 
 def compute_with_backend(opcode, *args, prec=54):
     result = None
@@ -34,98 +32,125 @@ def compute_with_backend(opcode, *args, prec=54):
     return result
 
 
-def round_to_ieee_ctx(x, inexact=None, ctx=DEFAULT_IEEE_CTX):
+def process_posit_exponent(e, ctx):
+    """Break an exponent value (normalized e, not unnormalized exp) down."""
+    rspace = ctx.nbits - 1
+    regime, exponent = divmod(e, ctx.u)
+
+    if regime >= 0:
+        rbits = regime + 2
+        if rbits > rspace:
+            return ValueError('nobits: maxpos')
+        elif rbits == rspace:
+            raise ValueError('nobits: sub maxpos')
+    elif regime < 0:
+        rbits = -regime + 1
+        if rbits >= rspace:
+            raise ValueError('nobits: minpos')
+
+    efbits = rspace - rbits
+    if efbits < ctx.es:
+        raise ValueError('nobits: erange')
+
+    #print(regime, exponent, ' : ', rbits, ctx.es, efbits - ctx.es + 1)
+    return efbits - ctx.es + 1
+
+
+def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
+    p = process_posit_exponent(x.e, ctx)
+
     if inexact is None:
-        return x.round_m(max_p=ctx.p, min_n=ctx.n)
+        return x.round_m(max_p=p, min_n=None)
     else:
-        return sinking.Sink(x, inexact=inexact).round_m(max_p=ctx.p, min_n=ctx.n)
+        return sinking.Sink(x, inexact=inexact).round_m(max_p=p, min_n=None)
 
 
-def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
-    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.p + 1))
-    return round_to_ieee_ctx(result, inexact=None, ctx=ctx)
+def arg_to_digital(x, ctx=DEFAULT_POSIT_CTX):
+    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits))
+    print(repr(result))
+    return round_to_posit_ctx(result, inexact=None, ctx=ctx)
 
 
 def add(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.add, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def sub(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sub, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def mul(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.mul, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def div(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.div, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def neg(x, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.neg, x, prec=prec)
     inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def sqrt(x, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sqrt, x, prec=prec)
     inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def floor(x, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.floor, x, prec=prec)
     inexact = (x.inexact or result.inexact) and result.n > -1 # TODO: correct?
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def fmod(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.fmod, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def pow(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.pow, x1, x2, prec=prec)
     inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def sin(x, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sin, x, prec=prec)
     inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 def acos(x, ctx):
-    prec = max(2, ctx.p + 1)
+    prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.acos, x, prec=prec)
     inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, inexact, ctx)
 
 
 def interpret(core, args, ctx=None):
-    """FPCore interpreter for IEEE 754-like arithmetic."""
+    """FPCore interpreter for Posit arithmetic."""
 
     if len(core.inputs) != len(args):
         raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
                          .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
     if ctx is None:
-        ctx = IEEECtx(props=core.props)
+        ctx = PositCtx(props=core.props)
 
     for arg, (name, props) in zip(args, core.inputs):
         if props:
-            local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
+            local_ctx = PositCtx(es=ctx.es, nbits=ctx.nbits, props=props)
         else:
             local_ctx = ctx
         ctx.let([(name, arg_to_digital(arg, local_ctx))])
@@ -170,7 +195,7 @@ def evaluate(e, ctx):
     # control flow
 
     elif isinstance(e, ast.Ctx):
-        newctx = IEEECtx(props=e.props) # TODO: inherit properties?
+        newctx = PositCtx(props=e.props) # TODO: inherit properties?
         newctx.let(ctx.bindings)
         return evaluate(e.body, newctx)
 
