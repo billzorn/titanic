@@ -58,16 +58,15 @@ def process_posit_exponent(e, ctx):
 
 def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
     p = process_posit_exponent(x.e, ctx)
+    rounded = x.round_m(max_p=p, min_n=None)
 
     if inexact is None:
-        return x.round_m(max_p=p, min_n=None)
+        return rounded
     else:
-        return sinking.Sink(x, inexact=inexact).round_m(max_p=p, min_n=None)
-
+        return sinking.Sink(rounded, inexact=rounded.inexact or inexact)
 
 def arg_to_digital(x, ctx=DEFAULT_POSIT_CTX):
     result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits))
-    print(repr(result))
     return round_to_posit_ctx(result, inexact=None, ctx=ctx)
 
 

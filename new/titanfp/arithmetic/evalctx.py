@@ -27,6 +27,9 @@ class IEEECtx(EvalCtx):
             elif prec in {'binary16', 'float16', 'half'}:
                 w = 5
                 p = 11
+            elif prec in {'binary128', 'float128', 'quadruple'}:
+                w = 15
+                p = 113
             
         self.w = w
         self.p = p
@@ -55,6 +58,9 @@ class PositCtx(EvalCtx):
             elif prec in {'binary16', 'float16', 'half'}:
                 es = 1
                 nbits = 16
+            elif prec in {'binary128', 'float128', 'quadruple'}:
+                es = 7
+                nbits = 128
 
         self.es = es
         self.nbits = nbits

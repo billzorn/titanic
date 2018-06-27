@@ -35,10 +35,11 @@ def compute_with_backend(opcode, *args, prec=54):
 
 
 def round_to_ieee_ctx(x, inexact=None, ctx=DEFAULT_IEEE_CTX):
+    rounded = x.round_m(max_p=ctx.p, min_n=ctx.n)
     if inexact is None:
-        return x.round_m(max_p=ctx.p, min_n=ctx.n)
+        return rounded
     else:
-        return sinking.Sink(x, inexact=inexact).round_m(max_p=ctx.p, min_n=ctx.n)
+        return sinking.Sink(rounded, inexact=rounded.inexact or inexact)
 
 
 def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):

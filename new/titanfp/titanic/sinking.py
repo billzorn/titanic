@@ -36,6 +36,7 @@ import re
 
 from .integral import bitmask
 from . import conversion
+from .ops import RM
 
 
 def _interval_scan_away(lower, upper, n):
@@ -310,8 +311,8 @@ class Sink(object):
 
     @property
     def rc(self):
-        """Result code. -1 if this value was rounded up, 1 if it was rounded down,
-        0 if the value was computed exactly or rounding direction is unknown.
+        """Result code. -1 if this value was rounded down, 1 if it was rounded up,
+        0 if the value was computed exactly or the rounding direction is unknown.
         """
         return self._rc
 
@@ -498,9 +499,112 @@ class Sink(object):
             # return '{}{}'.format(rep, '~@{:d}'.format(self.n) if self._inexact else '')
 
 
-    def round_m(self, max_p, min_n=None):
-        #TODO: make this better
-        return self.widen(max_p=max_p, min_n=min_n)
+    def round_m(self, max_p, min_n=None, rm=RM.RNE):
+        """Round the mantissa to at most max_p precision, or a least absolute digit
+        in position min_n, whichever is less precise. Exact numbers can always be rounded
+        to any precision, but rounding will fail if it would attempt to increase the
+        precision of an inexact number. Rounding respects the rc, and sets it accordingly
+        for the rounded result. Rounding can use any specified rounding mode, defaulting
+        to IEEE 754 style nearest even.
+        """
+
+        # determine where we're rounding to
+        if min_n is None:
+            n = self.e - max_p
+        else:
+            n = max(min_n, self.e - max_p)
+
+        offset = n - self.n
+
+        if offset < 0:
+            if self.inexact:
+                # If this number is inexact, then we'd have to make up bits to
+                # extend the precision.
+                raise ValueError('rounding inexact number cannot produce more precise result')
+            else:
+                # If the number is exact, then we can always extend with zeros. This is independent
+                # of the rounding mode.
+                return Sink(self, c=self.c << -offset, exp=self.exp + offset)
+
+        # Break up the significand
+        lost_bits = self.c & bitmask(offset)
+        left_bits = self.c >> offset
+
+        if offset > 0:
+            offset_m1 = offset - 1
+            low_bits = lost_bits & bitmask(offset_m1)
+            half_bit = lost_bits >> offset_m1
+        else:
+            # Rounding to the same precision is equivalent to having zero in the
+            # lower bits; the only interesting information will come from the result code.
+            low_bits = 0
+            half_bit = 0
+
+        # Determine which direction to round, based on rounding mode.
+        #  1 := round away from zero
+        #  0 := truncate towards zero
+        # -1 := round down towards zero (this is very unusual)
+        # Note that most rounding down will use truncation. Actual -1 direction
+        # "round down" can only happen with 0 lost_bits and a contrary rc, i.e. we rounded
+        # away but according to the new rounding mode we shouldn't have.
+        # Zero cannot be given -1 direction: we can only keep it by truncation, or round away.
+        direction = None
+
+        if rm == RM.RNE:
+            if half_bit == 0:
+                # always truncate
+                direction = 0
+            else: # half_bit == 1
+                if low_bits != 0:
+                    # always round away
+                    direction = 1
+                else: # low_bits == 0
+                    # break tie
+                    if self.rc > 0:
+                        direction = 1
+                    elif self.rc < 0:
+                        direction = 0
+                    else: # rc == 0
+                        if self.inexact:
+                            raise ValueError('unable to determine which way to round at this precision')
+                        else: # not self.inexact
+                            # round to even
+                            if left_bits & 1 == 0:
+                                direction = 0
+                            else: # left_bits & 1 != 0
+                                direction = 1
+        else:
+            raise ValueError('unimplemented: {}'.format(repr(rm)))
+
+        c = left_bits
+        exp = self.exp + offset
+        inexact = self.inexact or (lost_bits != 0)
+
+        if direction > 0:
+            # round away
+            c += 1
+            if c.bit_length() > max_p:
+                # we carried: shift over to preserve the right amount of precision
+                c >>= 1
+                exp += 1
+            rc = -1
+        elif direction == 0:
+            # truncate
+            if lost_bits != 0:
+                # if some bits were truncated off, the result code should indicate a round down
+                rc = 1
+            else:
+                # otherwise, preserve the old result code; nothing has changed
+                rc = self.rc
+            return Sink(self, c=c, exp=exp, inexact=inexact, rc=rc)
+        else: # direction < 0
+            # round down, towards zero
+            if direction is None:
+                raise ValueError('no rounding direction ???')
+            raise ValueError('unimplemented: round to previous')
+
+        return Sink(self, c=c, exp=exp, inexact=inexact, rc=rc)
+
 
     # core envelope operations
 

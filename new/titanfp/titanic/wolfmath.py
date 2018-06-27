@@ -44,11 +44,8 @@ def math_to_digital(digits):
     negative = m.group(3) == 'True'
     inexact = m.group(4) == 'True'
     if inexact:
-        # the result was truncated toward zero
-        if negative:
-            rc = 1
-        else:
-            rc = -1
+        # the result is always truncated toward zero
+        rc = 1
     else:
         rc = 0
 

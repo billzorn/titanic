@@ -119,23 +119,41 @@ def mpfr_to_digital(x):
             c=0,
             exp=0,
             nan=True,
-            rc=x.rc, # not clear what envelope properties mean here
+            rc=0, # not clear what envelope properties mean here
         )
-    elif gmp.is_infinite(x):
+
+    negative = gmp.is_signed(x)
+
+    # Convert the result code. For MPFRs, 1 indicates that the approximate MPFR
+    # is larger than the ideal, infinite-precision result (i.e. we rounded up)
+    # and -1 indicates that the MPFR is less than the infinite-precision result.
+    # We need to convert this to a different code used by titanic: the result
+    # code is a tiny additional factor that we would have to add to the magnitude to
+    # get the right answer, so if we rounded away from zero, it's -1, and if we rounded
+    # towards zero, it's 1.
+
+    if negative:
+        rc = x.rc
+    else:
+        rc = -x.rc
+        
+    if gmp.is_infinite(x):
         return Sink(
-            negative=gmp.is_signed(x),
+            negative=negative,
             c=0,
             exp=0,
             inf=True,
-            rc=x.rc,
+            rc=rc,
         )
 
     m, exp = x.as_mantissa_exp()
-    negative = gmp.is_signed(x)
     c = int(abs(m))
     exp = int(exp)
-    rc = x.rc
 
+    if c == 0 and rc == -1:
+        raise ValueError('unreachable: MPFR rounded the wrong way toward zero? got {}, rc={}'
+                         .format(repr(x), repr(x.rc)))
+    
     return Sink(
         negative=negative,
         c=c,
