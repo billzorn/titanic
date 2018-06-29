@@ -7,11 +7,12 @@ from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
 from ..titanic.ops import OP
+from ..titanic.integral import bitmask
 from .evalctx import PositCtx
 
 
 USE_GMP = True
-USE_MATH = True
+USE_MATH = False
 DEFAULT_POSIT_CTX = PositCtx(es=4, nbits=64)
 
 def compute_with_backend(opcode, *args, prec=54):
@@ -56,14 +57,95 @@ def process_posit_exponent(e, ctx):
     return efbits - ctx.es + 1
 
 
+def posit_sbits(es, nbits, e):
+    return nbits - 3 - es - ((abs(e) - 1) // (1 << es))
+    
+
 def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
-    p = process_posit_exponent(x.e, ctx)
-    rounded = x.round_m(max_p=p, min_n=None)
+    print(repr(x))
+
+    
+    if x.isinf or x.isnan:
+        # all non-real values go to the single posit infinite value
+        return sinking.Sink(x, inf=False, nan=True)
+
+    else:
+        regime = max(abs(x.e) - 1, 0) // ctx.u
+        sbits = ctx.nbits - 3 - ctx.es - regime
+
+        if sbits < -ctx.es:
+            # we are outside the representable range: return max / min
+            if x.e < 0:
+                rounded = sinking.Sink(x, c=1, exp=ctx.emin, inexact=True, rc=-1)
+            else:
+                rounded = sinking.Sink(x, c=1, exp=ctx.emax, inexact=True, rc=1)
+
+        elif sbits < 0:
+            # round -sbits bits off of the exponent, because they won't fit
+            offset = -sbits
+            
+            lost_bits = x.e & bitmask(offset)
+            # note these left bits might be negative
+            left_bits = x.e >> offset
+
+            if offset > 0:
+                offset_m1 = offset - 1
+                low_bits = lost_bits & bitmask(offset_m1)
+                half_bit = lost_bits >> offset_m1
+            else:
+                low_bits = 0
+                half_bit = 0
+
+            lost_sig_bits = x.c & bitmask(x.c.bit_length() - 1)
+            
+            new_exp = left_bits
+            if lost_bits > 0 or lost_sig_bits > 0 or x.rc > 0:
+                rc = 1
+                exp_inexact = True
+            else:
+                rc = x.rc
+                exp_inexact = x.inexact
+            
+            # We want to round on the geometric mean of the two numbers,
+            # but this is the same as rounding on the arithmetic mean of
+            # the exponents.
+            
+            if half_bit > 0:
+                if low_bits > 0 or lost_sig_bits > 0 or x.rc > 0:
+                    # round the exponent up; remember it might be negative, but that's ok
+                    new_exp += 1
+                    rc = -1
+                elif x.rc < 1:
+                    # tie broken the other way
+                    pass
+                elif new_exp & 1:
+                    # hard coded rne
+                    # TODO: not clear if this is actually what should happen
+                    new_exp += 1
+                    rc = -1
+
+            new_exp <<= offset
+            rounded = sinking.Sink(x, c=1, exp=new_exp, inexact=exp_inexact, rc=rc)
+
+        else:
+            # we can represent the entire exponent, so only round the mantissa
+            rounded = x.round_m(max_p=sbits + 1, min_n=None)
 
     if inexact is None:
-        return rounded
+        final = rounded
     else:
-        return sinking.Sink(rounded, inexact=rounded.inexact or inexact)
+        final = sinking.Sink(rounded, inexact=rounded.inexact or inexact)
+
+    # Posits do not have a signed zero, and never round down to zero.
+
+    if final.is_zero():
+        if final.inexact:
+            return sinking.Sink(final, c=1, exp=ctx.emin, rc=-1)
+        else:
+            return sinking.Sink(final, c=0, exp=0, rc=0)
+    else:
+        return final
+    
 
 def arg_to_digital(x, ctx=DEFAULT_POSIT_CTX):
     result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits))
@@ -326,3 +408,5 @@ fpc_loop = fpcparser.compile(
 """(FPCore ()
  (while (< x 100) ([x 0 (+ x PI)]) x))
 """)[0]
+
+minictx = PositCtx(nbits=6, es=2)

@@ -13,7 +13,7 @@ from .evalctx import IEEECtx
 
 
 USE_GMP = True
-USE_MATH = True
+USE_MATH = False
 DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53)
 
 def compute_with_backend(opcode, *args, prec=54):

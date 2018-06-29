@@ -64,7 +64,9 @@ class PositCtx(EvalCtx):
 
         self.es = es
         self.nbits = nbits
-        self.u = 2 ** es
+        self.u = 1 << es
+        self.emax = 1 << (self.nbits - 2)
+        self.emin = -self.emax
 
     def clone(self):
         copy = PositCtx(es=self.es, nbits=self.nbits)

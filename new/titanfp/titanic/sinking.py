@@ -311,8 +311,7 @@ class Sink(object):
 
     @property
     def rc(self):
-        """Result code. -1 if this value was rounded down, 1 if it was rounded up,
-        0 if the value was computed exactly or the rounding direction is unknown.
+        """Result code. 1 if this value was rounded toward 0, -1 if it was rounded away.
         """
         return self._rc
 
@@ -477,7 +476,7 @@ class Sink(object):
 
     def __repr__(self):
         return 'Sink({}, c={}, exp={},  negative={}, inexact={}, full={}, sided={}, rc={})'.format(
-            self.to_mpfr(), self.c, self.exp, self.negative, self.inexact, self.interval_full, self.interval_sided, self.rc,
+            repr(self.to_mpfr()), self.c, self.exp, self.negative, self.inexact, self.interval_full, self.interval_sided, self.rc,
         )
 
     def __str__(self):
@@ -508,6 +507,10 @@ class Sink(object):
         to IEEE 754 style nearest even.
         """
 
+        # zero cannot be rounded; return it unchanged
+        if self.is_zero():
+            return Sink(self)
+        
         # determine where we're rounding to
         if min_n is None:
             n = self.e - max_p
