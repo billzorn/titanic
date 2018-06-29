@@ -62,8 +62,6 @@ def posit_sbits(es, nbits, e):
     
 
 def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
-    print(repr(x))
-
     
     if x.isinf or x.isnan:
         # all non-real values go to the single posit infinite value
