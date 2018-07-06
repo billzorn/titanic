@@ -2,14 +2,210 @@
 and meaningful exponents on zero / inf.
 """
 
-import gmpy2 as gmp
-
 from ..titanic import gmpmath
+from ..titanic import wolfmath
 from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
-from .evalctx import EvalCtx
+from ..titanic.ops import OP
+from .evalctx import IEEECtx
 
+
+USE_GMP = True
+USE_MATH = False
+DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53) # double
+
+def compute_with_backend(opcode, *args, prec=54):
+    result = None
+    if USE_MATH:
+        result_math = wolfmath.compute(opcode, *args, prec=prec)
+        result = result_math
+    if USE_GMP:
+        result_gmp = gmpmath.compute(opcode, *args, prec=prec)
+        result = result_gmp
+    if USE_GMP and USE_MATH:
+        if not result_gmp.is_identical_to(result_math):
+            print(repr(result_gmp))
+            print(repr(result_math))
+            print('--')
+    if result is None:
+        raise ValueError('no backend specified')
+    return result
+
+
+def round_to_sinking_ctx(x, max_p=None, min_n=None, inexact=None, ctx=DEFAULT_IEEE_CTX):
+    if max_p is None:
+        p = ctx.p
+    else:
+        p = min(max_p, ctx.p)
+
+    if min_n is None:
+        n = ctx.n
+    else:
+        n = max(min_n, ctx.n)
+
+    rounded = x.round_m(max_p=p, min_n=n)
+
+    if inexact is None:
+        return rounded
+    else:
+        return sinking.Sink(rounded, inexact=rounded.inexact or inexact)
+
+
+def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
+    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.p + 1))
+    return round_to_sinking_ctx(result, ctx=ctx)
+
+
+def smallest_p(*args):
+    p = None
+    for x in args:
+        if x.inexact and (p is None or x.p < p):
+            p = x.p
+    return p
+
+def largest_n(*args):
+    n = None
+    for x in args:
+        if x.inexact and (n is None or x.n > n):
+            n = x.n
+    return n
+
+def computation_prec(p, ctx):
+    # n is completely ignored: may do extra work, if we're limited by n
+    if p is None:
+        return max(2, ctx.p + 1)
+    else:
+        return max(2, min(p, ctx.p) + 1)
+
+
+def add(x1, x2, ctx):
+    p = None
+    n = largest_n(x1, x2)
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.add, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def sub(x1, x2, ctx):
+    p = None
+    n = largest_n(x1, x2)
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.sub, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def mul(x1, x2, ctx):
+    p = smallest_p(x1, x2)
+    n = None
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.mul, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def div(x1, x2, ctx):
+    p = smallest_p(x1, x2)
+    n = None
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.div, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def neg(x, ctx):
+    # this shouldn't actually change anything...
+    p = smallest_p(x)
+    n = largest_n(x)
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.neg, x, prec=prec)
+    inexact = x.inexact or result.inexact
+    # we go through the same work as other computations, as negating a number
+    # that doesn't fit in the context might still need to round it, etc.
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+    
+def sqrt(x, ctx):
+    p = smallest_p(x)
+    n = None
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.sqrt, x, prec=prec)
+    inexact = x.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def floor(x, ctx):
+    if x.n >= -1:
+        # floor is a no-op, so round and return
+        return round_to_sinking_ctx(x, ctx=ctx)        
+    
+    # Note that MPFR has screwy return codes for rounding functions - it sets the RC
+    # as if the operation was supposed to be the identity, and indicates a non-integer
+    # was rounded with a rc value of 2 rather than 1.
+
+    # To get around this completely, we give MPFR enough precision that it won't have
+    # to round any more to represent the result, and institute our own exactness
+    # behavior.
+
+    prec = max(2, x.p)
+    result = compute_with_backend(OP.floor, x, prec=prec)
+    if x.is_integer() and x.inexact:
+        # this rc handling is crude, as we're temporarily creating a bogus answer
+        # which has the right return code but the wrong value of n, and then depending
+        # on the later rounding to fix the value of n
+        if result.is_zero():
+            result = -abs(result)
+            rc = 1
+        elif result.negative:
+            rc = 1
+        else: # not result.negative
+            rc = -1
+        result = sinking.Sink(result, inexact=True, rc=rc)
+    else:
+        result = sinking.Sink(result, inexact=False, rc=0)
+
+    return round_to_sinking_ctx(result, ctx=ctx)
+
+def fmod(x1, x2, ctx):
+    # x1 is the numerator, x2 is the modulus.
+    # fmod computes x1 - (x2 * i) where i is an integer such that the resut is less than x2.
+    # we are limited by the n of this subtraction, which is effectively the n of x1 and the
+    # p of x2, because the integer from the multiply is exact and it will align the exponents.
+    p = smallest_p(x2)
+    n = largest_n(x1)
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.fmod, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def pow(x1, x2, ctx):
+    p = smallest_p(x1, x2)
+    n = None
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.pow, x1, x2, prec=prec)
+    inexact = x1.inexact or x2.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def sin(x, ctx):
+    n = largest_n(x)
+    # precision is the number of bits left from a subtraction with pi...
+    if n is None:
+        p = None
+    else:
+        p = -n
+    # We don't actually want to limit n in the computation
+    n = None
+
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.sin, x, prec=prec)
+    inexact = x.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+
+def acos(x, ctx):
+    print('ACOS - not limiting precision')
+    p = None
+    n = None
+    prec = computation_prec(p, ctx)
+    result = compute_with_backend(OP.sqrt, x, prec=prec)
+    inexact = x.inexact or result.inexact
+    return round_to_sinking_ctx(result, max_p=p, min_n=n, inexact=inexact, ctx=ctx)
+    
 
 def interpret(core, args, ctx=None):
     """FPCore interpreter for "optimistic" Titanic sinking-point."""
@@ -19,16 +215,19 @@ def interpret(core, args, ctx=None):
                          .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
     if ctx is None:
-        ctx = EvalCtx(props=core.props)
+        ctx = IEEECtx(props=core.props)
 
     for arg, (name, props) in zip(args, core.inputs):
         if props:
-            local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=props)
+            local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
         else:
             local_ctx = ctx
 
-        value = sinking.Sink(arg, min_n=local_ctx.n, max_p=local_ctx.p)
-        ctx.let([(name, value)])
+        if isinstance(arg, sinking.Sink):
+            argval = arg
+        else:
+            argval = arg_to_digital(arg, local_ctx)
+        ctx.let([(name, argval)])
 
     return evaluate(core.e, ctx)
 
@@ -36,42 +235,27 @@ def interpret(core, args, ctx=None):
 def evaluate(e, ctx):
     """Recursive expression evaluator, with much isinstance()."""
 
-    # Handle annotations for precision-specific computations.
-    if e.props:
-        local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
-    else:
-        local_ctx = ctx
-
     # ValueExpr
 
     if isinstance(e, ast.Val):
-        # TODO precision
-        return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p)
+        s = e.value.upper()
+        if s == 'TRUE':
+            return True
+        elif s == 'FALSE':
+            return False
+        else:
+            return arg_to_digital(e.value, ctx)
 
     elif isinstance(e, ast.Var):
-        # TODO better rounding and stuff
-        value = ctx.bindings[e.value]
-        if local_ctx is ctx:
-            return value
-        else:
-            return value.ieee_754(local_ctx.w, local_ctx.p)
-
-    # and Digits
-
-    elif isinstance(e, ast.Digits):
-        # TODO yolo
-        spare_bits = 16
-        base = sinking.Sink(e.b)
-        exponent = sinking.Sink(e.e)
-        scale = gmpmath.pow(base, exponent,
-                            min_n = -(base.bit_length() * exponent) - spare_bits,
-                            max_p = local_ctx.w + local_ctx.p + spare_bits)
-        significand = sinking.Sink(e.m,
-                                   min_n = local_ctx.n - spare_bits,
-                                   max_p = local_ctx.p + spare_bits)
-        return gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
+        # never rounded
+        return ctx.bindings[e.value]
 
     # control flow
+
+    elif isinstance(e, ast.Ctx):
+        newctx = IEEECtx(props=e.props) # TODO: inherit properties?
+        newctx.let(ctx.bindings)
+        return evaluate(e.body, newctx)
 
     elif isinstance(e, ast.If):
         if evaluate(e.cond, ctx):
@@ -80,11 +264,17 @@ def evaluate(e, ctx):
             return evaluate(e.else_body, ctx)
 
     elif isinstance(e, ast.Let):
-        # somebody has to clone the context, to prevent let bindings in the subexpressions
-        # from contaminating each other or the result
-        bindings = [(name, evaluate(expr, ctx.clone())) for name, expr in e.let_bindings]
-        ctx.let(bindings)
-        return evaluate(e.body, ctx)
+        bindings = [(name, evaluate(expr, ctx)) for name, expr in e.let_bindings]
+        newctx = ctx.clone().let(bindings)
+        return evaluate(e.body, newctx)
+
+    elif isinstance(e, ast.While):
+        bindings = [(name, evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+        newctx = ctx.clone().let(bindings)
+        while evaluate(e.cond, newctx):
+            bindings = [(name, evaluate(update_expr, newctx)) for name, init_expr, update_expr in e.while_bindings]
+            newctx = newctx.clone().let(bindings)
+        return evaluate(e.body, newctx)
 
     # Unary/Binary/NaryExpr
 
@@ -92,76 +282,37 @@ def evaluate(e, ctx):
         children = [evaluate(child, ctx) for child in e.children]
 
         if isinstance(e, ast.Neg):
-            # always exact
-            return -children[0]
+            return neg(*children, ctx)
 
         elif isinstance(e, ast.Sqrt):
-            n = local_ctx.n
-            p = min(child.p if child.inexact else local_ctx.p for child in children)
-            return gmpmath.sqrt(*children, min_n=n, max_p=p)
+            return sqrt(*children, ctx)
 
         elif isinstance(e, ast.Add):
-            n = max(child.n if child.inexact else local_ctx.n for child in children)
-            p = local_ctx.p
-            return gmpmath.add(*children, min_n=n, max_p=p)
+            return add(*children, ctx)
 
         elif isinstance(e, ast.Sub):
-            n = max(child.n if child.inexact else local_ctx.n for child in children)
-            p = local_ctx.p
-            return gmpmath.sub(*children, min_n=n, max_p=p)
+            return sub(*children, ctx)
 
         elif isinstance(e, ast.Mul):
-            n = local_ctx.n
-            p = min(child.p if child.inexact else local_ctx.p for child in children)
-            return gmpmath.mul(*children, min_n=n, max_p=p)
+            return mul(*children, ctx)
 
         elif isinstance(e, ast.Div):
-            n = local_ctx.n
-            p = min(child.p if child.inexact else local_ctx.p for child in children)
-            return gmpmath.div(*children, min_n=n, max_p=p)
+            return div(*children, ctx)
 
         elif isinstance(e, ast.Floor):
-            child = children[0]
-            # floor always returns an integer, with a corresponding n value of -1
-            n = max(child.n if child.inexact else local_ctx.n, -1)
-            p = local_ctx.p
-            result = gmpmath.floor(*children, min_n=n, max_p=p)
-            # Special case: if the input is inexactly an integer, we don't know which number
-            # we should return from floor.
-            # TODO: get rounding modes and interval bounds right.
-            if result.exact and child.inexact and child.is_integer():
-                return result.explode()
-            else:
-                return result
+            return floor(*children, ctx)
 
         elif isinstance(e, ast.Fmod):
-            numerator = children[0]
-            modulus = children[1]
-            # fmod is effectively a subtraction.
-            # There are two ways we could get a limited n-value: either from the
-            # numerator itself, as captured by the setting for n, or from the
-            # multiplication. The multiplied value will have the same exponent as the
-            # numerator, so we can capture that limitation on n by limiting p.
-            n = numerator.n if numerator.inexact else local_ctx.n
-            p = modulus.p if modulus.inexact else local_ctx.p
-            return gmpmath.fmod(*children, min_n=n, max_p=p)
+            return fmod(*children, ctx)
 
         elif isinstance(e, ast.Pow):
-            # I believe we can use the same rules as for multiplication.
-            # It might be more complicated.
-            n = local_ctx.n
-            p = min(child.p if child.inexact else local_ctx.p for child in children)
-            return gmpmath.pow(*children, min_n=n, max_p=p)
+            return pow(*children, ctx)
 
         elif isinstance(e, ast.Sin):
-            child = children[0]
-            # To compute Sin accurately, we essentially need to compute fmod against pi.
-            # This means that the precision of the output is related to the significance of the
-            # input's n value vs pi.
+            return sin(*children, ctx)
 
-            n = local_ctx.n
-            p = max(min(0 - child.n if child.inexact else local_ctx.p, local_ctx.p), 0)
-            return gmpmath.sin(*children, min_n=n, max_p=p)
+        elif isinstance(e, ast.Acos):
+            return acos(*children, ctx)
 
         elif isinstance(e, ast.LT):
             for x, y in zip(children, children[1:]):
@@ -206,3 +357,34 @@ def evaluate(e, ctx):
 
         else:
             raise ValueError('what is this: {}'.format(repr(e)))
+
+
+
+
+
+from ..fpbench import fpcparser
+
+fpc_minimal = fpcparser.compile(
+"""(FPCore (a b) (- (+ a b) a))
+""")[0]
+
+fpc_example = fpcparser.compile(
+"""(FPCore (a b c)
+ :name "NMSE p42, positive"
+ :cite (hamming-1987 herbie-2015)
+ :fpbench-domain textbook
+ :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
+ (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
+""")[0]
+
+fpc_fmod2pi = fpcparser.compile(
+"""(FPCore ()
+ (- (* 2 (+ (+ (* 4 7.8539812564849853515625e-01) (* 4 3.7748947079307981766760e-08)) (* 4 2.6951514290790594840552e-15)))
+    (* 2 PI))
+)
+""")[0]
+
+fpc_loop = fpcparser.compile(
+"""(FPCore ()
+ (while (< x 100) ([x 0 (+ x PI)]) x))
+""")[0]

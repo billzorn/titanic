@@ -232,7 +232,12 @@ def interpret(core, args, ctx=None):
             local_ctx = PositCtx(es=ctx.es, nbits=ctx.nbits, props=props)
         else:
             local_ctx = ctx
-        ctx.let([(name, arg_to_digital(arg, local_ctx))])
+
+        if isinstance(arg, sinking.Sink):
+            argval = arg
+        else:
+            argval = arg_to_digital(arg, local_ctx)
+        ctx.let([(name, argval)])
 
     return evaluate(core.e, ctx)
 

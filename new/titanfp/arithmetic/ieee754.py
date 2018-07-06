@@ -1,8 +1,6 @@
 """Emulated IEEE 754 floating-point arithmetic.
 """
 
-import gmpy2 as gmp
-
 from ..titanic import gmpmath
 from ..titanic import wolfmath
 from ..titanic import sinking
@@ -14,7 +12,7 @@ from .evalctx import IEEECtx
 
 USE_GMP = True
 USE_MATH = False
-DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53)
+DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53) # double
 
 def compute_with_backend(opcode, *args, prec=54):
     result = None
@@ -129,7 +127,12 @@ def interpret(core, args, ctx=None):
             local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
         else:
             local_ctx = ctx
-        ctx.let([(name, arg_to_digital(arg, local_ctx))])
+
+        if isinstance(arg, sinking.Sink):
+            argval = arg
+        else:
+            argval = arg_to_digital(arg, local_ctx)
+        ctx.let([(name, argval)])
 
     return evaluate(core.e, ctx)
 
