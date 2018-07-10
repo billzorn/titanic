@@ -1,0 +1,55 @@
+\documentclass[letterpaper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{tikz}
+
+\title{Sinking Point: tracking floating-point precision with finitely many bits}
+\author{Bill Zorn, Dan Grossman, Zach Tatlock}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+ Some Abstract
+\end{abstract}
+
+
+\section{Introduction}
+
+Floating point is hard because error is not compositional. Example. We solve this.
+
+\section{Motivating Example - the quadratic formula}
+
+Note that by definition, each individual operation has an error of at most 1/2 ulp. Obviously, this is not compositional, as the result has much less precision than the inputs.
+
+Though, that is not necessarily apparent based on the output from IEEE floating point.
+
+With sinking point, inaccurate results are also imprecise, while accurate results maintain their precision.
+
+\section{Related work}
+
+There are lots of projects to analyze the precision of floating point computations, track it dynamically through a computation, or remove error automatically by changing expressions. Sinking Point is a dynamic analysis - it's different because it avoids computing an expensive reference answer to determine the error.
+
+\section{Sinking point design - rounding with w and p}
+
+Define IEEE 754 style rounding in terms of w and p.
+
+simple rules for + - * / sqrt (note that negation preserves precision)
+
+\section{Results I}
+
+Per-operation lost bit tables
+
+\section{Results II}
+
+Lost precision for more complex expressions, with reasonable argument ranges.
+
+\section{Future work}
+
+
+
+\bibliographystyle{ieeetr}
+\bibliography{ref}
+
+\end{document}
