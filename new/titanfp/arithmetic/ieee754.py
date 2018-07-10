@@ -137,6 +137,32 @@ def interpret(core, args, ctx=None):
     return evaluate(core.e, ctx)
 
 
+def interpret_pre(core, args, ctx=None):
+    if core.pre is None:
+        raise ValueError('core has no preconditions')
+    
+    if len(core.inputs) != len(args):
+        raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
+                         .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
+
+    if ctx is None:
+        ctx = IEEECtx(props=core.props)
+
+    for arg, (name, props) in zip(args, core.inputs):
+        if props:
+            local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
+        else:
+            local_ctx = ctx
+
+        if isinstance(arg, sinking.Sink):
+            argval = arg
+        else:
+            argval = arg_to_digital(arg, local_ctx)
+        ctx.let([(name, argval)])
+
+    return evaluate(core.pre, ctx)
+
+
 def evaluate(e, ctx):
     """Recursive expression evaluator, with much isinstance()."""
 

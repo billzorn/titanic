@@ -5,6 +5,7 @@ and meaningful exponents on zero / inf.
 from ..titanic import gmpmath
 from ..titanic import wolfmath
 from ..titanic import sinking
+from ..titanic import integral
 from ..fpbench import fpcast as ast
 
 from ..titanic.ops import OP
@@ -176,6 +177,9 @@ def fmod(x1, x2, ctx):
 
 def pow(x1, x2, ctx):
     p = smallest_p(x1, x2)
+    # we might lose some more bits if the exponent is far from zero
+    lost_bits = abs(x2.e)
+    p = max(0, p - lost_bits)
     n = None
     prec = computation_prec(p, ctx)
     result = compute_with_backend(OP.pow, x1, x2, prec=prec)
