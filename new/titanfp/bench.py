@@ -43,7 +43,7 @@ def bits_agreement(hi, lo):
     lo_exact = sinking.Sink(lo, inexact=False, rc=0)
     one_ulp_agreement = None
     zero_ulp_agreement = None
-    for p in range(agreement, -1, -1):
+    for p in range(agreement + 1, -1, -1):
         hi_rounded = hi_exact.round_m(p)
         lo_rounded = lo_exact.round_m(p)
         rounded_ulps = linear_ulps(hi_rounded, lo_rounded)
@@ -313,3 +313,122 @@ benchmarks = {
 }
 
 cores = { k : fpcparser.compile(v)[0] for k, v in benchmarks.items() }
+
+
+
+
+
+
+
+
+# from ipython
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.transforms as mtransforms
+
+
+def process_data(data):
+    points = {}
+    for x, y in data:
+        if (x, y) in points:
+            points[(x, y)] += 1
+        else:
+            points[(x, y)] = 1
+
+    xs = []
+    ys = []
+    colors = []
+    maxc = 0
+
+    for (x, y), count in points.items():
+        xs.append(x)
+        ys.append(y)
+        #c = count.bit_length()
+        c = count
+        colors.append(c)
+        if c > maxc:
+            maxc = c
+
+    greyscale = [str(1 - (c / maxc)) for c in colors]
+
+
+    # cdf per x point
+
+    cdfs = {}
+    for (x, y), count in points.items():
+        if x not in cdfs:
+            cdfs[x] = {}
+        cdfs[x][y-x] = count
+
+    cdf_xys = {}
+    for cdf_x, cdf in cdfs.items():
+        sum = 0
+        cdf_xs = []
+        cdf_ys = []
+        for x in sorted(cdf):
+            sum += cdf[x]
+            cdf_xs.append(x)
+            cdf_ys.append(sum)
+        cdf_ys = [y / sum for y in cdf_ys]
+        cdf_xys[cdf_x] = [cdf_xs, cdf_ys]
+
+    return xs, ys, greyscale, cdf_xys
+
+
+def do_scatter(xs, ys, greyscale, fname):
+    fig, ax = plt.subplots()
+
+    fig.set_size_inches(8, 5.5)
+
+    ax.set_ylim(0, 20)
+    ax.set_xlabel('sinking-point reported precision (bits)')
+    ax.set_ylabel('actual precision (bits)')
+
+    ax.scatter(xs, ys, s=100, color=greyscale)
+
+    xlim = ax.get_xlim()
+    line = mlines.Line2D(xlim, xlim, color='red')
+    ax.add_line(line)
+
+    fig.savefig(fname)
+
+    
+def do_cdf(cdf_xys, fname):
+    fig, ax = plt.subplots()
+
+    fig.set_size_inches(8, 5.5)
+
+    ax.set_xlabel('excess precision (bits)')
+    ax.set_ylabel('fraction of results')
+
+    for x_name, (cdf_xs, cdf_ys) in cdf_xys.items():
+        ax.plot(cdf_xs, cdf_ys)
+
+    fig.savefig(fname)
+
+
+def make_figs():
+    import matplotlib
+    matplotlib.rcParams.update({'font.size': 16})
+    
+    erange = range(-14, 16)
+    prange = range(1, 12)
+    reps = 10
+    nbits = 64
+    ctx = ctx128
+    
+    for corename in ['add', 'sub', 'mul', 'div', 'sqrt']:
+
+        core = cores[corename]
+        if len(core.inputs) == 1:
+            data = sweep_core_1arg_multi(core, erange, prange, reps, nbits, ctx)
+        else:
+            data = sweep_core_2arg_multi(core, erange, prange, reps, nbits, ctx)
+
+        xs, ys, greyscale, cdf_xys = process_data(data)
+
+        print('processed: {}'.format(len(xs)))
+
+        do_scatter(xs, ys, greyscale, corename + '_scatter.pdf')
+        do_cdf(cdf_xys, corename + '_cdf.pdf')
+            
