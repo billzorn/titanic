@@ -191,6 +191,10 @@ def enclose(lower, upper, min_n=None):
                 return Sink(enclosing_rep, negative=negative)
 
 
+class PrecisionError(Exception):
+    """Insufficient precision given to rounding operation."""
+
+
 class Sink(object):
 
     # for sinks with a real value, the value is exactly  (sign) * _c * 2**_exp
@@ -507,10 +511,10 @@ class Sink(object):
         to IEEE 754 style nearest even.
         """
 
-        # zero cannot be rounded; return it unchanged
-        if self.is_zero():
+        # some values cannot be rounded; return unchanged
+        if self.is_zero() or self.isinf or self.isnan:
             return Sink(self)
-        
+
         # determine where we're rounding to
         if min_n is None:
             n = self.e - max_p
@@ -523,7 +527,7 @@ class Sink(object):
             if self.inexact:
                 # If this number is inexact, then we'd have to make up bits to
                 # extend the precision.
-                raise ValueError('rounding inexact number cannot produce more precise result')
+                raise PrecisionError('rounding inexact number cannot produce more precise result')
             else:
                 # If the number is exact, then we can always extend with zeros. This is independent
                 # of the rounding mode.

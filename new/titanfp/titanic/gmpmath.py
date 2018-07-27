@@ -136,7 +136,7 @@ def mpfr_to_digital(x):
         rc = x.rc
     else:
         rc = -x.rc
-        
+
     if gmp.is_infinite(x):
         return Sink(
             negative=negative,
@@ -153,7 +153,7 @@ def mpfr_to_digital(x):
     if c == 0 and rc == -1:
         raise ValueError('unreachable: MPFR rounded the wrong way toward zero? got {}, rc={}'
                          .format(repr(x), repr(x.rc)))
-    
+
     return Sink(
         negative=negative,
         c=c,
@@ -244,6 +244,33 @@ def compute(opcode, *args, prec=54):
         result = op(*inputs)
 
     return mpfr_to_digital(result)
+
+
+def ieee_fbound(w, p):
+    """Compute the boundary where IEEE 754 floating-point values
+    will be rounded away to infinity for a given w and p.
+    """
+    emax = (1 << (w - 1)) - 1
+
+    with gmp.context(
+            precision=p + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+    ):
+        fbound_scale = gmp.mpfr(2) - gmp.exp2(-p)
+        fbound = gmp.exp2(emax) * fbound_scale
+
+    return mpfr_to_digital(fbound)
+
+
+# deprecated
 
 
 def withnprec(op, *args, min_n = -1075, max_p = 53,

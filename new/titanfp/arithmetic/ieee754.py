@@ -6,13 +6,13 @@ from ..titanic import wolfmath
 from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
-from ..titanic.ops import OP
+from ..titanic.ops import RM, OP
 from .evalctx import IEEECtx
 
 
 USE_GMP = True
 USE_MATH = False
-DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53) # double
+DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53, rm=RM.RNE) # double w/ RNE
 
 def compute_with_backend(opcode, *args, prec=54):
     result = None
@@ -32,12 +32,20 @@ def compute_with_backend(opcode, *args, prec=54):
     return result
 
 
-def round_to_ieee_ctx(x, inexact=None, ctx=DEFAULT_IEEE_CTX):
-    rounded = x.round_m(max_p=ctx.p, min_n=ctx.n)
-    if inexact is None:
-        return rounded
+def round_to_ieee_ctx(x, ctx=DEFAULT_IEEE_CTX):
+    if x.isinf or x.isnan:
+        # no rounding to perform
+        return sinking.Sink(x)
+
+    x_emag = Sink(x, negative=False, inexact=False)
+
+    if ctx.rm == RM.RNE:
+        if x_emag >= ctx.fbound:
+            return sinking.Sink(negative=x.negative, c=0, exp=0, inf=True, rc=-1)
     else:
-        return sinking.Sink(rounded, inexact=rounded.inexact or inexact)
+        raise ValueError('round_to_ieee_ctx: unsupported rounding mode {}'.format(repr(ctx.rm)))
+
+    return x.round_m(max_p=ctx.p, min_n=ctx.n)
 
 
 def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
@@ -45,71 +53,80 @@ def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
     return round_to_ieee_ctx(result, inexact=None, ctx=ctx)
 
 
+def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
+    try:
+        rounded = round_to_ieee_ctx(x)
+    except sinking.PrecisionError:
+        rounded = round_to_ieee_ctx(sinking.Sink(x, inexact=False))
+
+    if rounded.negative:
+        S = 1
+    else:
+        S = 0
+
+    c = rounded.c
+    cbits = rounded.p
+    e = rounded.e
+
+    if e < ctx.emin:
+        # subnormal
+
+
+
 def add(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.add, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def sub(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.sub, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def mul(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.mul, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def div(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.div, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def neg(x, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.neg, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def sqrt(x, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.sqrt, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def floor(x, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.floor, x, prec=prec)
-    inexact = (x.inexact or result.inexact) and result.n > -1 # TODO: correct?
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def fmod(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.fmod, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def pow(x1, x2, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.pow, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def sin(x, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.sin, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 def acos(x, ctx):
     prec = max(2, ctx.p + 1)
     result = compute_with_backend(OP.acos, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_ieee_ctx(result, inexact, ctx)
+    return round_to_ieee_ctx(result, ctx)
 
 
 def interpret(core, args, ctx=None):
@@ -124,7 +141,7 @@ def interpret(core, args, ctx=None):
 
     for arg, (name, props) in zip(args, core.inputs):
         if props:
-            local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
+            local_ctx = IEEECtx(props=props)
         else:
             local_ctx = ctx
 
@@ -140,7 +157,7 @@ def interpret(core, args, ctx=None):
 def interpret_pre(core, args, ctx=None):
     if core.pre is None:
         raise ValueError('core has no preconditions')
-    
+
     if len(core.inputs) != len(args):
         raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
                          .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
@@ -150,7 +167,7 @@ def interpret_pre(core, args, ctx=None):
 
     for arg, (name, props) in zip(args, core.inputs):
         if props:
-            local_ctx = IEEECtx(w=ctx.w, p=ctx.p, props=props)
+            local_ctx = IEEECtx(props=props)
         else:
             local_ctx = ctx
 
@@ -200,7 +217,7 @@ def evaluate(e, ctx):
     # control flow
 
     elif isinstance(e, ast.Ctx):
-        newctx = IEEECtx(props=e.props) # TODO: inherit properties?
+        newctx = IEEECtx(props=e.props)
         newctx.let(ctx.bindings)
         return evaluate(e.body, newctx)
 
