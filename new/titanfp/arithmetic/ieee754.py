@@ -6,6 +6,7 @@ from ..titanic import wolfmath
 from ..titanic import sinking
 from ..fpbench import fpcast as ast
 
+from ..titanic.integral import bitmask
 from ..titanic.ops import RM, OP
 from .evalctx import IEEECtx
 
@@ -54,23 +55,53 @@ def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
 
 
 def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
+    if ctx.p < 2 or ctx.w < 2:
+        raise ValueError('format with w={}, p={} cannot be represented with IEEE 754 bit pattern'.format(ctx.w, ctx.p))
+
     try:
         rounded = round_to_ieee_ctx(x)
     except sinking.PrecisionError:
         rounded = round_to_ieee_ctx(sinking.Sink(x, inexact=False))
 
+    pbits = ctx.p - 1
+        
     if rounded.negative:
         S = 1
     else:
         S = 0
 
+    if x.isnan:
+        # canonical NaN
+        return (0 << (w + pbits)) | (bitmask(w) << pbits) | (1 << (pbits - 1))
+    elif x.isinf:
+        return (S << (w + pbits)) | (bitmask(w) << pbits) # | 0
+    elif x.isinf:
+        return (S << (w + pbits)) # | (0 << pbits) | 0
+
     c = rounded.c
     cbits = rounded.p
     e = rounded.e
 
-    if e < ctx.emin:
+    if e < emin:
         # subnormal
-
+        lz = (emin - 1) - e
+        if lz > pbits or (lz == pbits and cbits > 0):
+            raise ValueError('exponent out of range: {}'.format(e))
+        elif lz + cbits > pbits:
+            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, pbits - lz))
+        E = 0
+        C = c << (lz - (pbits - cbits))
+    elif e <= emax:
+        # normal
+        if cbits > p:
+            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, p))
+        elif cbits < p:
+            raise ValueError('too little precision: given {}, can represent {}'.format(cbits, p))
+        E = e + emax
+        C = (c << (p - cbits)) & bitmask(pbits)
+    else:
+        # overflow
+        raise ValueError('exponent out of range: {}'.format(e))
 
 
 def add(x1, x2, ctx):

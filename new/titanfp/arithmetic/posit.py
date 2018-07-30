@@ -32,35 +32,6 @@ def compute_with_backend(opcode, *args, prec=54):
         raise ValueError('no backend specified')
     return result
 
-
-def process_posit_exponent(e, ctx):
-    """Break an exponent value (normalized e, not unnormalized exp) down."""
-    rspace = ctx.nbits - 1
-    regime, exponent = divmod(e, ctx.u)
-
-    if regime >= 0:
-        rbits = regime + 2
-        if rbits > rspace:
-            return ValueError('nobits: maxpos')
-        elif rbits == rspace:
-            raise ValueError('nobits: sub maxpos')
-    elif regime < 0:
-        rbits = -regime + 1
-        if rbits >= rspace:
-            raise ValueError('nobits: minpos')
-
-    efbits = rspace - rbits
-    if efbits < ctx.es:
-        raise ValueError('nobits: erange')
-
-    #print(regime, exponent, ' : ', rbits, ctx.es, efbits - ctx.es + 1)
-    return efbits - ctx.es + 1
-
-
-def posit_sbits(es, nbits, e):
-    return nbits - 3 - es - ((abs(e) - 1) // (1 << es))
-    
-
 def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
     
     if x.isinf or x.isnan:
@@ -148,6 +119,9 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
 def arg_to_digital(x, ctx=DEFAULT_POSIT_CTX):
     result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits))
     return round_to_posit_ctx(result, inexact=None, ctx=ctx)
+
+def digital_to_bits(x, ctx=DEFAULT_POSIT_CTX):
+    pass
 
 
 def add(x1, x2, ctx):

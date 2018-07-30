@@ -68,6 +68,7 @@ ctx64 = evalctx.IEEECtx(w=11, p=64)
 
 sweep_verbose = True
 rejections = 10
+use_one_ulp = True
 
 def bench_core(core, hi_args, lo_args, ctx):
     hi_result = ieee754.interpret(core, hi_args, ctx=ctx)
@@ -102,7 +103,10 @@ def sweep_core_1arg(core, erange, prange, benches, nbits, ctx):
                 sunk = optimistic.interpret(core, [lo_arg], ctx)
 
                 if sunk.inexact:
-                    records.append([sunk.p, one_ulp_agreement])
+                    if use_one_ulp:
+                        records.append([sunk.p, one_ulp_agreement])
+                    else:
+                        records.append([sunk.p, zero_ulp_agreement])
 
                 if one_ulp_agreement < sunk.p - 1 and sweep_verbose:
                                 print('??? expected ~{} bits of precision, got {} / {} / {}'.format(
@@ -157,7 +161,10 @@ def sweep_core_1arg_inner(core, e, prange, benches, nbits, ctx):
             sunk = optimistic.interpret(core, [lo_arg], ctx)
 
             if sunk.inexact:
-                records.append([sunk.p, one_ulp_agreement])
+                    if use_one_ulp:
+                        records.append([sunk.p, one_ulp_agreement])
+                    else:
+                        records.append([sunk.p, zero_ulp_agreement])
 
     return records
 
@@ -196,7 +203,10 @@ def sweep_core_2arg(core, erange, prange, benches, nbits, ctx):
                         sunk = optimistic.interpret(core, [lo_arg1, lo_arg2], ctx)
 
                         if sunk.inexact:
-                            records.append([sunk.p, one_ulp_agreement])
+                            if use_one_ulp:
+                                records.append([sunk.p, one_ulp_agreement])
+                            else:
+                                records.append([sunk.p, zero_ulp_agreement])
 
                         if one_ulp_agreement < sunk.p - 1 and sweep_verbose:
                             print('??? expected ~{} bits of precision, got {} / {} / {}'.format(
@@ -261,13 +271,18 @@ def sweep_core_2arg_inner(core, e1, e2, prange, benches, nbits, ctx):
                 sunk = optimistic.interpret(core, [lo_arg1, lo_arg2], ctx)
 
                 if sunk.inexact:
-                    records.append([sunk.p, one_ulp_agreement])
+                    if use_one_ulp:
+                        records.append([sunk.p, one_ulp_agreement])
+                    else:
+                        records.append([sunk.p, zero_ulp_agreement])
 
     return records
 
 
 
 benchmarks = {
+    'nop' : '(FPCore (x) x)',
+
     'add' : '(FPCore (x y) (+ x y))',
     'sub' : '(FPCore (x y) (- x y))',
     'mul' : '(FPCore (x y) (* x y))',
@@ -392,7 +407,7 @@ def do_scatter(xs, ys, greyscale, fname):
 
     fig.savefig(fname)
 
-    
+
 def do_cdf(cdf_xys, fname):
     fig, ax = plt.subplots()
 
@@ -410,13 +425,13 @@ def do_cdf(cdf_xys, fname):
 def make_figs():
     import matplotlib
     matplotlib.rcParams.update({'font.size': 16})
-    
+
     erange = range(-14, 16)
     prange = range(1, 12)
     reps = 10
     nbits = 64
     ctx = ctx128
-    
+
     for corename in ['add', 'sub', 'mul', 'div', 'sqrt']:
 
         core = cores[corename]
@@ -431,4 +446,3 @@ def make_figs():
 
         do_scatter(xs, ys, greyscale, corename + '_scatter.pdf')
         do_cdf(cdf_xys, corename + '_cdf.pdf')
-            
