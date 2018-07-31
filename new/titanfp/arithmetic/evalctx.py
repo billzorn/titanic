@@ -49,7 +49,7 @@ class IEEECtx(EvalCtx):
                 w = 15
                 p = 113
             elif prec:
-                riase ValueError('IEEECtx: unknown precision {}'.format(prec))
+                raise ValueError('IEEECtx: unknown precision {}'.format(prec))
 
             rnd = str(props.get('round', '')).lower()
             if rnd in RNE_synonyms:
@@ -102,7 +102,7 @@ class PositCtx(EvalCtx):
                 es = 7
                 nbits = 128
             elif prec:
-                riase ValueError('PositCtx: unknown precision {}'.format(prec))
+                raise ValueError('PositCtx: unknown precision {}'.format(prec))
 
         self.es = es
         self.nbits = nbits

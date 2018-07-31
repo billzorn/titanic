@@ -38,7 +38,7 @@ def round_to_ieee_ctx(x, ctx=DEFAULT_IEEE_CTX):
         # no rounding to perform
         return sinking.Sink(x)
 
-    x_emag = Sink(x, negative=False, inexact=False)
+    x_emag = sinking.Sink(x, negative=False, inexact=False)
 
     if ctx.rm == RM.RNE:
         if x_emag >= ctx.fbound:
@@ -51,7 +51,7 @@ def round_to_ieee_ctx(x, ctx=DEFAULT_IEEE_CTX):
 
 def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
     result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.p + 1))
-    return round_to_ieee_ctx(result, inexact=None, ctx=ctx)
+    return round_to_ieee_ctx(result, ctx=ctx)
 
 
 def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
@@ -59,49 +59,89 @@ def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
         raise ValueError('format with w={}, p={} cannot be represented with IEEE 754 bit pattern'.format(ctx.w, ctx.p))
 
     try:
-        rounded = round_to_ieee_ctx(x)
+        rounded = round_to_ieee_ctx(x, ctx)
     except sinking.PrecisionError:
-        rounded = round_to_ieee_ctx(sinking.Sink(x, inexact=False))
+        rounded = round_to_ieee_ctx(sinking.Sink(x, inexact=False), ctx)
 
     pbits = ctx.p - 1
-        
+
     if rounded.negative:
         S = 1
     else:
         S = 0
 
-    if x.isnan:
+    if rounded.isnan:
         # canonical NaN
-        return (0 << (w + pbits)) | (bitmask(w) << pbits) | (1 << (pbits - 1))
-    elif x.isinf:
-        return (S << (w + pbits)) | (bitmask(w) << pbits) # | 0
-    elif x.isinf:
-        return (S << (w + pbits)) # | (0 << pbits) | 0
+        return (0 << (ctx.w + pbits)) | (bitmask(ctx.w) << pbits) | (1 << (pbits - 1))
+    elif rounded.isinf:
+        return (S << (ctx.w + pbits)) | (bitmask(ctx.w) << pbits) # | 0
+    elif rounded.is_zero():
+        return (S << (ctx.w + pbits)) # | (0 << pbits) | 0
 
     c = rounded.c
     cbits = rounded.p
     e = rounded.e
 
-    if e < emin:
+    if e < ctx.emin:
         # subnormal
-        lz = (emin - 1) - e
+        lz = (ctx.emin - 1) - e
         if lz > pbits or (lz == pbits and cbits > 0):
             raise ValueError('exponent out of range: {}'.format(e))
         elif lz + cbits > pbits:
             raise ValueError('too much precision: given {}, can represent {}'.format(cbits, pbits - lz))
         E = 0
         C = c << (lz - (pbits - cbits))
-    elif e <= emax:
+    elif e <= ctx.emax:
         # normal
-        if cbits > p:
-            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, p))
-        elif cbits < p:
-            raise ValueError('too little precision: given {}, can represent {}'.format(cbits, p))
-        E = e + emax
-        C = (c << (p - cbits)) & bitmask(pbits)
+        if cbits > ctx.p:
+            raise ValueError('too much precision: given {}, can represent {}'.format(cbits, ctx.p))
+        elif cbits < ctx.p:
+            raise ValueError('too little precision: given {}, can represent {}'.format(cbits, ctx.p))
+        E = e + ctx.emax
+        C = (c << (ctx.p - cbits)) & bitmask(pbits)
     else:
         # overflow
         raise ValueError('exponent out of range: {}'.format(e))
+
+    return (S << (ctx.w + pbits)) | (E << pbits) | C
+
+
+def bits_to_digital(i, ctx=DEFAULT_IEEE_CTX):
+    pbits = ctx.p - 1
+
+    S = (i >> (ctx.w + pbits)) & bitmask(1)
+    E = (i >> pbits) & bitmask(ctx.w)
+    C = i & bitmask(pbits)
+
+    negative = (S == 1)
+    e = E - ctx.emax
+
+    if E == 0:
+        # subnormal
+        c = C
+        exp = -ctx.emax - pbits + 1
+    elif e <= ctx.emax:
+        # normal
+        c = C | (1 << pbits)
+        exp = e - pbits
+    else:
+        # nonreal
+        if C == 0:
+            return sinking.Sink(negative=negative, c=0, exp=0, inf=True, rc=0)
+        else:
+            return sinking.Sink(negative=False, c=0, exp=0, nan=True, rc=0)
+
+    # unfortunately any rc / exactness information is lost
+    return sinking.Sink(negative=negative, c=c, exp=exp, inexact=False, rc=0)
+        
+
+import numpy as np
+import sys
+def bits_to_numpy(i, nbytes=8, dtype=np.float64):
+    return np.frombuffer(
+        i.to_bytes(nbytes, sys.byteorder),
+        dtype=dtype, count=1, offset=0,
+    )[0]
 
 
 def add(x1, x2, ctx):
