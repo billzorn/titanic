@@ -135,6 +135,27 @@ def bits_to_digital(i, ctx=DEFAULT_IEEE_CTX):
     return sinking.Sink(negative=negative, c=c, exp=exp, inexact=False, rc=0)
         
 
+def show_bitpattern(x, ctx=DEFAULT_IEEE_CTX):
+    print(x)
+    
+    if isinstance(x, int):
+        i = x
+    elif isinstance(x, sinking.Sink):
+        i = digital_to_bits(x, ctx=ctx)
+
+    S = i >> (ctx.w + ctx.p - 1)
+    E = (i >> (ctx.p - 1)) & bitmask(ctx.w)
+    C = i & bitmask(ctx.p - 1)
+    if E == 0 or E == bitmask(ctx.w):
+        hidden = 0
+    else:
+        hidden = 1
+        
+    return ('float{:d}({:d},{:d}): {:01b} {:0'+str(ctx.w)+'b} ({:01b}) {:0'+str(ctx.p-1)+'b}').format(
+        ctx.w + ctx.p, ctx.w, ctx.p, S, E, hidden, C,
+    )
+
+
 import numpy as np
 import sys
 def bits_to_numpy(i, nbytes=8, dtype=np.float64):

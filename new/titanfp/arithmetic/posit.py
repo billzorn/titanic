@@ -32,8 +32,9 @@ def compute_with_backend(opcode, *args, prec=54):
         raise ValueError('no backend specified')
     return result
 
-def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
-    
+
+def round_to_posit_ctx(x, ctx=DEFAULT_POSIT_CTX):
+
     if x.isinf or x.isnan:
         # all non-real values go to the single posit infinite value
         return sinking.Sink(x, inf=False, nan=True)
@@ -41,6 +42,9 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
     else:
         regime = max(abs(x.e) - 1, 0) // ctx.u
         sbits = ctx.nbits - 3 - ctx.es - regime
+
+        print('rounding: {:d}, {:d}'.format(regime, sbits))
+        print(x.e, x.c, x.inexact, x.rc)
 
         if sbits < -ctx.es:
             # we are outside the representable range: return max / min
@@ -52,7 +56,7 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
         elif sbits < 0:
             # round -sbits bits off of the exponent, because they won't fit
             offset = -sbits
-            
+
             lost_bits = x.e & bitmask(offset)
             # note these left bits might be negative
             left_bits = x.e >> offset
@@ -66,7 +70,7 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
                 half_bit = 0
 
             lost_sig_bits = x.c & bitmask(x.c.bit_length() - 1)
-            
+
             new_exp = left_bits
             if lost_bits > 0 or lost_sig_bits > 0 or x.rc > 0:
                 rc = 1
@@ -74,11 +78,11 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
             else:
                 rc = x.rc
                 exp_inexact = x.inexact
-            
+
             # We want to round on the geometric mean of the two numbers,
             # but this is the same as rounding on the arithmetic mean of
             # the exponents.
-            
+
             if half_bit > 0:
                 if low_bits > 0 or lost_sig_bits > 0 or x.rc > 0:
                     # round the exponent up; remember it might be negative, but that's ok
@@ -100,95 +104,168 @@ def round_to_posit_ctx(x, inexact=None, ctx=DEFAULT_POSIT_CTX):
             # we can represent the entire exponent, so only round the mantissa
             rounded = x.round_m(max_p=sbits + 1, min_n=None)
 
-    if inexact is None:
-        final = rounded
-    else:
-        final = sinking.Sink(rounded, inexact=rounded.inexact or inexact)
-
     # Posits do not have a signed zero, and never round down to zero.
 
-    if final.is_zero():
-        if final.inexact:
-            return sinking.Sink(final, c=1, exp=ctx.emin, rc=-1)
-        else:
-            return sinking.Sink(final, c=0, exp=0, rc=0)
-    else:
-        return final
+    print(rounded.e, rounded.c, rounded.inexact, rounded.rc)
     
+    if rounded.is_zero():
+        if rounded.inexact:
+            return sinking.Sink(rounded, c=1, exp=ctx.emin, rc=-1)
+        else:
+            return sinking.Sink(rounded, negative=False)
+    else:
+        return rounded
+
 
 def arg_to_digital(x, ctx=DEFAULT_POSIT_CTX):
-    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits))
-    return round_to_posit_ctx(result, inexact=None, ctx=ctx)
+    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.nbits - ctx.es))
+    return round_to_posit_ctx(result, ctx=ctx)
+
 
 def digital_to_bits(x, ctx=DEFAULT_POSIT_CTX):
-    pass
+    if ctx.nbits < 2 or ctx.es < 0:
+        raise ValueError('format with nbits={}, es={} cannot be represented with posit bit pattern'.format(ctx.nbits, ctx.es))
+
+    try:
+        rounded = round_to_posit_ctx(x, ctx)
+    except sinking.PrecisionError:
+        rounded = round_to_posit_ctx(sinking.Sink(x, inexact=False), ctx)
+
+    if rounded.isnan:
+        return 1 << (ctx.nbits - 1)
+    elif rounded.is_zero():
+        return 0
+
+    regime, e = divmod(x.e, ctx.u)
+
+    if regime < 0:
+        R = 1
+        rbits = -regime + 1
+    else:
+        R = ((1 << (regime + 1)) - 1) << 1
+        rbits = regime + 2
+
+    sbits = ctx.nbits - 1 - rbits - ctx.es
+
+    if sbits < -ctx.es:
+        X = R >> -(ctx.es + sbits)
+    elif sbits <= 0:
+        X = (R << (ctx.es + sbits)) | (e >> -sbits)
+    else:
+        X = (R << (ctx.es + sbits)) | (e << sbits) | (rounded.c & bitmask(sbits))
+
+    if rounded.negative:
+        return -X & bitmask(ctx.nbits)
+    else:
+        return X
+
+
+def show_bitpattern(x, ctx=DEFAULT_POSIT_CTX):
+    if isinstance(x, int):
+        i = x
+    elif isinstance(x, sinking.Sink):
+        i = digital_to_bits(x, ctx=ctx)
+
+    if i & (1 << (ctx.nbits - 1)) == 0:
+        X = i
+        sign = '+'
+    else:
+        X = -i & bitmask(ctx.nbits - 1)
+        sign = '-'
+
+    if X == 0:
+        if sign == '+':
+            return ('posit{:d}({:d}): zero {:0'+str(ctx.nbits - 1)+'b}').format(ctx.nbits, ctx.es, X)
+        else:
+            return ('posit{:d}({:d}): NaR {:0'+str(ctx.nbits - 1)+'b}').format(ctx.nbits, ctx.es, X)
+
+    # detect the regime
+
+    idx = ctx.nbits - 2
+    r = (X >> idx) & 1
+
+    while idx > 0 and (X >> (idx - 1) & 1) == r:
+        idx -= 1
+
+    # the regime extends one index past idx (or to idx if idx is 0)
+
+    ebits = max(idx - 1, 0)
+    rbits = ctx.nbits - 1 - ebits
+
+    if ebits > ctx.es:
+        sbits = ebits - ctx.es
+        ebits = ctx.es
+    else:
+        sbits = 0
+
+    if sbits > 0:
+        return ('posit{:d}({:d}): {:s} {:0'+str(rbits)+'b} {:0'+str(ebits)+'b} (1) {:0'+str(sbits)+'b}').format(
+            ctx.nbits, ctx.es, sign, X >> (ebits + sbits), (X >> sbits) & bitmask(ebits), X & bitmask(sbits),
+        )
+    elif ebits > 0:
+        return ('posit{:d}({:d}): {:s} {:0'+str(rbits)+'b} {:0'+str(ebits)+'b}').format(
+            ctx.nbits, ctx.es, sign, X >> ebits, X & bitmask(ebits),
+        )
+    else:
+        return ('posit{:d}({:d}): {:s} {:0'+str(rbits)+'b}').format(
+            ctx.nbits, ctx.es, sign, X,
+        )
 
 
 def add(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.add, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def sub(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sub, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def mul(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.mul, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def div(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.div, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def neg(x, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.neg, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def sqrt(x, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sqrt, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def floor(x, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.floor, x, prec=prec)
-    inexact = (x.inexact or result.inexact) and result.n > -1 # TODO: correct?
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def fmod(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.fmod, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def pow(x1, x2, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.pow, x1, x2, prec=prec)
-    inexact = x1.inexact or x2.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def sin(x, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.sin, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 def acos(x, ctx):
     prec = max(2, ctx.nbits)
     result = compute_with_backend(OP.acos, x, prec=prec)
-    inexact = x.inexact or result.inexact
-    return round_to_posit_ctx(result, inexact, ctx)
+    return round_to_posit_ctx(result, ctx)
 
 
 def interpret(core, args, ctx=None):
