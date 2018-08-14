@@ -270,6 +270,102 @@ def ieee_fbound(w, p):
     return mpfr_to_digital(fbound)
 
 
+def arith_sim(a, b):
+    """Compute the 'arithmetic bit similarity' between a and b, defined as:
+                  | a - b |
+        -log2( --------------- )
+               min( |a|, |b| )
+    That is to say, arithmetic similarity is the negative log base 2 of the
+    relative difference between a and b, with reference to whichever has
+    smaller magnitude. For positive results, this is roughly an upper bound
+    on the number of binary digits that are the same between the two numbers;
+    for negative results, it is roughly the negative magnitude of the difference
+    in exponents.
+    """
+
+    prec = max(53, 1 + max(a.e, b.e) - min(a.n, b.n))
+
+    mpfr_a = digital_to_mpfr(a)
+    mpfr_b = digital_to_mpfr(b)
+
+    with gmp.context(
+            precision=prec,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True
+    ):
+        diff = abs(mpfr_a - mpfr_b)
+
+    with gmp.context(
+            precision=prec,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True
+    ):
+        reldiff = diff / min(abs(mpfr_a), abs(mpfr_b))
+
+    with gmp.ieee(64):
+        sim = -gmp.log2(reldiff)
+
+    return float(sim)
+
+
+def geo_sim(a, b):
+    """Compute the 'geometric bit similarity' between a and b, defined as:
+               |        a    |
+        -log2( | log2( --- ) | )
+               |        b    |
+    That is to say, geometric similarity is the negative log base 2 of the
+    magnitude of the log base 2 of the ratio a / b. For positive results, this
+    is roughly an upper bound on the number of binary digits that are the same
+    between the numbers; for negative results, it is roughtly the negative magnitude
+    of the number of bits that are different between the exponents.
+
+    In general, the geometric similarity is probably more useful when trying
+    to interpret fractional values, though for positive results, the floors of the
+    arithmetic and geometric similarities will usually agree.
+
+    This measure is the same as John Gustafson's "decimal accuracy," as defined
+    in https://posithub.org/docs/Posits4.pdf, section 7.4.
+    """
+    prec = max(53, 1 + max(a.e, b.e) - min(a.n, b.n))
+
+    mpfr_a = digital_to_mpfr(a)
+    mpfr_b = digital_to_mpfr(b)
+
+    with gmp.context(
+            precision=prec,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True
+    ):
+        ratio = mpfr_a / mpfr_b
+        reldiff = abs(gmp.log2(ratio))
+
+    with gmp.ieee(64):
+        sim = -gmp.log2(reldiff)
+
+    return float(sim)
+
+
 # deprecated
 
 

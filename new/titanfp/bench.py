@@ -1,4 +1,6 @@
 import random
+import math
+import itertools
 import multiprocessing
 
 from .fpbench import fpcparser
@@ -6,6 +8,8 @@ from .arithmetic import ieee754
 from .arithmetic import optimistic
 from .arithmetic import evalctx
 from .titanic import sinking
+
+from .titanic import gmpmath
 
 
 def gen_input(e, p, nbits, negative=False):
@@ -18,6 +22,10 @@ def gen_input(e, p, nbits, negative=False):
 
     return hi, lo
 
+def gen_e(e, c, negative=False):
+    exp = e - c.bit_length() + 1
+    return sinking.Sink(negative=negative, exp=exp, c=c)
+
 
 def linear_ulps(x, y):
     smaller_n = min(x.n, y.n)
@@ -29,21 +37,15 @@ def linear_ulps(x, y):
 
     return x_c - y_c
 
-
 def bits_agreement(hi, lo):
-    ulps = linear_ulps(hi, lo)
-    floorlog2_ulps = max(abs(ulps).bit_length() - 1, 0)
-
-    # this should be an upper bound on the number of bits
-    # that are the same
-    lo_offset = lo.n - min(hi.n, lo.n)
-    agreement = lo.p + lo_offset - floorlog2_ulps
+    bitsim = gmpmath.geo_sim(hi, lo)
+    agreement = int(bitsim) + 4
 
     hi_exact = sinking.Sink(hi, inexact=False, rc=0)
     lo_exact = sinking.Sink(lo, inexact=False, rc=0)
     one_ulp_agreement = None
     zero_ulp_agreement = None
-    for p in range(agreement + 1, -1, -1):
+    for p in range(agreement, -1, -1):
         hi_rounded = hi_exact.round_m(p)
         lo_rounded = lo_exact.round_m(p)
         rounded_ulps = linear_ulps(hi_rounded, lo_rounded)
@@ -60,224 +62,135 @@ def bits_agreement(hi, lo):
     if zero_ulp_agreement == None:
         zero_ulp_agreement = 0
 
-    return ulps, agreement, one_ulp_agreement, zero_ulp_agreement
+    if agreement > 0 and (agreement <= one_ulp_agreement or agreement <= zero_ulp_agreement):
+        print('possibly underestimated agreement:\n  {} vs {}\n  {}, {}, {}, {}'
+              .format(hi, lo, bitsim, agreement, one_ulp_agreement, zero_ulp_agreement))
+
+    return bitsim, one_ulp_agreement, zero_ulp_agreement
 
 
 ctx128 = evalctx.IEEECtx(w=32, p=128)
-ctx64 = evalctx.IEEECtx(w=11, p=64)
+ctx64 = evalctx.IEEECtx(w=16, p=64)
 
-sweep_verbose = True
-rejections = 10
-use_one_ulp = True
+rejections = 100
+progress_update = 10000
+batchsize = 20000
+
+def gen_core_arguments(core, es, ps, nbits, ctx):
+    hi_args, lo_args = zip(*[gen_input(es[i], ps[i], nbits) for i in range(len(core.inputs))])
+
+    if core.pre is not None:
+        for reject in range(rejections):
+            if (ieee754.interpret_pre(core, hi_args, ctx) and
+                ieee754.interpret_pre(core, lo_args, ctx)):
+                break
+            hi_args, lo_args = zip(*[gen_input(es[i], ps[i], nbits) for i in range(len(core.inputs))])
+
+        if not (ieee754.interpret_pre(core, hi_args, ctx) and
+                ieee754.interpret_pre(core, lo_args, ctx)):
+            raise ValueError('failed to meet precondition of fpcore:\n{}'
+                             .format(str(core)))
+
+    return hi_args, lo_args
+
 
 def bench_core(core, hi_args, lo_args, ctx):
     hi_result = ieee754.interpret(core, hi_args, ctx=ctx)
     lo_result = ieee754.interpret(core, lo_args, ctx=ctx)
-    return bits_agreement(hi_result, lo_result)
+    sunk = optimistic.interpret(core, lo_args, ctx)
 
-def sweep_core_1arg(core, erange, prange, benches, nbits, ctx):
-    print(core)
-    print('running with {} total bits'.format(nbits))
-    print(flush=True)
+    if sunk.inexact:
+        p = sunk.p
+    else:
+        p = float('inf')
 
-    records = []
-
-    for e in erange:
-        for p in prange:
-            for _ in range(benches):
-                hi_arg, lo_arg = gen_input(e, p, nbits)
-
-                if core.pre:
-                    for _ in range(rejections):
-                        if (ieee754.interpret_pre(core, [hi_arg], ctx) and
-                            ieee754.interpret_pre(core, [lo_arg], ctx)):
-                            break
-                        hi_arg, lo_arg = gen_input(e1, p1, nbits)
-
-                    if not (ieee754.interpret_pre(core, [hi_arg], ctx) and
-                            ieee754.interpret_pre(core, [lo_arg], ctx)):
-                        print('failed to meet precondition')
-                        continue
-
-                ulps, agreement, one_ulp_agreement, zero_ulp_agreement = bench_core(core, [hi_arg], [lo_arg], ctx)
-                sunk = optimistic.interpret(core, [lo_arg], ctx)
-
-                if sunk.inexact:
-                    if use_one_ulp:
-                        records.append([sunk.p, one_ulp_agreement])
-                    else:
-                        records.append([sunk.p, zero_ulp_agreement])
-
-                if one_ulp_agreement < sunk.p - 1 and sweep_verbose:
-                                print('??? expected ~{} bits of precision, got {} / {} / {}'.format(
-                                    sunk.p, agreement, one_ulp_agreement, zero_ulp_agreement))
-                                print(hi_arg, lo_arg)
-                                print(sunk, ieee754.interpret(core, [hi_arg], ctx))
-                                print()
-    return records
+    return [p, *bits_agreement(hi_result, lo_result)]
 
 
-def sweep_core_1arg_multi(core, erange, prange, benches, nbits, ctx, nprocs = None):
-    if nprocs == None:
-        nprocs = max(multiprocessing.cpu_count() // 2, 1)
+def iter_1arg(erange, prange, benches):
+    for e1 in erange:
+        for p1 in prange:
+            for i in range(benches):
+                yield [e1], [p1]
 
-    print(core)
-    print('running with {} total bits, {} processes'.format(nbits, nprocs))
-    print(flush=True)
-
-    pool = multiprocessing.Pool(processes = nprocs)
-    arg_iter = ([core, e, prange, benches, nbits, ctx] for e in erange)
-
-    all_results = []
-    for results in pool.starmap(sweep_core_1arg_inner, arg_iter, max(len(erange) // nprocs, 1)):
-        if results is not None:
-            all_results += results
-
-    pool.close()
-    pool.join()
-
-    return all_results
-
-def sweep_core_1arg_inner(core, e, prange, benches, nbits, ctx):
-    records = []
-
-    for p in prange:
-        for _ in range(benches):
-            hi_arg, lo_arg = gen_input(e, p, nbits)
-
-            if core.pre:
-                for _ in range(rejections):
-                    if (ieee754.interpret_pre(core, [hi_arg], ctx) and
-                        ieee754.interpret_pre(core, [lo_arg], ctx)):
-                        break
-                    hi_arg, lo_arg = gen_input(e1, p1, nbits)
-
-                if not (ieee754.interpret_pre(core, [hi_arg], ctx) and
-                        ieee754.interpret_pre(core, [lo_arg], ctx)):
-                    print('failed to meet precondition')
-                    continue
-
-            ulps, agreement, one_ulp_agreement, zero_ulp_agreement = bench_core(core, [hi_arg], [lo_arg], ctx)
-            sunk = optimistic.interpret(core, [lo_arg], ctx)
-
-            if sunk.inexact:
-                    if use_one_ulp:
-                        records.append([sunk.p, one_ulp_agreement])
-                    else:
-                        records.append([sunk.p, zero_ulp_agreement])
-
-    return records
-
-
-def sweep_core_2arg(core, erange, prange, benches, nbits, ctx):
-    print(core)
-    print('running with {} total bits'.format(nbits))
-    print(flush=True)
-
-    records = []
-
+def iter_2arg(erange, prange, benches):
     for e1 in erange:
         for e2 in erange:
             for p1 in prange:
                 for p2 in prange:
-                    for _ in range(benches):
-                        hi_arg1, lo_arg1 = gen_input(e1, p1, nbits)
-                        hi_arg2, lo_arg2 = gen_input(e2, p2, nbits)
+                    for i in range(benches):
+                        yield [e1, e2], [p1, p2]
 
-                        if core.pre:
-                            for _ in range(rejections):
-                                if (ieee754.interpret_pre(core, [hi_arg1, hi_arg2], ctx) and
-                                    ieee754.interpret_pre(core, [lo_arg1, lo_arg2], ctx)):
-                                    break
-                                hi_arg1, lo_arg1 = gen_input(e1, p1, nbits)
-                                hi_arg2, lo_arg2 = gen_input(e2, p2, nbits)
 
-                            if not (ieee754.interpret_pre(core, [hi_arg1, hi_arg2], ctx) and
-                                    ieee754.interpret_pre(core, [lo_arg1, lo_arg2], ctx)):
-                                print('failed to meet precondition')
-                                continue
-
-                        ulps, agreement, one_ulp_agreement, zero_ulp_agreement = bench_core(
-                            core, [hi_arg1, hi_arg2], [lo_arg1, lo_arg2], ctx
-                        )
-                        sunk = optimistic.interpret(core, [lo_arg1, lo_arg2], ctx)
-
-                        if sunk.inexact:
-                            if use_one_ulp:
-                                records.append([sunk.p, one_ulp_agreement])
-                            else:
-                                records.append([sunk.p, zero_ulp_agreement])
-
-                        if one_ulp_agreement < sunk.p - 1 and sweep_verbose:
-                            print('??? expected ~{} bits of precision, got {} / {} / {}'.format(
-                                sunk.p, agreement, one_ulp_agreement, zero_ulp_agreement))
-                            print(hi_arg1, lo_arg1)
-                            print(hi_arg2, lo_arg2)
-                            print(sunk, ieee754.interpret(core, [hi_arg1, hi_arg2], ctx))
-                            print()
+def sweep(core, cases, nbits, ctx):
+    records = []
+    
+    for es, ps in cases: 
+        try:
+            hi_args, lo_args = gen_core_arguments(core, es, ps, nbits, ctx)
+        except Exception as e:
+            if progress_update > 0:
+                print('!', end='', flush=True)
+            continue
+                
+        records.append(bench_core(core, hi_args, lo_args, ctx))
+        if progress_update > 0 and len(records) % progress_update == 0:
+            print('.', end='', flush=True)
 
     return records
 
 
-def sweep_core_2arg_multi(core, erange, prange, benches, nbits, ctx, nprocs = None):
-    if nprocs == None:
+def sweep_single(core, cases, nbits, ctx):
+    print('{:s}\nrunning with {:d} total bits'.format(str(core), nbits), flush=True)
+
+    records = sweep(core, cases, nbits, ctx)
+    
+    if progress_update > 0:
+        print('\ngenerated {:d} records'.format(len(records)), flush=True)
+    else:
+        print('generated {:d} records'.format(len(records)), flush=True)
+
+    return records
+
+
+# break arguments up into chunks manually.
+# thanks to:
+# https://stackoverflow.com/questions/8991506/iterate-an-iterator-by-chunks-of-n-in-python
+def grouper(n, iterable):
+    it = iter(iterable)
+    while True:
+       chunk = tuple(itertools.islice(it, n))
+       if not chunk:
+           return
+       yield chunk
+
+def sweep_multi(core, cases, nbits, ctx, nprocs=None):
+    if nprocs is None:
         nprocs = max(multiprocessing.cpu_count() // 2, 1)
 
-    print(core)
-    print('running with {} total bits, {} processes'.format(nbits, nprocs))
-    print(flush=True)
+    print('{:s}\nrunning with {:d} total bits on {:d} processes'.format(str(core), nbits, nprocs), flush=True)
 
-    pool = multiprocessing.Pool(processes = nprocs)
-    def arg_iter():
-        for e1 in erange:
-            for e2 in erange:
-                yield [core, e1, e2, prange, benches, nbits, ctx]
+    pool = multiprocessing.Pool(processes=nprocs)
+    arg_iter = ([core, chunk, nbits, ctx] for chunk in grouper(batchsize, cases))
 
-    all_results = []
-    for results in pool.starmap(sweep_core_2arg_inner, arg_iter(), max(len(erange) * len(erange) // nprocs, 1)):
-        if results is not None:
-            all_results += results
+    all_records = []
+    map_invocations = 0
+    for records in pool.starmap(sweep, arg_iter):
+        map_invocations += 1
+        if records is not None:
+            all_records += records
 
+    if progress_update > 0:
+        print('\nstarmap finished with {:d} invocations'.format(map_invocations), flush=True)
+    else:
+        print('starmap finished with {:d} invocations'.format(map_invocations), flush=True)
+        
     pool.close()
     pool.join()
 
-    return all_results
-
-def sweep_core_2arg_inner(core, e1, e2, prange, benches, nbits, ctx):
-    records = []
-
-    for p1 in prange:
-        for p2 in prange:
-            for _ in range(benches):
-                hi_arg1, lo_arg1 = gen_input(e1, p1, nbits)
-                hi_arg2, lo_arg2 = gen_input(e2, p2, nbits)
-
-                if core.pre:
-                    for _ in range(rejections):
-                        if (ieee754.interpret_pre(core, [hi_arg1, hi_arg2], ctx) and
-                            ieee754.interpret_pre(core, [lo_arg1, lo_arg2], ctx)):
-                            break
-                        hi_arg1, lo_arg1 = gen_input(e1, p1, nbits)
-                        hi_arg2, lo_arg2 = gen_input(e2, p2, nbits)
-
-                    if not (ieee754.interpret_pre(core, [hi_arg1, hi_arg2], ctx) and
-                            ieee754.interpret_pre(core, [lo_arg1, lo_arg2], ctx)):
-                        print('failed to meet precondition')
-                        continue
-
-                ulps, agreement, one_ulp_agreement, zero_ulp_agreement = bench_core(
-                    core, [hi_arg1, hi_arg2], [lo_arg1, lo_arg2], ctx
-                )
-                sunk = optimistic.interpret(core, [lo_arg1, lo_arg2], ctx)
-
-                if sunk.inexact:
-                    if use_one_ulp:
-                        records.append([sunk.p, one_ulp_agreement])
-                    else:
-                        records.append([sunk.p, zero_ulp_agreement])
-
-    return records
-
+    print('generated {:d} records'.format(len(all_records)), flush=True)
+    
+    return all_records
 
 
 benchmarks = {
