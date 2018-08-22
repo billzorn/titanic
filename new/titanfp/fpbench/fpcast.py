@@ -33,6 +33,12 @@ class BinaryExpr(NaryExpr):
     def __init__(self, child0: Expr, child1: Expr) -> None:
         super().__init__(child0, child1)
 
+class TernaryExpr(NaryExpr):
+    name: str = 'TernaryExpr'
+
+    def __init__(self, child0: Expr, child1: Expr, child2: Expr) -> None:
+        super().__init__(child0, child1, child2)
+
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
 
@@ -142,14 +148,7 @@ class Cast(UnaryExpr):
     name: str = 'cast'
 
 
-# arithmetic
-
-class Neg(UnaryExpr):
-    # note that unary negation has the same "name" as subtraction
-    name: str = '-'
-
-class Sqrt(UnaryExpr):
-    name: str = 'sqrt'
+# IEEE 754 required arithmetic
 
 class Add(BinaryExpr):
     name: str = '+'
@@ -163,22 +162,146 @@ class Mul(BinaryExpr):
 class Div(BinaryExpr):
     name: str = '/'
 
-# more arithmetic
+class Sqrt(UnaryExpr):
+    name: str = 'sqrt'
 
-class Floor(UnaryExpr):
-    name: str = 'floor'
+class Fma(TernaryExpr):
+    name: str = 'fma'
+
+# discrete operations
+
+class Neg(UnaryExpr):
+    # note that unary negation has the same "name" as subtraction
+    name: str = '-'
+
+class Copysign(BinaryExpr):
+    name: str = 'copysign'
+
+class Fabs(UnaryExpr):
+    name: str = 'fabs'
+
+# composite arithmetic
+
+class Fdim(BinaryExpr):
+    name: str = 'fdim'
+
+class Fmax(BinaryExpr):
+    name: str = 'fmax'
+
+class Fmin(BinaryExpr):
+    name: str = 'fmin'
 
 class Fmod(BinaryExpr):
     name: str = 'fmod'
 
-class Pow(BinaryExpr):
-    name: str = 'pow'
+class Remainder(BinaryExpr):
+    name: str = 'remainder'
+
+# rounding and truncation
+
+class Ceil(UnaryExpr):
+    name: str = 'ceil'
+
+class Floor(UnaryExpr):
+    name: str = 'floor'
+
+class Nearbyint(UnaryExpr):
+    name: str = 'nearbyint'
+
+class Round(UnaryExpr):
+    name: str = 'round'
+
+class Trunc(UnaryExpr):
+    name: str = 'trunc'
+
+# trig
+
+class Acos(UnaryExpr):
+    name: str = 'acos'
+
+class Acosh(UnaryExpr):
+    name: str = 'acosh'
+
+class Asin(UnaryExpr):
+    name: str = 'asin'
+
+class Asinh(UnaryExpr):
+    name: str = 'asinh'
+
+class Atan(UnaryExpr):
+    name: str = 'atan'
+
+class Atan2(BinaryExpr):
+    name: str = 'atan2'
+
+class Atanh(UnaryExpr):
+    name: str = 'atanh'
+
+class Cos(UnaryExpr):
+    name: str = 'cos'
+
+class Cosh(UnaryExpr):
+    name: str = 'cosh'
 
 class Sin(UnaryExpr):
     name: str = 'sin'
 
-class Acos(UnaryExpr):
-    name: str = 'acos'
+class Sinh(UnaryExpr):
+    name: str = 'sinh'
+
+class Tan(UnaryExpr):
+    name: str = 'tan'
+
+class Tanh(UnaryExpr):
+    name: str = 'tanh'
+
+# exponentials
+
+class Exp(UnaryExpr):
+    name: str = 'exp'
+
+class Exp2(UnaryExpr):
+    name: str = 'exp2'
+
+class Expm1(UnaryExpr):
+    name: str = 'expm1'
+
+class Log(UnaryExpr):
+    name: str = 'log'
+
+class Log10(UnaryExpr):
+    name: str = 'log10'
+
+class Log1p(UnaryExpr):
+    name: str = 'log1p'
+
+class Log2(UnaryExpr):
+    name: str = 'log2'
+
+# powers
+
+class Cbrt(UnaryExpr):
+    name: str = 'cbrt'
+
+class Hypot(BinaryExpr):
+    name: str = 'hypot'
+
+class Pow(BinaryExpr):
+    name: str = 'pow'
+
+# other
+
+class Erf(UnaryExpr):
+    name: str = 'erf'
+
+class Erfc(UnaryExpr):
+    name: str = 'erfc'
+
+class Lgamma(UnaryExpr):
+    name: str = 'lgamma'
+
+class Tgamma(UnaryExpr):
+    name: str = 'tgamma'
 
 
 # comparison
@@ -201,6 +324,22 @@ class EQ(NaryExpr):
 class NEQ(NaryExpr):
     name: str = '!='
 
+# classification
+
+class Isfinite(UnaryExpr):
+    name: str = 'isfinite'
+
+class Isinf(UnaryExpr):
+    name: str = 'isinf'
+
+class Isnan(UnaryExpr):
+    name: str = 'isnan'
+
+class Isnormal(UnaryExpr):
+    name: str = 'isnormal'
+
+class Signbit(UnaryExpr):
+    name: str = 'signbit'
 
 # logic
 
@@ -258,6 +397,3 @@ def _prop_to_sexp(p):
         return '(' + ' '.join(p) + ')'
     else:
         return str(p)
-
-def _canonicalize_expr(e, props, whilelist={'precision', 'round'}, blacklist=set()):
-    raise ValueError('unimplemented')

@@ -1,6 +1,3 @@
-# all the things you wish you didn't know about floating point
-
-
 import typing
 
 import antlr4
@@ -10,76 +7,76 @@ from .FPCoreVisitor import FPCoreVisitor
 
 from . import fpcast as ast
 
-
-def _reserve(message):
-    def raise_reserved(*args):
-        raise ValueError(message)
-    return raise_reserved
+def _neg_or_sub(a, b=None):
+    if b is None:
+        return ast.Neg(a)
+    else:
+        return ast.Sub(a, b)
 
 reserved_constructs = {
     # reserved
-    'FPCore' : _reserve('reserved: FPCore'),
+    'FPCore' : None,
     # control flow (these asts are assembled directly in the visitor)
-    '!' : _reserve('reserved: !'),
-    'cast' : _reserve('reserved: cast'),
-    'if' : _reserve('reserved: if'),
-    'let' : _reserve('reserved: let'),
-    'while' : _reserve('reserved: while'),
-    'digits' : _reserve('reserved: digits'),
+    '!' : None,
+    'cast' : None,
+    'if' : None,
+    'let' : None,
+    'while' : None,
+    'digits' : None,
 
-    # ieee754 required arithmetic (negation is a special case of subtraction)
+    # IEEE 754 required arithmetic (negation is a special case of subtraction)
     '+' : ast.Add,
-    '-' : lambda a, b=None: ast.Sub(a, b) if b is not None else ast.Neg(a),
+    '-' : _neg_or_sub,
     '*' : ast.Mul,
     '/' : ast.Div,
     'sqrt' : ast.Sqrt,
-    'fma' : _reserve('unimplemented: fma'),
+    'fma' : ast.Fma,
     # discrete operations
-    'copysign' : _reserve('unimplemented: copysign'),
-    'fabs' : _reserve('unimplemented: fabs'),
+    'copysign' : ast.Copysign,
+    'fabs' : ast.Fabs,
     # composite arithmetic
-    'fdim' : _reserve('unimplemented: fdim'),
-    'fmax' : _reserve('unimplemented: fmax'),
-    'fmin' : _reserve('unimplemented: fmin'),
+    'fdim' : ast.Fdim,
+    'fmax' : ast.Fmax,
+    'fmin' : ast.Fmin,
     'fmod' : ast.Fmod,
-    'remainder' : _reserve('unimplemented: remainder'),
+    'remainder' : ast.Remainder,
     # rounding and truncation
-    'ceil' : _reserve('unimplemented: ceil'),
+    'ceil' : ast.Ceil,
     'floor' : ast.Floor,
-    'nearbyint' : _reserve('unimplemented: nearbyint'),
-    'round' : _reserve('unimplemented: round'),
-    'trunc' : _reserve('unimplemented: trunc'),
+    'nearbyint' : ast.Nearbyint,
+    'round' : ast.Round,
+    'trunc' : ast.Trunc,
     # trig
     'acos' : ast.Acos,
-    'acosh' : _reserve('unimplemented: acosh'),
-    'asin' : _reserve('unimplemented: asin'),
-    'asinh' : _reserve('unimplemented: asinh'),
-    'atan' : _reserve('unimplemented: atan'),
-    'atan2' : _reserve('unimplemented: atan2'),
-    'atanh' : _reserve('unimplemented: atanh'),
-    'cos' : _reserve('unimplemented: cos'),
-    'cosh' : _reserve('unimplemented: cosh'),
+    'acosh' : ast.Acosh,
+    'asin' : ast.Asin,
+    'asinh' : ast.Asinh,
+    'atan' : ast.Atan,
+    'atan2' : ast.Atan2,
+    'atanh' : ast.Atanh,
+    'cos' : ast.Cos,
+    'cosh' : ast.Cosh,
     'sin' : ast.Sin,
-    'sinh' : _reserve('unimplemented: sinh'),
-    'tan' : _reserve('unimplemented: tan'),
-    'tanh' : _reserve('unimplemented: tanh'),
+    'sinh' : ast.Sinh,
+    'tan' : ast.Tan,
+    'tanh' : ast.Tanh,
     # exponentials
-    'exp' : _reserve('unimplemented: exp'),
-    'exp2' : _reserve('unimplemented: exp2'),
-    'expm1' : _reserve('unimplemented: expm1'),
-    'log' : _reserve('unimplemented: log'),
-    'log10' : _reserve('unimplemented: log10'),
-    'log1p' : _reserve('unimplemented: log1p'),
-    'log2' : _reserve('unimplemented: log2'),
+    'exp' : ast.Exp,
+    'exp2' : ast.Exp2,
+    'expm1' : ast.Expm1,
+    'log' : ast.Log,
+    'log10' : ast.Log10,
+    'log1p' : ast.Log1p,
+    'log2' : ast.Log2,
     # powers
-    'cbrt' : _reserve('unimplemented: cbrt'),
-    'hypot' : _reserve('unimplemented: hypot'),
+    'cbrt' : ast.Cbrt,
+    'hypot' : ast.Hypot,
     'pow' : ast.Pow,
     # other
-    'erf' : _reserve('unimplemented: erf'),
-    'erfc' : _reserve('unimplemented: erfc'),
-    'lgamma' : _reserve('unimplemented: lgamma'),
-    'tgamma' : _reserve('unimplemented: tgamma'),
+    'erf' : ast.Erf,
+    'erfc' : ast.Erfc,
+    'lgamma' : ast.Lgamma,
+    'tgamma' : ast.Tgamma,
 
     # comparison
     '<' : ast.LT,
@@ -89,11 +86,11 @@ reserved_constructs = {
     '==' : ast.EQ,
     '!=' : ast.NEQ,
     # testing
-    'isfinite' : _reserve('unimplemented: isfinite'),
-    'isinf' : _reserve('unimplemented: isinf'),
-    'isnan' : _reserve('unimplemented: isnan'),
-    'isnormal' : _reserve('unimplemented: isnormal'),
-    'signbit' : _reserve('unimplemented: signbit'),
+    'isfinite' : ast.Isfinite,
+    'isinf' : ast.Isinf,
+    'isnan' : ast.Isnan,
+    'isnormal' : ast.Isnormal,
+    'signbit' : ast.Signbit,
     # logic
     'and' : ast.And,
     'or' : ast.Or,
@@ -124,17 +121,16 @@ reserved_constants = {
 }
 
 
-def _parse_props(visitor, props):
-    parsed = {}
-    for prop in props:
-        name, x = prop.accept(visitor)
-        if name in parsed:
-            raise ValueError('duplicate property {}'.format(name))
-        parsed[name] = x
-    return parsed
-
-
 class Visitor(FPCoreVisitor):
+    def _parse_props(self, props):
+        parsed = {}
+        for prop in props:
+            name, x = prop.accept(self)
+            if name in parsed:
+                raise ValueError('duplicate property {}'.format(name))
+            parsed[name] = x
+        return parsed
+
     def visitParse(self, ctx) -> typing.List[ast.FPCore]:
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
@@ -151,13 +147,13 @@ class Visitor(FPCoreVisitor):
             else:
                 input_set.add(name)
 
-        props = _parse_props(self, ctx.props)
+        props = self._parse_props(ctx.props)
         e = ctx.e.accept(self)
 
         return ast.FPCore(inputs, e, props=props)
 
     def visitArgument(self, ctx):
-        return ctx.name.text, _parse_props(self, ctx.props)
+        return ctx.name.text, self._parse_props(ctx.props)
 
     def visitNumber(self, ctx) -> ast.Expr:
         if ctx.n is not None:
@@ -181,7 +177,7 @@ class Visitor(FPCoreVisitor):
 
     def visitExprCtx(self, ctx) -> ast.Expr:
         return ast.Ctx(
-            _parse_props(self, ctx.props),
+            self._parse_props(ctx.props),
             ctx.body.accept(self),
         )
 
