@@ -131,6 +131,11 @@ class Visitor(FPCoreVisitor):
             parsed[name] = x
         return parsed
 
+    def __init__(self):
+        super().__init__()
+        self._val_literals = {}
+        self._var_literals = {}
+
     def visitParse(self, ctx) -> typing.List[ast.FPCore]:
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
@@ -157,23 +162,33 @@ class Visitor(FPCoreVisitor):
 
     def visitNumber(self, ctx) -> ast.Expr:
         if ctx.n is not None:
-            return ast.Val(ctx.n.text)
+            k = ctx.n.text
+            if k in self._val_literals:
+                return self._val_literals[k]
+            else:
+                return self._val_literals.setdefault(k, ast.Val(k))
         else:
             e = int(ctx.e.text)
             b = int(ctx.b.text)
             if b < 2:
                 raise ValueError('base must be >= 2, got {}'.format(repr(b)))
-            return ast.Digits(ctx.m.text, ctx.e.text, ctx.b.text)
+            k = ctx.m.text, ctx.e.text, ctx.b.text
+            if k in self._val_literals:
+                return self._val_literals[k]
+            else:
+                return self._val_literals.setdefault(k, ast.Digits(*k))
 
     def visitExprNum(self, ctx) -> ast.Expr:
         return ctx.n.accept(self)
 
     def visitExprSym(self, ctx) -> ast.Expr:
-        x = ctx.x.text
-        if x in reserved_constants:
-            return reserved_constants[x]
+        k = ctx.x.text
+        if k in reserved_constants:
+            return reserved_constants[k]
+        elif k in self._var_literals:
+            return self._var_literals[k]
         else:
-            return ast.Var(x)
+            return self._var_literals.setdefault(k, ast.Var(k))
 
     def visitExprCtx(self, ctx) -> ast.Expr:
         return ast.Ctx(

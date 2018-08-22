@@ -84,14 +84,14 @@ class Digits(Expr):
 
     def __init__(self, m: str, e: str, b: str) -> None:
         self.m: str = m
-        self.e: int = int(e)
-        self.b: int = int(b)
+        self.e: str = e
+        self.b: str = b
 
     def __str__(self):
-        return '(' + type(self).name + ' ' + self.m + ' ' + str(self.e) + ' ' + str(self.b) + ')'
+        return '(' + type(self).name + ' ' + self.m + ' ' + self.e + ' ' + self.b + ')'
 
     def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(str(self.e)) + ', ' + repr(str(self.b)) + ')'
+        return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
 
 
 # control flow
