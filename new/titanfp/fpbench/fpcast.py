@@ -379,7 +379,7 @@ class FPCore(object):
 
     @property
     def sexp(self):
-        return '(FPCore ({}) {} {})'.format(
+        return '(FPCore ({}) {}{})'.format(
             ' '.join((_annotate_input(name, props) for name, props in self.inputs)),
             ''.join(':' + name + ' ' + _prop_to_sexp(prop) + ' ' for name, prop in self.props.items()),
             str(self.e))

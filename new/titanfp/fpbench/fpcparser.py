@@ -230,7 +230,7 @@ class Visitor(FPCoreVisitor):
         if op in reserved_constructs:
             return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
         else:
-            raise ValueError('unsupported: call to FPCore operator {}'.format(op))
+            raise ValueError('unrecognized operator {}'.format(op))
 
     def visitPropStr(self, ctx):
         name = ctx.name.text
@@ -263,87 +263,53 @@ class Visitor(FPCoreVisitor):
             raise ValueError('bad keyword {} in FPCore property'.format(name))
 
 
+class LogErrorListener(antlr4.error.ErrorListener.ErrorListener):
+
+    def __init__(self):
+        super().__init__()
+        self.syntax_errors = []
+
+    def syntaxError(self, recognizer, offending_symbol, line, column, msg, e):
+        self.syntax_errors.append("line " + str(line) + ":" + str(column) + " " + msg)
+
+
 def parse(s):
     input_stream = antlr4.InputStream(s)
     lexer = FPCoreLexer(input_stream)
     token_stream = antlr4.CommonTokenStream(lexer)
     parser = FPCoreParser(token_stream)
+    err_listener = LogErrorListener()
+    parser.removeErrorListeners()
+    parser.addErrorListener(err_listener)
     tree = parser.parse()
-    return parser, tree
+    errors = err_listener.syntax_errors
+    if len(errors) > 0:
+        err_text = ''.join('  ' + str(err) for err in errors)
+        raise ValueError('unable to parse FPCore:\n' + err_text)
+    else:
+        return tree
 
 def compile(s):
-    parser, tree = parse(s)
+    tree = parse(s)
     visitor = Visitor()
     return visitor.visit(tree)
 
+def compile1(s):
+    cores = compile(s)
+    if len(cores) > 0:
+        return cores[0]
+    else:
+        return None
+
 def compfile(fname):
-    with open(fname, 'r') as f:
-        results = compile(f.read())
-    return results[0]
+    with open(fname, 'rt') as f:
+        cores = compile(f.read())
+    return cores
 
-
-def demo():
-    fpc_minimal = """(FPCore () (+ 1 (digits 1 0 2)))
-"""
-    fpc_example = """(FPCore (a b c)
- :name "NMSE p42, positive"
- :cite (hamming-1987 herbie-2015)
- :fpbench-domain textbook
- :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
- (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
-"""
-    fpc_big = """(FPCore ()
- :name arclength
- :precision binary128
- (let ([n (! :precision integer 1000000)]
-       [dppi (! :precision PI PI)])
-   (let ([h (! :precision binary64 (/ dppi n))])
-     (while (<= i n)
-      ([s1
-        (! :precision binary64 0.0)
-        (let ([t2 (let ([x (! :precision binary64 (* i h))])
-                    ;; inlined body of fun
-                    (while (<= k 5)
-                     ([d0
-                       (! :precision binary32 2.0)
-                       (! :precision binary32 (* 2.0 d0))]
-                      [t0
-                       x
-                       (! :precision binary64 (+ t0 (/ (sin (* d0 x)) d0)))]
-                      [k 1 (+ k 1)])
-                     t0))])
-          (+ s1 (! :precision binary64 (sqrt (+ (* h h) (* (- t2 t1) (- t2 t1)))))))]
-       [t1
-        (! :precision binary64 0.0)
-        (let ([t2 (let ([x (! :precision binary64 (* i h))])
-                    ;; inlined body of fun
-                    (while (<= k 5)
-                     ([d0
-                       (! :precision binary32 2.0)
-                       (! :precision binary32 (* 2.0 d0))]
-                      [t0
-                       x
-                       (! :precision binary64 (+ t0 (/ (sin (* d0 x)) d0)))]
-                      [k 1 (+ k 1)])
-                     t0))])
-          t2)]
-       [i
-        (! :precision integer 1)
-        (! :precision integer (+ i 1))])
-      s1))))
-"""
-
-    core = compile(fpc_minimal)[0]
-    print(core)
-    print(core.sexp)
-    print(repr(core))
-
-    core = compile(fpc_example)[0]
-    print(core)
-    print(core.sexp)
-    print(repr(core))
-
-    core = compile(fpc_big)[0]
-    print(core)
-    print(core.sexp)
-    print(repr(core))
+def compfile1(fname):
+    with open(fmane, 'rt') as f:
+        cores = compile(f.read())
+    if len(cores) > 0:
+        return cores[0]
+    else:
+        return None
