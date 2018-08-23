@@ -19,14 +19,22 @@ RAZ_synonyms = {'raz', 'awayzero', 'roundawayzero'}
 
 
 class EvalCtx(object):
+    """Generic context for holding variable bindings and properties."""
+
+    # these placeholders should never have anything put in them
+    bindings = {}
+    props = {}
 
     def __init__(self, bindings = None, props = None):
-        self.bindings = {}
-        self.props = {}
         if bindings:
-            self.bindings.update(bindings)
+            self.bindings = bindings.copy()
+        else:
+            self.bindings = {}
+
         if props:
-            self.props.update(props)
+            self.props = props.copy()
+        else:
+            self.props = {}
 
     def _import_fields(self, ctx):
         pass
@@ -54,7 +62,7 @@ class EvalCtx(object):
             *props
         ])
 
-    def let(self, bindings=None, props=None):
+    def let(self, bindings = None, props = None):
         """Create a new context, updated with any provided bindings
         or properties.
         """
@@ -62,15 +70,13 @@ class EvalCtx(object):
         newctx = cls.__new__(cls)
 
         if bindings:
-            newctx.bindings = {}
-            newctx.bindings.update(self.bindings)
+            newctx.bindings = self.bindings.copy()
             newctx.bindings.update(bindings)
         else:
             newctx.bindings = self.bindings
 
         if props:
-            newctx.bindings = {}
-            newctx.props.update(self.props)
+            newctx.bindings = self.bindings.copy()
             newctx.props.update(props)
         else:
             newctx.props = self.props
