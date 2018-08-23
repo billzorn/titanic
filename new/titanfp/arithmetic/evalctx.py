@@ -52,7 +52,7 @@ class EvalCtx(object):
             *fields,
             *bindings,
             *props
-        ])  
+        ])
 
     def let(self, bindings=None, props=None):
         """Create a new context, updated with any provided bindings
@@ -89,7 +89,7 @@ class IEEECtx(EvalCtx):
     emin = 1 - emax
     n = emin - p
     fbound = gmpmath.ieee_fbound(w, p)
-    
+
     def __init__(self, w = w, p = p, rm = rm, bindings = None, props = None):
         super().__init__(bindings=bindings, props=props)
 
@@ -141,17 +141,25 @@ class IEEECtx(EvalCtx):
         self.n = ctx.n
         self.fbound = ctx.fbound
 
+    def __repr__(self):
+        args = ['w=' + repr(self.w), 'p=' + repr(self.p), 'rm=' + str(self.rm)]
+        if len(self.bindings) > 0:
+            args.append('bindings=' + repr(self.bindings))
+        if len(self.props) > 0:
+            args.append('props=' + repr(self.props))
+        return '{}({})'.format(type(self).__name__, ', '.join(args))
+
 
 # John Gustafson's Posits
 class PositCtx(EvalCtx):
     """Context for John Gustafson's posit arithmetic."""
-    
+
     es = 4
     nbits = 64
     u = 1 << es
     emax = 1 << (nbits - 2)
     emin = -emax
-    
+
     def __init__(self, es = es, nbits = nbits, bindings = None, props = None):
         super().__init__(bindings=bindings, props=props)
 
@@ -187,3 +195,11 @@ class PositCtx(EvalCtx):
         self.u = ctx.u
         self.emax = ctx.emax
         self.emin = ctx.emin
+
+    def __repr__(self):
+        args = ['es=' + repr(self.es), 'nbits=' + repr(self.nbits)]
+        if len(self.bindings) > 0:
+            args.append('bindings=' + repr(self.bindings))
+        if len(self.props) > 0:
+            args.append('props=' + repr(self.props))
+        return '{}({})'.format(type(self).__name__, ', '.join(args))
