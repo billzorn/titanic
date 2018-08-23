@@ -20,19 +20,78 @@ RAZ_synonyms = {'raz', 'awayzero', 'roundawayzero'}
 
 class EvalCtx(object):
 
-    def __init__(self):
+    def __init__(self, bindings = None, props = None):
         self.bindings = {}
+        self.props = {}
+        if bindings:
+            self.bindings.update(bindings)
+        if props:
+            self.props.update(props)
 
-    def let(self, bindings):
-        self.bindings.update(bindings)
-        return self
+    def _import_fields(self, ctx):
+        pass
+
+    def __repr__(self):
+        args = []
+        if len(self.bindings) > 0:
+            args.append('bindings=' + repr(self.bindings))
+        if len(self.props) > 0:
+            args.append('props=' + repr(self.props))
+        return '{}({})'.format(type(self).__name__, ', '.join(args))
+
+    def __str__(self):
+        fields = ['    ' + str(k) + ': ' + str(v) for k, v in self.__dict__.items() if k not in {'bindings', 'props'}]
+        bindings = ['    ' + str(k) + ': ' + str(v) for k, v in self.bindings.items()]
+        props = ['    ' + str(k) + ': ' + str(v) for k, v in self.props.items()]
+        if len(bindings) > 0:
+            fields.append('  bindings:')
+        if len(props) > 0:
+            bindings.append('  props:')
+        return '\n'.join([
+            type(self).__name__ + ':',
+            *fields,
+            *bindings,
+            *props
+        ])  
+
+    def let(self, bindings=None, props=None):
+        """Create a new context, updated with any provided bindings
+        or properties.
+        """
+        cls = type(self)
+        newctx = cls.__new__(cls)
+
+        if bindings:
+            newctx.bindings = {}
+            newctx.bindings.update(self.bindings)
+            newctx.bindings.update(bindings)
+        else:
+            newctx.bindings = self.bindings
+
+        if props:
+            newctx.bindings = {}
+            newctx.props.update(self.props)
+            newctx.props.update(props)
+        else:
+            newctx.props = self.props
+
+        newctx._import_fields(self)
+        return newctx
 
 
-# IEEE 754-like
 class IEEECtx(EvalCtx):
+    """Context for IEEE 754-like arithmetic."""
 
-    def __init__(self, w = 11, p = 53, rm = RM.RNE, props = None):
-        super().__init__()
+    w = 11
+    p = 53
+    rm = RM.RNE
+    emax = (1 << (w - 1)) - 1
+    emin = 1 - emax
+    n = emin - p
+    fbound = gmpmath.ieee_fbound(w, p)
+    
+    def __init__(self, w = w, p = p, rm = rm, bindings = None, props = None):
+        super().__init__(bindings=bindings, props=props)
 
         if props:
             prec = str(props.get('precision', '')).lower()
@@ -73,16 +132,28 @@ class IEEECtx(EvalCtx):
         self.n = self.emin - self.p
         self.fbound = gmpmath.ieee_fbound(self.w, self.p)
 
-    def clone(self):
-        copy = IEEECtx(w=self.w, p=self.p)
-        return copy.let(self.bindings)
+    def _import_fields(self, ctx):
+        self.rm = ctx.rm
+        self.w = ctx.w
+        self.p = ctx.p
+        self.emax = ctx.emax
+        self.emin = ctx.emin
+        self.n = ctx.n
+        self.fbound = ctx.fbound
 
 
 # John Gustafson's Posits
 class PositCtx(EvalCtx):
-
-    def __init__(self, es = 4, nbits = 64, props = None):
-        super().__init__()
+    """Context for John Gustafson's posit arithmetic."""
+    
+    es = 4
+    nbits = 64
+    u = 1 << es
+    emax = 1 << (nbits - 2)
+    emin = -emax
+    
+    def __init__(self, es = es, nbits = nbits, bindings = None, props = None):
+        super().__init__(bindings=bindings, props=props)
 
         if props:
             prec = str(props.get('precision', '')).lower()
@@ -110,6 +181,9 @@ class PositCtx(EvalCtx):
         self.emax = 1 << (self.nbits - 2)
         self.emin = -self.emax
 
-    def clone(self):
-        copy = PositCtx(es=self.es, nbits=self.nbits)
-        return copy.let(self.bindings)
+    def _import_fields(self, ctx):
+        self.es = ctx.es
+        self.nbits = ctx.nbits
+        self.u = ctx.u
+        self.emax = ctx.emax
+        self.emin = ctx.emin
