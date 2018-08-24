@@ -216,7 +216,7 @@ gmp_ops = [
 ]
 
 
-def compute(opcode, *args, prec=54):
+def compute(opcode, *args, prec=53):
     """Compute op(*args), with up to prec bits of precision.
     op is specified via opcode, and arguments are universal digital numbers.
     Arguments are treated as exact: the inexactness and result code of the result
@@ -228,7 +228,8 @@ def compute(opcode, *args, prec=54):
     op = gmp_ops[opcode]
     inputs = [digital_to_mpfr(arg) for arg in args]
     with gmp.context(
-            precision=prec,
+            # one extra bit, so that we can round from RTZ to RNE
+            precision=prec + 1,
             emin=gmp.get_emin_min(),
             emax=gmp.get_emax_max(),
             trap_underflow=True,
@@ -242,6 +243,52 @@ def compute(opcode, *args, prec=54):
             round=gmp.RoundToZero,
     ) as gmpctx:
         result = op(*inputs)
+
+    return mpfr_to_digital(result)
+
+
+def compute_digits(m, e, b, prec=53):
+    """Compute m * b**e, with precision equal to prec. e and b must be integers, and
+    b must be at least 2.
+    """
+    if (not isinstance(e, int)) or (not isinstance(b, int)) or (b < 2):
+        raise ValueError('compute_digits: must have integer e, b, and b >= 2, got e={}, b={}'
+                         .format(repr(e), repr(b)))
+
+    with gmp.context(
+            precision=max(e.bit_length(), b.bit_length()),
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+            round=gmp.RoundToZero,
+    ) as gmpctx:
+        mpfr_e = gmp.mpfr(e)
+        mpfr_b = gmp.mpfr(b)
+
+    with gmp.context(
+            # this seems like it's enough extra bits, but I don't have a proof
+            precision=prec + 3,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ) as gmpctx:
+        mpfr_m = gmp.mpfr(m)
+        scale = mpfr_b ** mpfr_e
+        result = mpfr_m * scale
 
     return mpfr_to_digital(result)
 
@@ -345,6 +392,11 @@ def geo_sim(a, b):
     mpfr_a = digital_to_mpfr(a)
     mpfr_b = digital_to_mpfr(b)
 
+    if mpfr_a == 0 and mpfr_b == 0:
+        return float('inf')
+    elif mpfr_a == 0 or mpfr_b == 0:
+        return float('-inf')
+
     with gmp.context(
             precision=prec,
             emin=gmp.get_emin_min(),
@@ -358,6 +410,8 @@ def geo_sim(a, b):
             trap_expbound=True
     ):
         ratio = mpfr_a / mpfr_b
+        if ratio <= 0:
+            return float('-inf')
         reldiff = abs(gmp.log2(ratio))
 
     with gmp.ieee(64):
