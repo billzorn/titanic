@@ -99,25 +99,25 @@ reserved_constructs = {
 
 reserved_constants = {
     # mathematical constants
-    'E' : ast.Val('E'),
-    'LOG2E' : ast.Val('LOG2E'),
-    'LOG10E' : ast.Val('LOG10E'),
-    'LN2' : ast.Val('LN2'),
-    'LN10' : ast.Val('LN10'),
-    'PI' : ast.Val('PI'),
-    'PI_2' : ast.Val('PI_2'),
-    'PI_4' : ast.Val('PI_4'),
-    '1_PI' : ast.Val('1_PI'),
-    '2_PI' : ast.Val('2_PI'),
-    '2_SQRTPI' : ast.Val('2_SQRTPI'),
-    'SQRT2' : ast.Val('SQRT2'),
-    'SQRT1_2' : ast.Val('SQRT1_2'),
+    'E' : ast.Constant('E'),
+    'LOG2E' : ast.Constant('LOG2E'),
+    'LOG10E' : ast.Constant('LOG10E'),
+    'LN2' : ast.Constant('LN2'),
+    'LN10' : ast.Constant('LN10'),
+    'PI' : ast.Constant('PI'),
+    'PI_2' : ast.Constant('PI_2'),
+    'PI_4' : ast.Constant('PI_4'),
+    '1_PI' : ast.Constant('1_PI'),
+    '2_PI' : ast.Constant('2_PI'),
+    '2_SQRTPI' : ast.Constant('2_SQRTPI'),
+    'SQRT2' : ast.Constant('SQRT2'),
+    'SQRT1_2' : ast.Constant('SQRT1_2'),
     # infinity and NaN
-    'INFINITY' : ast.Val('inf'),
-    'NAN' : ast.Val('nan'),
+    'INFINITY' : ast.Constant('inf'),
+    'NAN' : ast.Constant('nan'),
     # boolean constants
-    'TRUE' : ast.Val('TRUE'),
-    'FALSE' : ast.Val('FALSE'),
+    'TRUE' : ast.Constant('TRUE'),
+    'FALSE' : ast.Constant('FALSE'),
 }
 
 
@@ -160,23 +160,48 @@ class Visitor(FPCoreVisitor):
     def visitArgument(self, ctx):
         return ctx.name.text, self._parse_props(ctx.props)
 
-    def visitNumber(self, ctx) -> ast.Expr:
-        if ctx.n is not None:
-            k = ctx.n.text
-            if k in self._val_literals:
-                return self._val_literals[k]
-            else:
-                return self._val_literals.setdefault(k, ast.Val(k))
+    def visitNumberDec(self, ctx) -> ast.Expr:
+        k = ctx.n.text
+        if k in self._val_literals:
+            return self._val_literals[k]
         else:
-            e = int(ctx.e.text)
-            b = int(ctx.b.text)
-            if b < 2:
-                raise ValueError('base must be >= 2, got {}'.format(repr(b)))
-            k = ctx.m.text, ctx.e.text, ctx.b.text
-            if k in self._val_literals:
-                return self._val_literals[k]
-            else:
-                return self._val_literals.setdefault(k, ast.Digits(*k))
+            v = ast.Decnum(k)
+            self._val_literals[k] = v
+            return v
+
+    def visitNumberHex(self, ctx) -> ast.Expr:
+        k = ctx.n.text
+        if k in self._val_literals:
+            return self._val_literals[k]
+        else:
+            v = ast.Hexnum(k)
+            self._val_literals[k] = v
+            return v
+
+    def visitNumberRational(self, ctx) -> ast.Expr:
+        p, q = ctx.n.text.split('/')
+        k = int(p), int(q)
+        if k in self._val_literals:
+            return self._val_literals[k]
+        else:
+            v = ast.Rational(*k)
+            self._val_literals[k] = v
+            return v
+
+    def visitNumberDigits(self, ctx) -> ast.Expr:
+        try:
+            k = int(ctx.m.text), int(ctx.e.text), int(ctx.b.text)
+        except ValueError:
+            raise ValueError('digits: m, e, b must be integers, got {}, {}, {}'
+                             .format(repr(ctx.m.text), repr(ctx.e.text), repr(ctx.b.text)))
+        if k in self._val_literals:
+            return self._val_literals[k]
+        else:
+            if k[2] < 2:
+                raise ValueError('digits: base must be >= 2, got {}'.format(repr(ctx.b.text)))
+            v = ast.Digits(*k)
+            self._val_literals[k] = v
+            return v
 
     def visitExprNum(self, ctx) -> ast.Expr:
         return ctx.n.accept(self)
@@ -188,7 +213,9 @@ class Visitor(FPCoreVisitor):
         elif k in self._var_literals:
             return self._var_literals[k]
         else:
-            return self._var_literals.setdefault(k, ast.Var(k))
+            v = ast.Var(k)
+            self._var_literals[k] = v
+            return v
 
     def visitExprCtx(self, ctx) -> ast.Expr:
         return ast.Ctx(

@@ -73,19 +73,40 @@ class Ctx(Expr):
 
 # values
 
-class Val(ValueExpr):
-    name: str = 'Val'
-
 class Var(ValueExpr):
     name: str = 'Var'
 
-class Digits(Expr):
+class Val(ValueExpr):
+    name: str = 'Val'
+
+class Constant(Val):
+    name: str = 'Constant'
+
+class Decnum(Val):
+    name: str = 'Decnum'
+
+class Hexnum(Val):
+    name: str = 'Hexnum'
+
+class Rational(Val):
+    name: str = 'Rational'
+
+    def __init__(self, p: int, q: int) -> None:
+        super().__init__(str(p) + '/' + str(q))
+        self.p : int = p
+        self.q : int = q
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.p) + ', ' + repr(self.q) + ')'
+
+class Digits(Val):
     name: str = 'digits'
 
-    def __init__(self, m: str, e: str, b: str) -> None:
-        self.m: str = m
-        self.e: str = e
-        self.b: str = b
+    def __init__(self, m: int, e: int, b: int) -> None:
+        super().__init__(str(m) + ' ' + str(e) + ' ' + str(b))
+        self.m: int = m
+        self.e: int = e
+        self.b: int = b
 
     def __str__(self):
         return '(' + type(self).name + ' ' + self.m + ' ' + self.e + ' ' + self.b + ')'

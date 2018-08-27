@@ -21,10 +21,10 @@ expr
     ;
 
 number
-    : n=DECNUM
-    | n=HEXNUM
-    | n=RATIONAL
-    | OPEN 'digits' m=DECNUM e=DECNUM b=DECNUM CLOSE
+    : n=DECNUM #NumberDec
+    | n=HEXNUM #NumberHex
+    | n=RATIONAL #NumberRational
+    | OPEN 'digits' m=DECNUM e=DECNUM b=DECNUM CLOSE #NumberDigits
     ;
 
 // Keywords in properties are not required by the grammar to start with a colon;
@@ -39,7 +39,7 @@ prop
 OPEN : '(' | '[' ;
 CLOSE : ')' | ']' ;
 
-DECNUM : [-+]? ([0-9]+ ('.' [0-9]+)? | '.' [0-9]+) ([eE] [-+]? [0-9]+)? ;
+DECNUM : [+-]? ([0-9]+ ('.' [0-9]+)? | '.' [0-9]+) ([eE] [-+]? [0-9]+)? ;
 HEXNUM : [+-]? '0' [xX] ([0-9a-fA-F]+ ('.' [0-9a-fA-F]+)? | '.' [0-9a-fA-F]+) ([pP] [-+]? [0-9]+)? ;
 RATIONAL : [+-]? [0-9]+ '/' [0-9]* [1-9] [0-9]* ;
 
