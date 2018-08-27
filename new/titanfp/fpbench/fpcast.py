@@ -4,10 +4,13 @@
 import typing
 
 
-# base ast classes
+# base ast class
 
 class Expr(object):
     name: str = 'Expr'
+
+
+# operations
 
 class NaryExpr(Expr):
     name: str = 'NaryExpr'
@@ -39,6 +42,9 @@ class TernaryExpr(NaryExpr):
     def __init__(self, child0: Expr, child1: Expr, child2: Expr) -> None:
         super().__init__(child0, child1, child2)
 
+
+# values
+
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
 
@@ -51,27 +57,6 @@ class ValueExpr(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
-
-
-# rounding contexts
-
-class Ctx(Expr):
-    name: str = '!'
-
-    def __init__(self, props: dict, body: Expr) -> None:
-        self.props = props
-        self.body = body
-
-    def __str__(self):
-        return ('(' + type(self).name + ' '
-                + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in self.props.items()))
-                + str(self.body) + ')')
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
-
-
-# values
 
 class Var(ValueExpr):
     name: str = 'Var'
@@ -113,6 +98,24 @@ class Digits(Val):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
+
+
+# rounding contexts
+
+class Ctx(Expr):
+    name: str = '!'
+
+    def __init__(self, props: dict, body: Expr) -> None:
+        self.props = props
+        self.body = body
+
+    def __str__(self):
+        return ('(' + type(self).name + ' '
+                + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in self.props.items()))
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
 
 
 # control flow
