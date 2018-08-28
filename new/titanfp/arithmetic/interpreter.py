@@ -490,6 +490,9 @@ class SimpleInterpreter(BaseInterpreter):
     def _eval_mul(cls, e, ctx):
         return cls.evaluate(e.children[0], ctx) * cls.evaluate(e.children[1], ctx)
 
+    # Division may need to be overwritten for types that raise an exception on
+    # division by 0 (such as Python floats).
+
     @classmethod
     def _eval_div(cls, e, ctx):
         return cls.evaluate(e.children[0], ctx) / cls.evaluate(e.children[1], ctx)
@@ -501,6 +504,17 @@ class SimpleInterpreter(BaseInterpreter):
     @classmethod
     def _eval_fabs(cls, e, ctx):
         return abs(cls.evaluate(e.children[0], ctx))
+
+    # In the common case where nan isn't ordered, it will probably be necessary
+    # to override these functions so that they do the right thing.
+
+    @classmethod
+    def _eval_fmax(cls, e, ctx):
+        return max(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
+
+    @classmethod
+    def _eval_fmin(cls, e, ctx):
+        return min(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
     # This ugly code is designed to cause comparison operators to short-circuit.
     # A more elegant implementation:
@@ -654,14 +668,6 @@ class Interpreter(SimpleInterpreter):
     @classmethod
     def _eval_fdim(cls, e, ctx):
         return cls.evaluate(e.children[0], ctx).fdim(cls.evaluate(e.children[1], ctx))
-
-    @classmethod
-    def _eval_fmax(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmax(cls.evaluate(e.children[1], ctx))
-
-    @classmethod
-    def _eval_fmin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmin(cls.evaluate(e.children[1], ctx))
 
     @classmethod
     def _eval_fmod(cls, e, ctx):
