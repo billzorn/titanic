@@ -2,18 +2,22 @@
 
 
 import math
-# import fractions
+import fractions
 
 from . import interpreter
 from . import evalctx
 
 
-_SMALLEST_NORMAL = 2 ** -1022
+_SMALLEST_NORMAL = 2.0 ** -1022
+
+
+native_precs = {}
+native_precs.update((k, float) for k in evalctx.binary64_synonyms)
 
 
 class Interpreter(interpreter.SimpleInterpreter):
     """FPCore interpreter using builtin Python floats.
-    Most operations provided by the math modules; some emulated.
+    Most operations provided by the math module; some emulated.
     """
 
     # datatype conversion
@@ -22,39 +26,49 @@ class Interpreter(interpreter.SimpleInterpreter):
     ctype = evalctx.EvalCtx
 
     constants = {
+        'E': math.e,
+        'LOG2E': math.log2(math.e),
+        'LOG10E': math.log10(math.e),
+        'LN2': math.log(2),
+        'LN10': math.log(10),
+        'PI': math.pi,
+        'PI_2': math.pi / 2,
+        'PI_4': math.pi / 4,
+        '1_PI': 1 / math.pi,
+        '2_PI': 2 / math.pi,
+        '2_SQRTPI': 2 / math.sqrt(math.pi),
+        'SQRT2': math.sqrt(2),
+        'SQRT1_2': math.sqrt(1/2),
+        'INFINITY': math.inf,
+        'NAN': math.nan,
         'TRUE': True,
         'FALSE': False,
-        'PI': math.pi,
-        'E': math.e,
     }
 
     @staticmethod
     def arg_to_digital(x, ctx):
+        if 'precision' in ctx and ctx['precision'] not in native_precs:
+            raise ValueError('unsupported precision {}'.format(ctx['precision']))
         return float(x)
 
     @staticmethod
     def round_to_context(x, ctx):
-        # do nothing
+        if 'precision' in ctx and ctx['precision'] not in native_precs:
+            raise ValueError('unsupported precision {}'.format(ctx['precision']))
         return x
 
 
     # values
 
     @classmethod
-    def _eval_constant(cls, e, ctx):
-        try:
-            return cls.constants[e.value]
-        except KeyError as exn:
-            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
-
-    @classmethod
     def _eval_decnum(cls, e, ctx):
-        return cls.arg_to_digital(e.value)
+        return cls.arg_to_digital(e.value, ctx)
 
     @classmethod
     def _eval_hexnum(cls, e, ctx):
         return float.fromhex(e.value)
 
+    @classmethod
     def _eval_rational(cls, e, ctx):
         try:
             return e.p / e.q
@@ -318,10 +332,6 @@ class Interpreter(interpreter.SimpleInterpreter):
         return math.erfc(cls.evaluate(e.children[0], ctx))
 
     @classmethod
-    def _eval_log(cls, e, ctx):
-        return math.log(cls.evaluate(e.children[0], ctx))
-
-    @classmethod
     def _eval_lgamma(cls, e, ctx):
         return math.lgamma(cls.evaluate(e.children[0], ctx))
 
@@ -355,9 +365,10 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def evaluate(cls, e, ctx):
         try:
-            return super().evaluate(e, ctx)
+            result = super().evaluate(e, ctx)
         except ValueError as exn:
             if len(exn.args) == 1 and exn.args[0].strip().lower() == 'math domain error':
-                return math.nan
+                result = math.nan
             else:
                 raise exn
+        return cls.round_to_context(result, ctx)

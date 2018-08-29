@@ -43,11 +43,14 @@ class BaseInterpreter(object):
     # not called directly in interpreter,
     @classmethod
     def _eval_val(cls, e, ctx):
-        return cls.arg_to_digital(e.value)
+        return cls.arg_to_digital(e.value, ctx)
 
     @classmethod
     def _eval_constant(cls, e, ctx):
-        raise ValueError('BaseInterpreter: val {}: unimplemented'.format(repr(e)))
+        try:
+            return cls.constants[e.value]
+        except KeyError as exn:
+            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
 
     @classmethod
     def _eval_decnum(cls, e, ctx):

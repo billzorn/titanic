@@ -3,176 +3,311 @@
 
 import numpy as np
 
-from ..fpbench import fpcast as ast
-from .evalctx import EvalCtx
+from . import interpreter
+from . import evalctx
 
 
-def _np_typeof(ctx):
-    if ctx.w == 11 and ctx.p == 53:
-        return np.float64
-    elif ctx.w == 8 and ctx.p == 24:
-        return np.float32
-    elif ctx.w == 5 and ctx.p == 11:
-        return np.float16
-    else:
-        raise ValueError('context with w={}, p={} does not correspond to a numpy float type'
-                         .format(ctx.w, ctx.p))
+np.seterr(all='ignore')
+
+np_precs = {}
+np_precs.update((k, np.float16) for k in evalctx.binary16_synonyms)
+np_precs.update((k, np.float32) for k in evalctx.binary32_synonyms)
+np_precs.update((k, np.float64) for k in evalctx.binary64_synonyms)
 
 
-def interpret(core, args, ctx=None):
-    """FPCore interpreter for IEEE 754-like arithmetic."""
+_SMALLEST_NORMALS = {
+    np.float16: np.float16(2.0 ** -14),
+    np.float32: np.float32(2.0 ** -126),
+    np.float64: np.float64(2.0 ** -1022),
+}
 
-    if len(core.inputs) != len(args):
-        raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
-                         .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
-    if ctx is None:
-        ctx = EvalCtx(props=core.props)
+class Interpreter(interpreter.SimpleInterpreter):
+    """FPCore interpreter using numpy.
+    Supports 16, 32 and 64-bit floats. Mixed-precision operations
+    automatically upcast to the largest used type, double-rounding
+    for operations at lower precision.
+    """
 
-    for arg, (name, props) in zip(args, core.inputs):
-        if props:
-            local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=props)
+    # datatype conversion
+
+    # note that this type cannot be created directly
+    dtype = np.floating
+    ctype = evalctx.EvalCtx
+
+    constants = {
+        'E': np.e,
+        'LOG2E': np.log2(np.e),
+        'LOG10E': np.log10(np.e),
+        'LN2': np.log(2),
+        'LN10': np.log(10),
+        'PI': np.pi,
+        'PI_2': np.pi / 2,
+        'PI_4': np.pi / 4,
+        '1_PI': 1 / np.pi,
+        '2_PI': 2 / np.pi,
+        '2_SQRTPI': 2 / np.sqrt(np.pi),
+        'SQRT2': np.sqrt(2),
+        'SQRT1_2': np.sqrt(1/2),
+        'INFINITY': np.inf,
+        'NAN': np.nan,
+        'TRUE': True,
+        'FALSE': False,
+    }
+
+    @staticmethod
+    def arg_to_digital(x, ctx):
+        prec = ctx.get('precision', 'binary64')
+        try:
+            return np_precs[prec](x)
+        except KeyError as exn:
+            raise ValueError('unsupported precision {}'.format(repr(exn.args[0])))
+
+    @staticmethod
+    def round_to_context(x, ctx):
+        prec = ctx.get('precision', 'binary64')
+        try:
+            dtype = np_precs[prec]
+            if type(x) is dtype:
+                return x
+            else:
+                return dtype(x)
+        except KeyError as exn:
+            raise ValueError('unsupported precision {}'.format(repr(exn.args[0])))
+
+
+    # values
+
+    @classmethod
+    def _eval_decnum(cls, e, ctx):
+        # numpy's implementation of parsing strings as floats is believed to double round...
+        return cls.arg_to_digital(e.value, ctx)
+
+    @classmethod
+    def _eval_hexnum(cls, e, ctx):
+        # may double round
+        return cls.round_to_context(float.fromhex(e.value), ctx)
+
+    @classmethod
+    def _eval_rational(cls, e, ctx):
+        # may double round
+        try:
+            f = e.p / e.q
+        except OverflowError:
+            f = np.inf * np.copysign(1.0, e.p)
+        return cls.round_to_context(f, ctx)
+
+    @classmethod
+    def _eval_digits(cls, e, ctx):
+        # may double round twice for inexact values
+        digits = compute_digits(e.m, e.e, e.b, prec=53)
+        # TODO: not guaranteed correct rounding, return code is ignored!
+        f = float(gmpmath.digital_to_mpfr(digits))
+        # and... round again
+        return cls.round_to_context(f, ctx)
+
+
+    # arithmetic
+
+    @classmethod
+    def _eval_sqrt(cls, e, ctx):
+        return np.sqrt(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def _eval_fma(cls, e, ctx):
+        raise ValueError('this is ridiculous')
+
+    @classmethod
+    def _eval_copysign(cls, e, ctx):
+        return np.copysign(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
+
+    @classmethod
+    def _eval_fdim(cls, e, ctx):
+        child0 = cls.evaluate(e.children[0], ctx)
+        child1 = cls.evaluate(e.children[1], ctx)
+        if child0 > child1:
+            return child0 - child1
         else:
-            local_ctx = ctx
+            return +0.0
 
-        # TODO: numpy rounding!
-        ftype = _np_typeof(local_ctx)
-        value = ftype(arg)
-        ctx.let([(name, value)])
+    @classmethod
+    def _eval_fmax(cls, e, ctx):
+        return np.fmax(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-    return evaluate(core.e, ctx)
+    @classmethod
+    def _eval_fmin(cls, e, ctx):
+        return np.fmin(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
+    @classmethod
+    def _eval_fmod(cls, e, ctx):
+        return np.fmod(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-def evaluate(e, ctx):
-    """Recursive expression evaluator, with much isinstance()."""
+    @classmethod
+    def _eval_remainder(cls, e, ctx):
+        return np.remainder(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-    # Handle annotations for precision-specific computations.
-    if e.props:
-        local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
-    else:
-        local_ctx = ctx
+    @classmethod
+    def _eval_ceil(cls, e, ctx):
+        return np.ceil(cls.evaluate(e.children[0], ctx))
 
-    ftype = _np_typeof(local_ctx)
+    @classmethod
+    def _eval_floor(cls, e, ctx):
+        return np.floor(cls.evaluate(e.children[0], ctx))
 
-    # ValueExpr
+    @classmethod
+    def _eval_nearbyint(cls, e, ctx):
+        return np.rint(cls.evaluate(e.children[0], ctx))
 
-    if isinstance(e, ast.Val):
-        # TODO numpy rounding!
-        return ftype(e.value)
+    @classmethod
+    def _eval_round(cls, e, ctx):
+        raise ValueError('also ridiculous')
 
-    elif isinstance(e, ast.Var):
-        # TODO better rounding and stuff
-        return ftype(ctx.bindings[e.value])
+    @classmethod
+    def _eval_trunc(cls, e, ctx):
+        return np.trunc(cls.evaluate(e.children[0], ctx))
 
-    # and Digits
+    @classmethod
+    def _eval_acos(cls, e, ctx):
+        return np.arccos(cls.evaluate(e.children[0], ctx))
 
-    elif isinstance(e, ast.Digits):
-        # TODO yolo
-        spare_bits = 16
-        base = sinking.Sink(e.b)
-        exponent = sinking.Sink(e.e)
-        scale = gmpmath.pow(base, exponent,
-                            min_n = -(base.bit_length() * exponent) - spare_bits,
-                            max_p = local_ctx.w + local_ctx.p + spare_bits)
-        significand = sinking.Sink(e.m,
-                                   min_n = local_ctx.n - spare_bits,
-                                   max_p = local_ctx.p + spare_bits)
-        r = gmpmath.mul(significand, scale, min_n=local_ctx.n, max_p=local_ctx.p)
-        return r.to_float(ftype)
+    @classmethod
+    def _eval_acosh(cls, e, ctx):
+        return np.arccosh(cls.evaluate(e.children[0], ctx))
 
-    # control flow
+    @classmethod
+    def _eval_asin(cls, e, ctx):
+        return np.arcsin(cls.evaluate(e.children[0], ctx))
 
-    elif isinstance(e, ast.If):
-        if evaluate(e.cond, ctx):
-            return evaluate(e.then_body, ctx)
-        else:
-            return evaluate(e.else_body, ctx)
+    @classmethod
+    def _eval_asinh(cls, e, ctx):
+        return np.arcsinh(cls.evaluate(e.children[0], ctx))
 
-    elif isinstance(e, ast.Let):
-        # somebody has to clone the context, to prevent let bindings in the subexpressions
-        # from contaminating each other or the result
-        bindings = [(name, evaluate(expr, ctx.clone())) for name, expr in e.let_bindings]
-        ctx.let(bindings)
-        return evaluate(e.body, ctx)
+    @classmethod
+    def _eval_atan(cls, e, ctx):
+        return np.arctan(cls.evaluate(e.children[0], ctx))
 
-    # Unary/Binary/NaryExpr
+    @classmethod
+    def _eval_atan2(cls, e, ctx):
+        return np.arctan2(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-    else:
-        children = [evaluate(child, ctx) for child in e.children]
-        n = local_ctx.n
-        p = local_ctx.p
+    @classmethod
+    def _eval_atanh(cls, e, ctx):
+        return np.arctanh(cls.evaluate(e.children[0], ctx))
 
-        if isinstance(e, ast.Neg):
-            # always exact
-            return -children[0]
+    @classmethod
+    def _eval_cos(cls, e, ctx):
+        return np.cos(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Sqrt):
-            return np.sqrt(children[0])
+    @classmethod
+    def _eval_cosh(cls, e, ctx):
+        return np.cosh(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Add):
-            return np.add(*children)
+    @classmethod
+    def _eval_sin(cls, e, ctx):
+        return np.sinh(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Sub):
-            return children[0] - children[1]
+    @classmethod
+    def _eval_sinh(cls, e, ctx):
+        return np.sinh(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Mul):
-            return children[0] * children[1]
+    @classmethod
+    def _eval_tan(cls, e, ctx):
+        return np.tan(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Div):
-            return children[0] / children[1]
+    @classmethod
+    def _eval_tanh(cls, e, ctx):
+        return np.tanh(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Floor):
-            return np.floor(*children)
+    @classmethod
+    def _eval_exp(cls, e, ctx):
+        return np.exp(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Fmod):
-            return np.fmod(*children)
+    @classmethod
+    def _eval_exp2(cls, e, ctx):
+        return np.exp2(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Pow):
-            return children[0] ** children[1]
+    @classmethod
+    def _eval_expm1(cls, e, ctx):
+        return np.expm1(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.Sin):
-            return np.sin(*children)
+    @classmethod
+    def _eval_log(cls, e, ctx):
+        return np.log(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.LT):
-            for x, y in zip(children, children[1:]):
-                if not x < y:
-                    return False
-            return True
+    @classmethod
+    def _eval_log10(cls, e, ctx):
+        return np.log10(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.GT):
-            for x, y in zip(children, children[1:]):
-                if not x > y:
-                    return False
-            return True
+    @classmethod
+    def _eval_log1p(cls, e, ctx):
+        return np.log1p(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.LEQ):
-            for x, y in zip(children, children[1:]):
-                if not x <= y:
-                    return False
-            return True
+    @classmethod
+    def _eval_log2(cls, e, ctx):
+        return np.log2(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.GEQ):
-            for x, y in zip(children, children[1:]):
-                if not x >= y:
-                    return False
-            return True
+    @classmethod
+    def _eval_cbrt(cls, e, ctx):
+        return np.cbrt(cls.evaluate(e.children[0], ctx))
 
-        elif isinstance(e, ast.EQ):
-            for x in children:
-                for y in children[1:]:
-                    if not x == y:
-                        return False
-            return True
+    @classmethod
+    def _eval_hypot(cls, e, ctx):
+        return np.hypot(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-        elif isinstance(e, ast.NEQ):
-            for x in children:
-                for y in children[1:]:
-                    if not x != y:
-                        return False
-            return True
+    @classmethod
+    def _eval_pow(cls, e, ctx):
+        return np.power(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-        elif isinstance(e, ast.Expr):
-            raise ValueError('unimplemented: {}'.format(repr(e)))
+    @classmethod
+    def _eval_hypot(cls, e, ctx):
+        return np.hypot(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
 
-        else:
-            raise ValueError('what is this: {}'.format(repr(e)))
+    @classmethod
+    def _eval_erf(cls, e, ctx):
+        return np.erf(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def _eval_erfc(cls, e, ctx):
+        raise ValueError('erfc: no numpy implementation, emulation unsupported')
+
+    @classmethod
+    def _eval_lgamma(cls, e, ctx):
+        raise ValueError('lgamma: no numpy implementation, emulation unsupported')
+
+    @classmethod
+    def _eval_tgamma(cls, e, ctx):
+        raise ValueError('tgamma: no numpy implementation, emulation unsupported')
+
+    @classmethod
+    def _eval_isfinite(cls, e, ctx):
+        return np.isfinite(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def _eval_isinf(cls, e, ctx):
+        return np.isinf(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def _eval_isnan(cls, e, ctx):
+        return np.isnan(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def _eval_isnormal(cls, e, ctx):
+        child0 = cls.evaluate(e.children[0], ctx)
+        prec = ctx.get('precision', 'binary64')
+        try:
+            dtype = np_precs[prec]
+            smallest = _SMALLEST_NORMALS[dtype]
+        except KeyError as exn:
+            raise ValueError('unsupported precision or type {}'.format(repr(exn.args[0])))
+        return ((not np.isnan(child0)) and
+                (not np.isinf(child0)) and
+                (not abs(child0) < smallest))
+
+    @classmethod
+    def _eval_signbit(cls, e, ctx):
+        return np.signbit(cls.evaluate(e.children[0], ctx))
+
+    @classmethod
+    def evaluate(cls, e, ctx):
+        result = super().evaluate(e, ctx)
+        return cls.round_to_context(result, ctx)
