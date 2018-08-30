@@ -19,10 +19,25 @@ class NaryExpr(Expr):
         self.children: typing.List[Expr] = children
 
     def __str__(self):
-        return '(' + type(self).name + ''.join((' ' + str(child) for child in self.children)) + ')'
+        return '(' + self.name + ''.join((' ' + str(child) for child in self.children)) + ')'
 
     def __repr__(self):
         return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, NaryExpr):
+            return False
+        return self.name == other.name and self.children == other.children
+
+class UnknownOperator(NaryExpr):
+    name: str = 'UnknownOperator'
+
+    def __init__(self, *children: Expr, name='UnknownOperator') -> None:
+        super().__init__(*children)
+        self.name = name
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children)) + 'name=' + repr(self.name) + ')'
 
 class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'
@@ -58,6 +73,11 @@ class ValueExpr(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
+    def __eq__(self, other):
+        if not isinstance(other, ValueExpr):
+            return False
+        return self.name == other.name and self.value == other.value
+
 class Var(ValueExpr):
     name: str = 'Var'
 
@@ -84,6 +104,12 @@ class Rational(Val):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.p) + ', ' + repr(self.q) + ')'
 
+    def __eq__(self, other):
+        if not isinstance(other, Rational):
+            return False
+        return self.p == other.p and self.q == other.q
+
+
 class Digits(Val):
     name: str = 'digits'
 
@@ -98,6 +124,11 @@ class Digits(Val):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, Digits):
+            return False
+        return self.m == other.m and self.e == other.e and self.b == other.b
 
 
 # rounding contexts
@@ -117,6 +148,11 @@ class Ctx(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
 
+    def __eq__(self, other):
+        if not isinstance(other, Ctx):
+            return False
+        return self.props == other.props and self.body == other.body
+
 
 # control flow
 
@@ -134,6 +170,11 @@ class If(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
 
+    def __eq__(self, other):
+        if not isinstance(other, If):
+            return False
+        return self.cond == other.cond and self.else_body == other.else_body and self._then_body == other.then_body
+
 class Let(Expr):
     name: str = 'let'
 
@@ -148,6 +189,11 @@ class Let(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.let_bindings) + ', ' + repr(self.body) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, Let):
+            return False
+        return self.let_bindings == other.let_bindings and self.body == other.body
 
 class While(Expr):
     name: str = 'while'
@@ -164,6 +210,11 @@ class While(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, While):
+            return False
+        return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
 
 
 # cast is the identity function, used for repeated rounding
@@ -400,6 +451,11 @@ class FPCore(object):
     def __repr__(self):
         return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
             repr(self.inputs), repr(self.e), repr(self.props))
+
+    def __eq__(self, other):
+        if not isinstance(other, FPCore):
+            return False
+        return self.inputs == other.inputs and self.e == other.e and self.props == other.props
 
     @property
     def sexp(self):

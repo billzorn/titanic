@@ -257,7 +257,8 @@ class Visitor(FPCoreVisitor):
         if op in reserved_constructs:
             return reserved_constructs[op](*(arg.accept(self) for arg in ctx.args))
         else:
-            raise ValueError('unrecognized operator {}'.format(op))
+            return ast.UnknownOperator(*(arg.accept(self) for arg in ctx.args),
+                                       name=op)
 
     def visitPropStr(self, ctx):
         name = ctx.name.text
