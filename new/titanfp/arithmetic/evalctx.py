@@ -66,20 +66,30 @@ class EvalCtx(object):
         """Create a new context, updated with any provided bindings
         or properties.
         """
-        cls = type(self)
+        cls = self.__class__
         newctx = cls.__new__(cls)
 
-        if bindings:
-            newctx.bindings = self.bindings.copy()
-            newctx.bindings.update(bindings)
-        else:
-            newctx.bindings = self.bindings
+        # if bindings:
+        #     newctx.bindings = self.bindings.copy()
+        #     newctx.bindings.update(bindings)
+        # else:
+        #     newctx.bindings = self.bindings
 
-        if props:
-            newctx.bindings = self.bindings.copy()
+        # if props:
+        #     newctx.bindings = self.bindings.copy()
+        #     newctx.props.update(props)
+        # else:
+        #     newctx.props = self.props
+
+        # safer
+        newctx.bindings = {}
+        newctx.bindings.update(self.bindings)
+        if bindings is not None:
+            newctx.bindings.update(bindings)
+        newctx.props = {}
+        newctx.props.update(self.props)
+        if props is not None:
             newctx.props.update(props)
-        else:
-            newctx.props = self.props
 
         newctx._import_fields(self)
         return newctx

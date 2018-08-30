@@ -154,8 +154,8 @@ class Evaluator(object):
                 cls._evaluator_cache = {}
             # walk up the mro and assign the evaluator for the first subtype to this type
             method = None
-            for c in e.__class__.__mro__:
-                method_name = cls._evaluator_dispatch.get(c, None)
+            for superclass in e.__class__.__mro__:
+                method_name = cls._evaluator_dispatch.get(superclass, None)
                 if method_name is not None and hasattr(cls, method_name):
                     method = getattr(cls, method_name)
                     cls._evaluator_cache[e.__class__] = method
@@ -163,6 +163,17 @@ class Evaluator(object):
             if method is None:
                 raise ValueError('Evaluator: unable to dispatch for expression {} with mro {}'
                                  .format(repr(e), repr(e.__class__.__mro__)))
+            
+        print('-- {} -> {} --'.format(
+            cls._evaluator_dispatch[e.__class__],
+            repr(cls._evaluator_cache[e.__class__]),
+        ))
+        print(e)
+        print(ctx)
+        print()
+
+        
+        
         return method(e, ctx)
 
 
