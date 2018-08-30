@@ -69,27 +69,17 @@ class EvalCtx(object):
         cls = self.__class__
         newctx = cls.__new__(cls)
 
-        # if bindings:
-        #     newctx.bindings = self.bindings.copy()
-        #     newctx.bindings.update(bindings)
-        # else:
-        #     newctx.bindings = self.bindings
-
-        # if props:
-        #     newctx.bindings = self.bindings.copy()
-        #     newctx.props.update(props)
-        # else:
-        #     newctx.props = self.props
-
-        # safer
-        newctx.bindings = {}
-        newctx.bindings.update(self.bindings)
-        if bindings is not None:
+        if bindings:
+            newctx.bindings = self.bindings.copy()
             newctx.bindings.update(bindings)
-        newctx.props = {}
-        newctx.props.update(self.props)
-        if props is not None:
+        else:
+            newctx.bindings = self.bindings
+
+        if props:
+            newctx.props = self.props.copy()
             newctx.props.update(props)
+        else:
+            newctx.props = self.props
 
         newctx._import_fields(self)
         return newctx

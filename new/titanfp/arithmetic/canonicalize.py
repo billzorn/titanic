@@ -83,13 +83,10 @@ class Condenser(interpreter.Evaluator):
         """
         child, childctx = cls.evaluate(e, ctx)
         annotations = {}
+
         for prop in childctx.props:
             if prop not in ctx.props or childctx.props[prop] != ctx.props[prop]:
                 annotations[prop] = childctx.props[prop]
-
-        print('annotated: ' + str(e))
-        print('  parent: ' + repr(ctx))
-        print('  child:  ' + repr(childctx))
 
         if len(annotations) == 0 or isinstance(child, ast.Var):
             return child
