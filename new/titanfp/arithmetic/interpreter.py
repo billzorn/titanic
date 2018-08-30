@@ -7,69 +7,33 @@ from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
 
 
-class BaseInterpreter(object):
-    """Base interpreter - only implements control flow."""
+class _CacheSentinel(object):
+    def __getitem__(self, key):
+        raise KeyError(repr(key))
 
-    # datatype conversion
+    def __setitem__(self, key, value):
+        raise ValueError('must initialize the evaluator dispatch cache before storing {}: {}'
+                         .format(repr(key), repr(value)))
 
-    dtype = None
+
+class Evaluator(object):
+    """FPCore evaluator.
+    Dispatches on type of expressions in the AST.
+    """
+
     ctype = EvalCtx
 
-    constants = {
-        'TRUE': True,
-        'FALSE': False,
-    }
-
-    @staticmethod
-    def arg_to_digital(x, ctx):
-        raise ValueError('BaseInterpreter: arg_to_digital({}): unimplemented'
-                         .format(repr(x)))
-
-    @staticmethod
-    def round_to_context(x, ctx):
-        raise ValueError('BaseInterpreter: round_to_context({}): unimplemented'
-                         .format(repr(x)))
-
-
-    # values
+    @classmethod
+    def _eval_expr(cls, e, ctx):
+        raise ValueError('Evaluator: expr {}: unimplemented'.format(repr(e)))
 
     @classmethod
     def _eval_var(cls, e, ctx):
-        try:
-            return ctx.bindings[e.value]
-        except KeyError as exn:
-            raise ValueError('unbound variable {}'.format(repr(exn.args[0])))
+        raise ValueError('Evaluator: var {}: unimplemented'.format(repr(e)))
 
-    # not called directly in interpreter,
     @classmethod
     def _eval_val(cls, e, ctx):
-        return cls.arg_to_digital(e.value, ctx)
-
-    @classmethod
-    def _eval_constant(cls, e, ctx):
-        try:
-            return cls.constants[e.value]
-        except KeyError as exn:
-            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
-
-    @classmethod
-    def _eval_decnum(cls, e, ctx):
-        raise ValueError('BaseInterpreter: val {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_hexnum(cls, e, ctx):
-        raise ValueError('BaseInterpreter: val {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_rational(cls, e, ctx):
-        raise ValueError('BaseInterpreter: val {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_digits(cls, e, ctx):
-        raise ValueError('BaseInterpreter: val {}: unimplemented'.format(repr(e)))
-
-
-    # control flow
+        raise ValueError('Evaluator: val {}: unimplemented'.format(repr(e)))
 
     @classmethod
     def _eval_ctx(cls, e, ctx):
@@ -79,286 +43,42 @@ class BaseInterpreter(object):
 
     @classmethod
     def _eval_if(cls, e, ctx):
-        if cls.evaluate(e.cond, ctx):
-            return cls.evaluate(e.then_body, ctx)
-        else:
-            return cls.evaluate(e.else_body, ctx)
+        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
 
     @classmethod
     def _eval_let(cls, e, ctx):
-        bindings = [(name, cls.evaluate(expr, ctx)) for name, expr in e.let_bindings]
-        return cls.evaluate(e.body, ctx.let(bindings=bindings))
+        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
 
     @classmethod
     def _eval_while(cls, e, ctx):
-        bindings = [(name, cls.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
-        ctx = ctx.let(bindings=bindings)
-        while evaluate(e.cond, ctx):
-            bindings = [(name, cls.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
-            ctx = ctx.let(bindings=bindings)
-        return cls.evaluate(e.body, ctx)
-
-
-    # operations
+        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
 
     @classmethod
-    def _eval_cast(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_add(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_sub(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_mul(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_div(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_sqrt(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fma(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_neg(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_copysign(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fabs(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fdim(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fmax(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fmin(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_fmod(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_remainder(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_ceil(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_floor(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_nearbyint(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_round(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_trunc(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_acos(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_acosh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_asin(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_asinh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_atan(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_atan2(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_atanh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_cos(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_cosh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_sin(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_sinh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_tan(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_tanh(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_exp(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_exp2(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_expm1(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_log(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_log10(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_log1p(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_log2(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_cbrt(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_hypot(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_pow(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_erf(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_erfc(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_lgamma(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_tgamma(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_lt(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_gt(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_leq(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_geq(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_eq(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_neq(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_isfinite(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_isinf(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_isnan(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_isnormal(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_signbit(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_and(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_or(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-    @classmethod
-    def _eval_not(cls, e, ctx):
-        raise ValueError('BaseInterpreter: eval {}: unimplemented'.format(repr(e)))
-
-
-    # main evaluator / dispatch
+    def _eval_op(cls, e, ctx):
+        raise ValueError('Evaluator: op {}: unimplemented'.format(repr(e)))
 
     _evaluator_dispatch = {
+        # catch-all for otherwise unimplemented AST nodes
+        ast.Expr: '_eval_expr',
+        # variables are their own thing
         ast.Var: '_eval_var',
+        # catch-all for all constant-valued expressions
+        ast.Val: '_eval_val',
+        # specific types of values
         ast.Constant: '_eval_constant',
         ast.Decnum: '_eval_decnum',
         ast.Hexnum: '_eval_hexnum',
         ast.Rational: '_eval_rational',
         ast.Digits: '_eval_digits',
+        # rounding contexts
         ast.Ctx: '_eval_ctx',
+        # control flow
         ast.If: '_eval_if',
         ast.Let: '_eval_let',
         ast.While: '_eval_while',
+        # catch-all for operations with some number of arguments
+        ast.NaryExpr: '_eval_op',
+        # specific operations
         ast.Cast: '_eval_cast',
         ast.Add: '_eval_add',
         ast.Sub: '_eval_sub',
@@ -422,9 +142,97 @@ class BaseInterpreter(object):
         ast.Not: '_eval_not',
     }
 
+    _evaluator_cache = _CacheSentinel()
+
     @classmethod
     def evaluate(cls, e, ctx):
-        return getattr(cls, cls._evaluator_dispatch[type(e)])(e, ctx)
+        try:
+            method = cls._evaluator_cache[e.__class__]
+        except KeyError:
+            # initialize the cache for this class if it hasn't been initialized already
+            if isinstance(cls._evaluator_cache, _CacheSentinel):
+                cls._evaluator_cache = {}
+            # walk up the mro and assign the evaluator for the first subtype to this type
+            method = None
+            for c in e.__class__.__mro__:
+                method_name = cls._evaluator_dispatch.get(c, None)
+                if method_name is not None and hasattr(cls, method_name):
+                    method = getattr(cls, method_name)
+                    cls._evaluator_cache[e.__class__] = method
+                    break
+            if method is None:
+                raise ValueError('Evaluator: unable to dispatch for expression {} with mro {}'
+                                 .format(repr(e), repr(e.__class__.__mro__)))
+        return method(e, ctx)
+
+
+class BaseInterpreter(Evaluator):
+    """Base interpreter - only implements control flow."""
+
+    # datatype conversion
+
+    dtype = None
+    ctype = EvalCtx
+
+    constants = {
+        'TRUE': True,
+        'FALSE': False,
+    }
+
+    @staticmethod
+    def arg_to_digital(x, ctx):
+        raise ValueError('BaseInterpreter: arg_to_digital({}): unimplemented'
+                         .format(repr(x)))
+
+    @staticmethod
+    def round_to_context(x, ctx):
+        raise ValueError('BaseInterpreter: round_to_context({}): unimplemented'
+                         .format(repr(x)))
+
+
+    # values
+
+    @classmethod
+    def _eval_var(cls, e, ctx):
+        try:
+            return ctx.bindings[e.value]
+        except KeyError as exn:
+            raise ValueError('unbound variable {}'.format(repr(exn.args[0])))
+
+    @classmethod
+    def _eval_val(cls, e, ctx):
+        return cls.arg_to_digital(e.value, ctx)
+
+    @classmethod
+    def _eval_constant(cls, e, ctx):
+        try:
+            return cls.constants[e.value]
+        except KeyError as exn:
+            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
+
+
+    # control flow
+
+    @classmethod
+    def _eval_if(cls, e, ctx):
+        if cls.evaluate(e.cond, ctx):
+            return cls.evaluate(e.then_body, ctx)
+        else:
+            return cls.evaluate(e.else_body, ctx)
+
+    @classmethod
+    def _eval_let(cls, e, ctx):
+        bindings = [(name, cls.evaluate(expr, ctx)) for name, expr in e.let_bindings]
+        return cls.evaluate(e.body, ctx.let(bindings=bindings))
+
+    @classmethod
+    def _eval_while(cls, e, ctx):
+        bindings = [(name, cls.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+        ctx = ctx.let(bindings=bindings)
+        while evaluate(e.cond, ctx):
+            bindings = [(name, cls.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+            ctx = ctx.let(bindings=bindings)
+        return cls.evaluate(e.body, ctx)
 
 
     # interpreter interface
@@ -437,6 +245,8 @@ class BaseInterpreter(object):
 
         if ctx is None:
             ctx = cls.ctype(props=core.props)
+        else:
+            ctx = ctx.let(props=core.props)
 
         arg_bindings = []
 
@@ -446,10 +256,7 @@ class BaseInterpreter(object):
             if isinstance(arg, cls.dtype):
                 argval = arg
             elif isinstance(arg, ast.Val):
-                try:
-                    argval = cls.evaluate(arg, ctx)
-                except Exception:
-                    argval = cls._eval_val(arg, ctx)
+                argval = cls.evaluate(arg, ctx)
             else:
                 argval = cls.arg_to_digital(arg, local_ctx)
 
@@ -650,7 +457,7 @@ class SimpleInterpreter(BaseInterpreter):
         return not cls.evaluate(e.children[0], ctx)
 
 
-class Interpreter(SimpleInterpreter):
+class StandardInterpreter(SimpleInterpreter):
     """Standard FPCore interpreter.
     Override Interpreter.dtype with a class that supports
     all arithmetic operations: a ** b, a.fma(b, c), a.sin(), a.isinf().
