@@ -42,7 +42,7 @@ class Canonicalizer(interpreter.Evaluator):
     def _eval_while(cls, e, ctx):
         return ast.While(
             cls.evaluate(e.cond, ctx),
-            [(name, cls.evaluate(init_expr, ctx), cls.evaluate(init_expr, ctx))
+            [(name, cls.evaluate(init_expr, ctx), cls.evaluate(update_expr, ctx))
              for name, init_expr, update_expr in e.while_bindings],
             cls.evaluate(e.body, ctx),
         )
@@ -81,58 +81,96 @@ class Condenser(interpreter.Evaluator):
         which properties on e are different from the surround context and
         thus need to be annotated specifically.
         """
-        child, childctx = cls.evaluate(e, ctx)
+        child, childctx, ctx_used = cls.evaluate(e, ctx)
         annotations = {}
 
         for prop in childctx.props:
             if prop not in ctx.props or childctx.props[prop] != ctx.props[prop]:
                 annotations[prop] = childctx.props[prop]
 
-        if len(annotations) == 0 or isinstance(child, ast.Var):
+        if len(annotations) == 0 or not ctx_used:
             return child
         else:
             return ast.Ctx(props=annotations, body=child)
 
     @classmethod
+    def _merge_contexts(cls, children, ctx):
+        children_ctxs = [cls.evaluate(child, ctx) for child in children]
+        any_child_used = False
+        shared = {}
+        shared_props = {}
+        annotated = []
+
+        for child, childctx, child_used in children_ctxs:
+            any_child_used = any_child_used or child_used
+            annotations = {}
+            for prop in childctx.props:
+                if prop not in ctx.props or childctx.props[prop] != ctx.props[prop]:
+                    # property differs from surrounding context
+                    # check if it's the same on all children
+                    if prop in shared:
+                        is_shared = shared[prop]
+                    else:
+                        is_shared = True
+                        for other, otherctx, other_used in children_ctxs:
+                            if (other is not child and
+                                other_used and
+                                (prop not in otherctx.props or childctx.props[prop] != otherctx.props[prop])):
+                                is_shared = False
+                        shared[prop] = is_shared
+                        # remember the shared property and its value
+                        shared_props[prop] = childctx.props[prop]
+                    # property is not shared, so we need to to annotate
+                    if not is_shared:
+                        annotations[prop] = childctx.props[prop]
+            if len(annotations) == 0 or not child_used:
+                annotated.append(child)
+            else:
+                annotated.append(ast.Ctx(props=annotations, body=child))
+
+        return annotated, ctx.let(props=shared_props), any_child_used
+
+    @classmethod
     def _eval_var(cls, e, ctx):
-        return e, ctx
+        return e, ctx, False
 
     @classmethod
     def _eval_val(cls, e, ctx):
         # do nothing here; the parent will annotate if necessary
-        return e, ctx
+        return e, ctx, True
 
     @classmethod
     def _eval_if(cls, e, ctx):
-        annotated = ast.If(
-            cls._annotate(e.cond, ctx),
-            cls._annotate(e.then_body, ctx),
-            cls._annotate(e.else_body, ctx),
+        (cond, let_body, else_body), ctx, ctx_used = cls._merge_contexts(
+            [e.cond, e.then_body, e.else_body],
+            ctx,
         )
-        return annotated, ctx
+        return ast.If(cond, let_body, else_body), ctx, ctx_used
 
     @classmethod
     def _eval_let(cls, e, ctx):
-        annotated = ast.Let(
-            [(name, cls._annotate(expr, ctx)) for name, expr in e.let_bindings],
-            cls._annotate(e.body, ctx),
+        names, child_exprs = zip(*e.let_bindings)
+        (body, *exprs), ctx, ctx_used = cls._merge_contexts(
+            [e.body, *child_exprs],
+            ctx,
         )
-        return annotated, ctx
+        return ast.Let([*zip(names, exprs)], body), ctx, ctx_used
 
     @classmethod
     def _eval_while(cls, e, ctx):
-        annotated = ast.While(
-            cls._annotate(e.cond, ctx),
-            [(name, cls._annotate(init_expr, ctx), cls._annotate(init_expr, ctx))
-             for name, init_expr, update_expr in e.while_bindings],
-            cls._annotate(e.body, ctx),
+        names, child_inits, child_updates = zip(*e.while_bindings)
+        (cond, body, *exprs), ctx, ctx_used = cls._merge_contexts(
+            [e.cond, e.body, *child_inits, *child_updates],
+            ctx,
         )
-        return annotated, ctx
+        init_exprs = exprs[:len(child_inits)]
+        update_exprs = exprs[len(child_updates):]
+        return ast.While(cond, [*zip(names, init_exprs, update_exprs)], body), ctx, ctx_used
 
     @classmethod
     def _eval_op(cls, e, ctx):
         children = (cls._annotate(child, ctx) for child in e.children)
-        return type(e)(*children), ctx
+        return type(e)(*children), ctx, True
 
     # translator interface
 
@@ -143,8 +181,11 @@ class Condenser(interpreter.Evaluator):
         else:
             ctx = ctx.let(props=core.props)
 
-        e, ctx = cls.evaluate(core.e, ctx)
+        e, ctx, ctx_used = cls.evaluate(core.e, ctx)
 
+        # technically, if the context isn't used in the body,
+        # we should run another merge on the annotations of the
+        # inputs...
         inputs = []
         for name, props in core.inputs:
             annotations = {}
