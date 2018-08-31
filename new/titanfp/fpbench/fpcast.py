@@ -161,7 +161,7 @@ class Ctx(Expr):
 
     def __str__(self):
         return ('(' + self.name + ' '
-                + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in self.props.items()))
+                + ''.join((':' + k + ' ' + _prop_to_sexp(v) + ' ' for k, v in self.props.items()))
                 + str(self.body) + ')')
 
     def __repr__(self):
@@ -192,7 +192,7 @@ class If(Expr):
     def __eq__(self, other):
         if not isinstance(other, If):
             return False
-        return self.cond == other.cond and self.else_body == other.else_body and self._then_body == other.then_body
+        return self.cond == other.cond and self.else_body == other.else_body and self.then_body == other.then_body
 
 class Let(Expr):
     name: str = 'let'
@@ -485,7 +485,7 @@ class FPCore(object):
 
 def _annotate_input(name, props):
     if props:
-        return '(! ' + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in props.items())) + name + ')'
+        return '(! ' + ''.join((':' + k + ' ' + _prop_to_sexp(v) + ' ' for k, v in props.items())) + name + ')'
     else:
         return name
 
