@@ -9,6 +9,25 @@ import typing
 class Expr(object):
     name: str = 'Expr'
 
+# arbitrary data (usually s-expressions in properties)
+
+class Data(Expr):
+    name: str = 'Data'
+
+    def __init__(self, value: str) -> None:
+        self.value: str = value
+
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.value) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, Data):
+            return False
+        return self.value == other.value
+
 
 # operations
 
@@ -120,7 +139,7 @@ class Digits(Val):
         self.b: int = b
 
     def __str__(self):
-        return '(' + type(self).name + ' ' + self.m + ' ' + self.e + ' ' + self.b + ')'
+        return '(' + self.name + ' ' + self.m + ' ' + self.e + ' ' + self.b + ')'
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
@@ -141,7 +160,7 @@ class Ctx(Expr):
         self.body = body
 
     def __str__(self):
-        return ('(' + type(self).name + ' '
+        return ('(' + self.name + ' '
                 + ''.join((':' + k + ' ' + str(v) + ' ' for k, v in self.props.items()))
                 + str(self.body) + ')')
 
@@ -165,7 +184,7 @@ class If(Expr):
         self.else_body: Expr = else_body
 
     def __str__(self):
-        return '(' + type(self).name + ' ' + str(self.cond) + ' ' + str(self.then_body) + ' ' + str(self.else_body) + ')'
+        return '(' + self.name + ' ' + str(self.cond) + ' ' + str(self.then_body) + ' ' + str(self.else_body) + ')'
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
@@ -183,7 +202,7 @@ class Let(Expr):
         self.body: Expr = body
 
     def __str__(self):
-        return ('(' + type(self).name
+        return ('(' + self.name
                 + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.let_bindings)) + ') '
                 + str(self.body) + ')')
 
@@ -204,7 +223,7 @@ class While(Expr):
         self.body: Expr = body
 
     def __str__(self):
-        return ('(' + type(self).name + ' ' + str(self.cond)
+        return ('(' + self.name + ' ' + str(self.cond)
                 + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
                 + str(self.body) + ')')
 

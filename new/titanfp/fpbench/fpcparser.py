@@ -290,6 +290,16 @@ class Visitor(FPCoreVisitor):
         else:
             raise ValueError('bad keyword {} in FPCore property'.format(name))
 
+    def visitPropDatum(self, ctx):
+        name = ctx.name.text
+        if name.startswith(':'):
+            return name[1:], ctx.d.accept(self)
+        else:
+            raise ValueError('bad keyword {} in FPCore property'.format(name))
+
+    def visitDatum(self, ctx):
+        return ast.Data(ctx.getText())
+
 
 class LogErrorListener(antlr4.error.ErrorListener.ErrorListener):
 
