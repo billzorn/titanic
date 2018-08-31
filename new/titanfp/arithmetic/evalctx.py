@@ -93,7 +93,7 @@ IEEE_wp = {}
 IEEE_wp.update((k, (5, 11)) for k in binary16_synonyms)
 IEEE_wp.update((k, (8, 24)) for k in binary32_synonyms)
 IEEE_wp.update((k, (11, 53)) for k in binary64_synonyms)
-IEEE_wp.update((k, (15, 113)) for k in binary16_synonyms)
+IEEE_wp.update((k, (15, 113)) for k in binary128_synonyms)
 
 IEEE_rm = {}
 IEEE_rm.update((k, RM.RNE) for k in RNE_synonyms)
