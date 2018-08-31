@@ -31,10 +31,12 @@ class EvalCtx(object):
         else:
             self.bindings = {}
 
+        self.props = {}
         if props:
-            self.props = props.copy()
-        else:
-            self.props = {}
+            self._update_props(props)
+
+    def _update_props(self, props):
+        self.props.update(props)
 
     def _import_fields(self, ctx):
         pass
@@ -68,22 +70,38 @@ class EvalCtx(object):
         """
         cls = self.__class__
         newctx = cls.__new__(cls)
+        newctx._import_fields(self)
 
         if bindings:
             newctx.bindings = self.bindings.copy()
             newctx.bindings.update(bindings)
         else:
+            # share the dictionary
             newctx.bindings = self.bindings
 
         if props:
             newctx.props = self.props.copy()
-            newctx.props.update(props)
+            newctx._update_props(props)
         else:
+            # share the dictionary
             newctx.props = self.props
 
-        newctx._import_fields(self)
         return newctx
 
+
+IEEE_wp = {}
+IEEE_wp.update((k, (5, 11)) for k in binary16_synonyms)
+IEEE_wp.update((k, (8, 24)) for k in binary32_synonyms)
+IEEE_wp.update((k, (11, 53)) for k in binary64_synonyms)
+IEEE_wp.update((k, (15, 113)) for k in binary16_synonyms)
+
+IEEE_rm = {}
+IEEE_rm.update((k, RM.RNE) for k in RNE_synonyms)
+IEEE_rm.update((k, RM.RNA) for k in RNA_synonyms)
+IEEE_rm.update((k, RM.RTP) for k in RTP_synonyms)
+IEEE_rm.update((k, RM.RTN) for k in RTN_synonyms)
+IEEE_rm.update((k, RM.RTZ) for k in RTZ_synonyms)
+IEEE_rm.update((k, RM.RAZ) for k in RAZ_synonyms)
 
 class IEEECtx(EvalCtx):
     """Context for IEEE 754-like arithmetic."""
@@ -96,47 +114,25 @@ class IEEECtx(EvalCtx):
     n = emin - p
     fbound = gmpmath.ieee_fbound(w, p)
 
-    def __init__(self, w = w, p = p, rm = rm, bindings = None, props = None):
-        super().__init__(bindings=bindings, props=props)
-
-        if props:
-            prec = str(props.get('precision', '')).lower()
-            if prec in binary16_synonyms:
-                w = 5
-                p = 11
-            elif prec in binary32_synonyms:
-                w = 8
-                p = 24
-            elif prec in binary64_synonyms:
-                w = 11
-                p = 53
-            elif prec in binary128_synonyms:
-                w = 15
-                p = 113
-            elif prec:
-                raise ValueError('IEEECtx: unknown precision {}'.format(prec))
-
-            rnd = str(props.get('round', '')).lower()
-            if rnd in RNE_synonyms:
-                rm = RM.RNE
-            elif rnd in RNA_synonyms:
-                rm = RM.RNA
-            elif rnd in RTP_synonyms:
-                rm = RM.RTP
-            elif rnd in RTN_synonyms:
-                rm = RM.RTN
-            elif rnd in RTZ_synonyms:
-                rm = RM.RTZ
-            elif rnd:
-                raise ValueError('IEEECtx: unknown rounding mode {}'.format(rnd))
-
-        self.rm = rm
-        self.w = w
-        self.p = p
-        self.emax = (1 << (self.w - 1)) - 1
-        self.emin = 1 - self.emax
-        self.n = self.emin - self.p
-        self.fbound = gmpmath.ieee_fbound(self.w, self.p)
+    def _update_props(self, props):
+        if 'round' in props:
+            try:
+                self.rm = IEEE_rm[props['round'].strip().lower()]
+            except KeyError:
+                raise ValueError('unsupported rounding mode {}'.format(repr(props['round'])))
+        if 'precision' in props:
+            try:
+                w, p = IEEE_wp[props['precision'].strip().lower()]
+            except KeyError:
+                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+            if w != self.w or p != self.p:
+                self.w = w
+                self.p = p
+                self.emax = (1 << (w - 1)) - 1
+                self.emin = 1 - self.emax
+                self.n = self.emin - p
+                self.fbound = gmpmath.ieee_fbound(w, p)
+        self.props.update(props)
 
     def _import_fields(self, ctx):
         self.rm = ctx.rm
@@ -156,6 +152,13 @@ class IEEECtx(EvalCtx):
         return '{}({})'.format(type(self).__name__, ', '.join(args))
 
 
+posit_esnbits = {}
+posit_esnbits.update((k, (0, 8)) for k in binary8_synonyms)
+posit_esnbits.update((k, (1, 16)) for k in binary16_synonyms)
+posit_esnbits.update((k, (3, 32)) for k in binary32_synonyms)
+posit_esnbits.update((k, (4, 64)) for k in binary64_synonyms)
+posit_esnbits.update((k, (7, 128)) for k in binary128_synonyms)
+
 # John Gustafson's Posits
 class PositCtx(EvalCtx):
     """Context for John Gustafson's posit arithmetic."""
@@ -166,34 +169,19 @@ class PositCtx(EvalCtx):
     emax = 1 << (nbits - 2)
     emin = -emax
 
-    def __init__(self, es = es, nbits = nbits, bindings = None, props = None):
-        super().__init__(bindings=bindings, props=props)
-
-        if props:
-            prec = str(props.get('precision', '')).lower()
-            if prec in binary8_synonyms:
-                es = 0
-                nbits = 8
-            elif prec in binary16_synonyms:
-                es = 1
-                nbits = 16
-            elif prec in binary32_synonyms:
-                es = 3
-                nbits = 32
-            elif prec in binary64_synonyms:
-                es = 4
-                nbits = 64
-            elif prec in binary128_synonyms:
-                es = 7
-                nbits = 128
-            elif prec:
-                raise ValueError('PositCtx: unknown precision {}'.format(prec))
-
-        self.es = es
-        self.nbits = nbits
-        self.u = 1 << es
-        self.emax = 1 << (self.nbits - 2)
-        self.emin = -self.emax
+    def _update_props(self, props):
+        if 'precision' in props:
+            try:
+                es, nbits = posit_esnbits[props['precision'].strip().lower()]
+            except KeyError:
+                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+            if es != self.es or nbits != self.nbits:
+                self.es = es
+                self.nbits = nbits
+                self.u = 1 << es
+                self.emax = 1 << (self.nbits - 2)
+                self.emin = -self.emax
+        self.props.update(props)
 
     def _import_fields(self, ctx):
         self.es = ctx.es
