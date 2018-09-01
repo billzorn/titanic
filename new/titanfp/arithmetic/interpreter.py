@@ -144,6 +144,8 @@ class Evaluator(object):
 
     _evaluator_cache = _CacheSentinel()
 
+    # evals = 0
+
     @classmethod
     def evaluate(cls, e, ctx):
         try:
@@ -163,6 +165,10 @@ class Evaluator(object):
             if method is None:
                 raise ValueError('Evaluator: unable to dispatch for expression {} with mro {}'
                                  .format(repr(e), repr(e.__class__.__mro__)))
+
+        # cls.evals += 1
+        # if cls.evals & 0xfffff == 0xfffff:
+        #     print(',', end='', flush=True)
 
         return method(e, ctx)
 
@@ -230,7 +236,7 @@ class BaseInterpreter(Evaluator):
     def _eval_while(cls, e, ctx):
         bindings = [(name, cls.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
         ctx = ctx.let(bindings=bindings)
-        while evaluate(e.cond, ctx):
+        while cls.evaluate(e.cond, ctx):
             bindings = [(name, cls.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
         return cls.evaluate(e.body, ctx)

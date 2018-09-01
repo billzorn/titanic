@@ -47,15 +47,18 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @staticmethod
     def arg_to_digital(x, ctx):
-        if 'precision' in ctx and ctx['precision'] not in native_precs:
-            raise ValueError('unsupported precision {}'.format(ctx['precision']))
+        if 'precision' in ctx.props and str(ctx.props['precision']).strip().lower() not in native_precs:
+            raise ValueError('unsupported precision {}'.format(repr(ctx.props['precision'])))
         return float(x)
 
     @staticmethod
     def round_to_context(x, ctx):
-        if 'precision' in ctx and ctx['precision'] not in native_precs:
-            raise ValueError('unsupported precision {}'.format(ctx['precision']))
-        return x
+        if 'precision' in ctx.props and str(ctx.props['precision']).strip().lower() not in native_precs:
+            raise ValueError('unsupported precision {}'.format(repr(ctx.props['precision'])))
+        if isinstance(x, complex):
+            return math.nan
+        else:
+            return x
 
 
     # values
@@ -89,10 +92,10 @@ class Interpreter(interpreter.SimpleInterpreter):
         child0 = cls.evaluate(e.children[0], ctx)
         child1 = cls.evaluate(e.children[1], ctx)
         if child1 == 0.0:
-            if child0 == 0.0:
-                return math.nan * math.copysign(1.0, child0)
+            if child0 == 0.0 or math.isnan(child0):
+                return math.nan * math.copysign(1.0, child0) * math.copysign(1.0, child1)
             else:
-                return math.inf * math.copysign(1.0, child0)
+                return math.inf * math.copysign(1.0, child0) * math.copysign(1.0, child1)
         else:
             return child0 / child1
 
@@ -269,7 +272,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_sin(cls, e, ctx):
-        return math.sinh(cls.evaluate(e.children[0], ctx))
+        return math.sin(cls.evaluate(e.children[0], ctx))
 
     @classmethod
     def _eval_sinh(cls, e, ctx):
@@ -285,15 +288,27 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_exp(cls, e, ctx):
-        return math.exp(cls.evaluate(e.children[0], ctx))
+        child0 = cls.evaluate(e.children[0], ctx)
+        try:
+            return math.exp(child0)
+        except OverflowError:
+            return math.inf
 
     @classmethod
     def _eval_exp2(cls, e, ctx):
-        return 2.0 ** cls.evaluate(e.children[0], ctx)
+        child0 = cls.evaluate(e.children[0], ctx)
+        try:
+            return 2.0 ** child0
+        except OverflowError:
+            return math.inf
 
     @classmethod
     def _eval_expm1(cls, e, ctx):
-        return math.expm1(cls.evaluate(e.children[0], ctx))
+        child0 = cls.evaluate(e.children[0], ctx)
+        try:
+            return math.expm1(child0)
+        except OverflowError:
+            return math.inf
 
     @classmethod
     def _eval_log(cls, e, ctx):
@@ -321,7 +336,26 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_pow(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) ** cls.evaluate(e.children[1], ctx)
+        child0 = cls.evaluate(e.children[0], ctx)
+        child1 = cls.evaluate(e.children[1], ctx)
+        if child0 == 0.0 and child1 < 0.0:
+            if child1.is_integer() and int(child1) % 2 == 1:
+                return math.copysign(math.inf, child0)
+            else:
+                return math.inf
+        try:
+            return child0 ** child1
+        except OverflowError as exn:
+            if child0 > 1.0:
+                return math.inf
+            elif child0 < 1.0:
+                if child1.is_integer():
+                    if int(child1) % 2 == 1:
+                        return math.copysign(math.inf, child0)
+                    else:
+                        return math.inf
+                else:
+                    raise exn
 
     @classmethod
     def _eval_erf(cls, e, ctx):

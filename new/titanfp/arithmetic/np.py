@@ -1,5 +1,5 @@
-"""Use numpy to interpret FPCores.
-"""
+"""Use numpy to interpret FPCores."""
+
 
 import numpy as np
 
@@ -57,7 +57,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @staticmethod
     def arg_to_digital(x, ctx):
-        prec = ctx.get('precision', 'binary64')
+        prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
         try:
             return np_precs[prec](x)
         except KeyError as exn:
@@ -65,7 +65,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @staticmethod
     def round_to_context(x, ctx):
-        prec = ctx.get('precision', 'binary64')
+        prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
         try:
             dtype = np_precs[prec]
             if type(x) is dtype:
@@ -204,7 +204,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_sin(cls, e, ctx):
-        return np.sinh(cls.evaluate(e.children[0], ctx))
+        return np.sin(cls.evaluate(e.children[0], ctx))
 
     @classmethod
     def _eval_sinh(cls, e, ctx):
@@ -293,7 +293,7 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def _eval_isnormal(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        prec = ctx.get('precision', 'binary64')
+        prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
         try:
             dtype = np_precs[prec]
             smallest = _SMALLEST_NORMALS[dtype]
