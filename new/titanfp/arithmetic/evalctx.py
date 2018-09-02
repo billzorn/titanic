@@ -68,7 +68,7 @@ class EvalCtx(object):
         """Create a new context, updated with any provided bindings
         or properties.
         """
-        cls = self.__class__
+        cls = type(self)
         newctx = cls.__new__(cls)
         newctx._import_fields(self)
 

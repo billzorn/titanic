@@ -149,22 +149,23 @@ class Evaluator(object):
     @classmethod
     def evaluate(cls, e, ctx):
         try:
-            method = cls._evaluator_cache[e.__class__]
+            method = cls._evaluator_cache[type(e)]
         except KeyError:
             # initialize the cache for this class if it hasn't been initialized already
             if isinstance(cls._evaluator_cache, _CacheSentinel):
                 cls._evaluator_cache = {}
             # walk up the mro and assign the evaluator for the first subtype to this type
             method = None
-            for superclass in e.__class__.__mro__:
+            ecls = type(e)
+            for superclass in ecls.__mro__:
                 method_name = cls._evaluator_dispatch.get(superclass, None)
                 if method_name is not None and hasattr(cls, method_name):
                     method = getattr(cls, method_name)
-                    cls._evaluator_cache[e.__class__] = method
+                    cls._evaluator_cache[ecls] = method
                     break
             if method is None:
                 raise ValueError('Evaluator: unable to dispatch for expression {} with mro {}'
-                                 .format(repr(e), repr(e.__class__.__mro__)))
+                                 .format(repr(e), repr(ecls.__mro__)))
 
         # cls.evals += 1
         # if cls.evals & 0xfffff == 0xfffff:
