@@ -1,35 +1,46 @@
-"""Direct softposit arithmetic. No emulation with MPFR.
+"""Direct softfloat arithmetic. No emulation with MPFR.
 """
 
 import math
 
-from sfpy import Posit8, Posit16, Posit32
+from sfpy import Float16, Float32, Float64
 
 from . import interpreter
 from . import evalctx
 from ..titanic import gmpmath
 
-softposit_precs = {
-    (0, 8): Posit8,
-    (1, 16): Posit16,
-    (3, 32): Posit32,
+softfloat_precs = {
+    (5, 11): Float16,
+    (8, 24): Float32,
+    (11, 53): Float64,
+}
+
+_SMALLEST_NORMALS = {
+    Float16: Float16(2.0 ** -14),
+    Float32: Float32(2.0 ** -126),
+    Float64: Float64(2.0 ** -1022),
+}
+
+_BIT_SIZES = {
+    Float16: 16,
+    Float32: 32,
+    Float64: 64,
 }
 
 class Interpreter(interpreter.SimpleInterpreter):
-    """FPCore interpreter using sfpy wrapper for official SoftPosit library.
-    Supports only the following posit formats:
-    posit8 (es=0, nbits=8)
-    posit16 (es=1, nbits=16)
-    posit32 (es=3, nbits=32)
-    Only basic operations implemented in the softposit library are supported
+    """FPCore interpreter using sfpy wrapper for official softfloat library.
+    Supports only the following IEEE 754 floating-point formats:
+    binary16 (w=5, p=11)
+    binary32 (w=8, p=24)
+    binary64 (w=11, p=53)
+    Only basic operations implemented in the softfloat library are supported
     (+ - * / fma sqrt).
-    For now, there is no support for mixed precision or for the quire.
+    For now, there is no support for mixed precision computation.
     """
 
     # datatype conversion
-
     dtype = type(None)
-    ctype = evalctx.PositCtx
+    ctype = evalctx.IEEECtx
 
     # constants = {}
     # not supported
@@ -37,30 +48,30 @@ class Interpreter(interpreter.SimpleInterpreter):
     @staticmethod
     def arg_to_digital(x, ctx):
         try:
-            positcls = softposit_precs[(ctx.es, ctx.nbits)]
+            floatcls = softfloat_precs[(ctx.w, ctx.p)]
         except KeyError as exn:
-            raise ValueError('unsupported posit format: es={:d}, nbits={:d}'
+            raise ValueError('unsupported float format: w={:d}, p={:d}'
                              .format(ctx.es, ctx.nbits))
-        # this may double round, sort of by design of the softposit library...
-        return positcls(float(x))
+        # this may double round for types other than float64 (just like numpy...)
+        return floatcls(float(x))
 
     @staticmethod
     def round_to_context(x, ctx):
         try:
-            positcls = softposit_precs[(ctx.es, ctx.nbits)]
+            floatcls = softfloat_precs[(ctx.w, ctx.p)]
         except KeyError as exn:
-            raise ValueError('unsupported posit format: es={:d}, nbits={:d}'
-                             .format(ctx.es, ctx.nbits))
+            raise ValueError('unsupported float format: w={:d}, p={:d}'
+                             .format(ctx.w, ctx.p))
 
         inputcls = type(x)
-        if inputcls == positcls or isinstance(x, bool):
+        if inputcls == floatcls or isinstance(x, bool):
             return x
-        elif positcls == Posit8:
-            return x.to_p8()
-        elif positcls == Posit16:
-            return x.to_p16()
+        elif floatcls == Float16:
+            return x.to_f16()
+        elif floatcls == Float32:
+            return x.to_f32()
         else:
-            return x.to_p32()
+            return x.to_f64()
 
 
     # values
@@ -75,7 +86,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_rational(cls, e, ctx):
-        # may double round
+        # may double round for types other than float64
         try:
             f = e.p / e.q
         except OverflowError:
@@ -109,28 +120,42 @@ class Interpreter(interpreter.SimpleInterpreter):
     def _eval_nearbyint(cls, e, ctx):
         return round(cls.evaluate(e.children[0], ctx))
 
-    # hacked together
+    # sort of hacked together
+
 
     @classmethod
     def _eval_isfinite(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        return child0 != type(child0)(float('inf'))
+        return child0 == child0 and abs(child0) != type(child0)(float('inf'))
 
     @classmethod
     def _eval_isinf(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        return child0 == type(child0)(float('inf'))
+        return abs(child0) == type(child0)(float('inf'))
 
     @classmethod
     def _eval_isnan(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        return child0 == type(child0)(float('inf'))
+        return child0 != child0
 
     @classmethod
     def _eval_isnormal(cls, e, ctx):
-        return True
+        child0 = cls.evaluate(e.children[0], ctx)
+        floatcls = type(child0)
+        try:
+            smallest = _SMALLEST_NORMALS[floatcls]
+        except KeyError as exn:
+            raise ValueError('unsupported precision or type {}'.format(repr(exn.args[0])))
+        return ((not np.isnan(child0)) and
+                (not np.isinf(child0)) and
+                (not abs(child0) < smallest))
 
     @classmethod
     def _eval_signbit(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        return child0 < type(child0)(0)
+        floatcls = type(child0)
+        try:
+            bitsize = _BIT_SIZES[floatcls]
+        except KeyError as exn:
+            raise ValueError('unsupported precision or type {}'.format(repr(exn.args[0])))
+        return child0.bits >> (bitsize - 1) != 0
