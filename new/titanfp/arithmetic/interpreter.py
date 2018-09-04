@@ -179,7 +179,7 @@ class BaseInterpreter(Evaluator):
 
     # datatype conversion
 
-    dtype = None
+    dtype = type(None)
     ctype = EvalCtx
 
     constants = {
@@ -263,7 +263,7 @@ class BaseInterpreter(Evaluator):
 
             if isinstance(arg, cls.dtype):
                 argval = arg
-            elif isinstance(arg, ast.Val):
+            elif isinstance(arg, ast.Expr):
                 argval = cls.evaluate(arg, ctx)
             else:
                 argval = cls.arg_to_digital(arg, local_ctx)

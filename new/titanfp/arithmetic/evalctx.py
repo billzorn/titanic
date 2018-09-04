@@ -117,12 +117,12 @@ class IEEECtx(EvalCtx):
     def _update_props(self, props):
         if 'round' in props:
             try:
-                self.rm = IEEE_rm[props['round'].strip().lower()]
+                self.rm = IEEE_rm[str(props['round']).strip().lower()]
             except KeyError:
                 raise ValueError('unsupported rounding mode {}'.format(repr(props['round'])))
         if 'precision' in props:
             try:
-                w, p = IEEE_wp[props['precision'].strip().lower()]
+                w, p = IEEE_wp[str(props['precision']).strip().lower()]
             except KeyError:
                 raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
             if w != self.w or p != self.p:
@@ -172,7 +172,7 @@ class PositCtx(EvalCtx):
     def _update_props(self, props):
         if 'precision' in props:
             try:
-                es, nbits = posit_esnbits[props['precision'].strip().lower()]
+                es, nbits = posit_esnbits[str(props['precision']).strip().lower()]
             except KeyError:
                 raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
             if es != self.es or nbits != self.nbits:

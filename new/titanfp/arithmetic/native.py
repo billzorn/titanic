@@ -6,6 +6,7 @@ import fractions
 
 from . import interpreter
 from . import evalctx
+from ..titanic import gmpmath
 
 
 _SMALLEST_NORMAL = 2.0 ** -1022
@@ -80,7 +81,7 @@ class Interpreter(interpreter.SimpleInterpreter):
 
     @classmethod
     def _eval_digits(cls, e, ctx):
-        digits = compute_digits(e.m, e.e, e.b, prec=53)
+        digits = gmpmath.compute_digits(e.m, e.e, e.b, prec=53)
         # TODO: not guaranteed correct rounding, return code is ignored!
         return float(gmpmath.digital_to_mpfr(digits))
 

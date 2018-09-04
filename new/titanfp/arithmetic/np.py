@@ -5,6 +5,7 @@ import numpy as np
 
 from . import interpreter
 from . import evalctx
+from ..titanic import gmpmath
 
 
 np.seterr(all='ignore')
@@ -59,21 +60,22 @@ class Interpreter(interpreter.SimpleInterpreter):
     def arg_to_digital(x, ctx):
         prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
         try:
-            return np_precs[prec](x)
+            npcls = np_precs[prec]
         except KeyError as exn:
             raise ValueError('unsupported precision {}'.format(repr(exn.args[0])))
+        return npcls(x)
 
     @staticmethod
     def round_to_context(x, ctx):
         prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
         try:
-            dtype = np_precs[prec]
-            if type(x) is dtype:
-                return x
-            else:
-                return dtype(x)
+            npcls = np_precs[prec]
         except KeyError as exn:
             raise ValueError('unsupported precision {}'.format(repr(exn.args[0])))
+        if type(x) == npcls or isinstance(x, bool):
+            return x
+        else:
+            return npcls(x)
 
 
     # values
@@ -100,7 +102,7 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def _eval_digits(cls, e, ctx):
         # may double round twice for inexact values
-        digits = compute_digits(e.m, e.e, e.b, prec=53)
+        digits = gmpmath.compute_digits(e.m, e.e, e.b, prec=53)
         # TODO: not guaranteed correct rounding, return code is ignored!
         f = float(gmpmath.digital_to_mpfr(digits))
         # and... round again
@@ -128,7 +130,7 @@ class Interpreter(interpreter.SimpleInterpreter):
         if child0 > child1:
             return child0 - child1
         else:
-            return +0.0
+            return type(child0)(+0.0) - type(child1)(+0.0)
 
     @classmethod
     def _eval_fmax(cls, e, ctx):
@@ -293,10 +295,9 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def _eval_isnormal(cls, e, ctx):
         child0 = cls.evaluate(e.children[0], ctx)
-        prec = str(ctx.props.get('precision', 'binary64')).strip().lower()
+        npcls = type(child0)
         try:
-            dtype = np_precs[prec]
-            smallest = _SMALLEST_NORMALS[dtype]
+            smallest = _SMALLEST_NORMALS[npcls]
         except KeyError as exn:
             raise ValueError('unsupported precision or type {}'.format(repr(exn.args[0])))
         return ((not np.isnan(child0)) and
