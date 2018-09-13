@@ -601,7 +601,7 @@ class StandardInterpreter(SimpleInterpreter):
 
     @classmethod
     def _eval_exp(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).exp(ctx=ctx)
+        return cls.evaluate(e.children[0], ctx).exp_(ctx=ctx)
 
     @classmethod
     def _eval_exp2(cls, e, ctx):
@@ -661,11 +661,11 @@ class StandardInterpreter(SimpleInterpreter):
 
     @classmethod
     def _eval_isinf(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isinf()
+        return cls.evaluate(e.children[0], ctx).isinf
 
     @classmethod
     def _eval_isnan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isnan()
+        return cls.evaluate(e.children[0], ctx).isnan
 
     @classmethod
     def _eval_isnormal(cls, e, ctx):

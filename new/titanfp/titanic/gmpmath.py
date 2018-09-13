@@ -168,6 +168,10 @@ def mpfr_to_digital(x):
 
 def _fdim(x1, x2):
     raise ValueError('fdim: emulated')
+def _fmax(x1, x2):
+    raise ValueError('fmax: emulated')
+def _fmin(x1, x2):
+    raise ValueError('fmin: emulated')
 
 gmp_ops = [
     gmp.add,
@@ -180,8 +184,8 @@ gmp_ops = [
     gmp.copy_sign,
     lambda x: abs(x),
     _fdim,
-    lambda x1, x2: max(x1, x2),
-    lambda x1, x2: min(x1, x2),
+    _fmax,
+    _fmin,
     gmp.fmod,
     gmp.remainder,
     gmp.ceil,

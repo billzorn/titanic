@@ -293,14 +293,13 @@ class Digital(object):
         If strict is True, raise an exception for inexact numbers that cannot
         be ordered with certainty.
         """
-
         # deal with special cases
         if self.isnan or other.isnan:
             return None
 
         if self.isinf:
             if other.isinf and self.negative == other.negative:
-                if strict and self.inexact or other.inexact:
+                if strict and (self.inexact or other.inexact):
                     raise PrecisionError('cannot compare {} and {} with certainty'
                                          .format(str(self), str(other)))
                 return 0
@@ -329,7 +328,7 @@ class Digital(object):
         if self_ord < other_ord:
             return -1
         elif self_ord == other_ord:
-            if strict and self.inexact or other.inexact:
+            if strict and (self.inexact or other.inexact):
                 raise PrecisionError('cannot compare {} and {} with certainty'
                                      .format(str(self), str(other)))
             return 0

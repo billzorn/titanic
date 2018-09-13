@@ -51,18 +51,27 @@ class Float(digital.Digital):
             unrounded = gmpmath.mpfr_to_digital(f)
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True), **kwargs)
 
-        self._ctx = ctx
+        self._ctx = ieee_ctx(ctx.w, ctx.p)
+
+    def __repr__(self):
+        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, ctx={})'.format(
+            type(self).__name__, repr(self._negative), repr(self._c), repr(self._exp),
+            repr(self._inexact), repr(self._rc), repr(self._isinf), repr(self._isnan), repr(self._ctx)
+        )
 
     def __str__(self):
         return str(gmpmath.digital_to_mpfr(self))
 
-    @staticmethod
-    def _select_context(*ctxs, ctx=None):
+    def __float__(self):
+        return float(gmpmath.digital_to_mpfr(self))
+
+    @classmethod
+    def _select_context(cls, *args, ctx=None):
         if ctx is not None:
             return ieee_ctx(ctx.w, ctx.p)
         else:
-            w = max((c.w for c in ctxs))
-            p = max((c.p for c in ctxs))
+            w = max((f.ctx.w for f in args if isinstance(f, cls)))
+            p = max((f.ctx.p for f in args if isinstance(f, cls)))
             return ieee_ctx(w, p)
 
     @classmethod
@@ -84,43 +93,264 @@ class Float(digital.Digital):
             return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
         else:
             return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
-    
+
     # operations
-    
+
     def add(self, other, ctx=None):
-        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        ctx = self._select_context(self, other, ctx=ctx)
         result = gmpmath.compute(OP.add, self, other, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def sub(self, other, ctx=None):
-        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        ctx = self._select_context(self, other, ctx=ctx)
         result = gmpmath.compute(OP.sub, self, other, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def mul(self, other, ctx=None):
-        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        ctx = self._select_context(self, other, ctx=ctx)
         result = gmpmath.compute(OP.mul, self, other, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def div(self, other, ctx=None):
-        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        ctx = self._select_context(self, other, ctx=ctx)
         result = gmpmath.compute(OP.div, self, other, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def sqrt(self, ctx=None):
-        ctx = self._select_context(self.ctx, ctx=ctx)
+        ctx = self._select_context(self, ctx=ctx)
         result = gmpmath.compute(OP.sqrt, self, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def fma(self, other1, other2, ctx=None):
-        ctx = self._select_context(self.ctx, other1.ctx, other2.ctx, ctx=ctx)
+        ctx = self._select_context(self, other1, other2, ctx=ctx)
         result = gmpmath.compute(OP.fma, self, other1, other2, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
-    
+
     def neg(self, ctx=None):
-        ctx = self._select_context(self.ctx, ctx=ctx)
+        ctx = self._select_context(self, ctx=ctx)
         result = gmpmath.compute(OP.neg, self, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def fdim(self, other, ctx=None):
+        # emulated
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.sub, self, other, prec=ctx.p)
+        zero = digital.Digital(negative=False, c=0, exp=0)
+        if result < zero:
+            return type(self)(negative=False, c=0, exp=0, inexact=False, rc=0)
+        else:
+            # never return negative zero
+            rounded = self._round_to_context(result, ctx=ctx, strict=True)
+            return type(self)(rounded, negative=False)
+
+    def fmax(self, other, ctx=None):
+        # emulated
+        ctx = self._select_context(self, other, ctx=ctx)
+        if self.isnan:
+            return self._round_to_context(other, ctx=ctx, strict=False)
+        elif other.isnan:
+            return self._round_to_context(self, ctx=ctx, strict=False)
+        else:
+            return self._round_to_context(max(self, other), ctx=ctx, strict=False)
+
+    def fmin(self, other, ctx=None):
+        # emulated
+        ctx = self._select_context(self, other, ctx=ctx)
+        if self.isnan:
+            return self._round_to_context(other, ctx=ctx, strict=False)
+        elif other.isnan:
+            return self._round_to_context(self, ctx=ctx, strict=False)
+        else:
+            return self._round_to_context(min(self, other), ctx=ctx, strict=False)
+
+    def fmod(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.fmod, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def remainder(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.remainder, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def ceil(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.ceil, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def floor(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.floor, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def nearbyint(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.nearbyint, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def round(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.round, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def trunc(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.trunc, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def acos(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.acos, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def acosh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.acosh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def asin(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.asin, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def asinh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.asinh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def atan(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.atan, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def atan2(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.atan2, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def atanh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.atanh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def cos(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.cos, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def cosh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.cosh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def sin(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.sin, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def sinh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.sinh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def tan(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.tan, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def tanh(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.tanh, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def exp_(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.exp, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def exp2(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.exp2, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def expm1(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.expm1, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def log(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.log, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def log10(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.log10, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def log1p(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.log1p, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def log2(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.log2, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def cbrt(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.cbrt, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def hypot(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.hypot, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def pow(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        if other.is_zero():
+            # avoid possibly passing nan to gmpmath.compute
+            return type(self)(negative=False, c=1, exp=0, inexact=False, rc=0)
+        result = gmpmath.compute(OP.pow, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def erf(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.erf, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def erfc(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.erfc, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def lgamma(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.lgamma, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def tgamma(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.tgamma, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def isfinite(self):
+        return not (self.isinf or self.isnan)
+
+    # isinf and isnan are properties
+
+    def isnormal(self):
+        return not (
+            self.is_zero()
+            or self.isinf
+            or self.isnan
+            or self.e < self.ctx.emin
+        )
+
+    def signbit(self):
+        return self.negative
 
 
 class Interpreter(interpreter.StandardInterpreter):
@@ -137,50 +367,8 @@ class Interpreter(interpreter.StandardInterpreter):
         return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
 
 
-USE_GMP = True
-USE_MATH = False
-DEFAULT_IEEE_CTX = IEEECtx(w=11, p=53, rm=RM.RNE) # double w/ RNE
 
-def compute_with_backend(opcode, *args, prec=54):
-    result = None
-    if USE_MATH:
-        result_math = wolfmath.compute(opcode, *args, prec=prec)
-        result = result_math
-    if USE_GMP:
-        result_gmp = gmpmath.compute(opcode, *args, prec=prec)
-        result = result_gmp
-    if USE_GMP and USE_MATH:
-        if not result_gmp.is_identical_to(result_math):
-            print(repr(result_gmp))
-            print(repr(result_math))
-            print('--')
-    if result is None:
-        raise ValueError('no backend specified')
-    return result
-
-
-def round_to_ieee_ctx(x, ctx=DEFAULT_IEEE_CTX):
-    if x.isinf or x.isnan:
-        # no rounding to perform
-        return sinking.Sink(x)
-
-    x_emag = sinking.Sink(x, negative=False, inexact=False)
-
-    if ctx.rm == RM.RNE:
-        if x_emag >= ctx.fbound:
-            return sinking.Sink(negative=x.negative, c=0, exp=0, inf=True, rc=-1)
-    else:
-        raise ValueError('round_to_ieee_ctx: unsupported rounding mode {}'.format(repr(ctx.rm)))
-
-    return x.round_m(max_p=ctx.p, min_n=ctx.n)
-
-
-def arg_to_digital(x, ctx=DEFAULT_IEEE_CTX):
-    result = gmpmath.mpfr_to_digital(gmpmath.mpfr(x, ctx.p + 1))
-    return round_to_ieee_ctx(result, ctx=ctx)
-
-
-def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
+def digital_to_bits(x, ctx=ieee_ctx(11, 53)):
     if ctx.p < 2 or ctx.w < 2:
         raise ValueError('format with w={}, p={} cannot be represented with IEEE 754 bit pattern'.format(ctx.w, ctx.p))
 
@@ -232,7 +420,7 @@ def digital_to_bits(x, ctx=DEFAULT_IEEE_CTX):
     return (S << (ctx.w + pbits)) | (E << pbits) | C
 
 
-def bits_to_digital(i, ctx=DEFAULT_IEEE_CTX):
+def bits_to_digital(i, ctx=ieee_ctx(11, 53)):
     pbits = ctx.p - 1
 
     S = (i >> (ctx.w + pbits)) & bitmask(1)
@@ -261,7 +449,7 @@ def bits_to_digital(i, ctx=DEFAULT_IEEE_CTX):
     return sinking.Sink(negative=negative, c=c, exp=exp, inexact=False, rc=0)
 
 
-def show_bitpattern(x, ctx=DEFAULT_IEEE_CTX):
+def show_bitpattern(x, ctx=ieee_ctx(11, 53)):
     print(x)
 
     if isinstance(x, int):
@@ -282,288 +470,10 @@ def show_bitpattern(x, ctx=DEFAULT_IEEE_CTX):
     )
 
 
-import numpy as np
-import sys
-def bits_to_numpy(i, nbytes=8, dtype=np.float64):
-    return np.frombuffer(
-        i.to_bytes(nbytes, sys.byteorder),
-        dtype=dtype, count=1, offset=0,
-    )[0]
-
-
-def add(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.add, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def sub(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.sub, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def mul(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.mul, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def div(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.div, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def neg(x, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.neg, x, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def sqrt(x, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.sqrt, x, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def floor(x, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.floor, x, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def fmod(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.fmod, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def pow(x1, x2, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.pow, x1, x2, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def sin(x, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.sin, x, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-def acos(x, ctx):
-    prec = max(2, ctx.p + 1)
-    result = compute_with_backend(OP.acos, x, prec=prec)
-    return round_to_ieee_ctx(result, ctx)
-
-
-def interpret(core, args, ctx=None):
-    """FPCore interpreter for IEEE 754-like arithmetic."""
-
-    if len(core.inputs) != len(args):
-        raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
-                         .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
-
-    if ctx is None:
-        ctx = IEEECtx(props=core.props)
-
-    for arg, (name, props) in zip(args, core.inputs):
-        if props:
-            local_ctx = IEEECtx(props=props)
-        else:
-            local_ctx = ctx
-
-        if isinstance(arg, sinking.Sink):
-            argval = arg
-        else:
-            argval = arg_to_digital(arg, local_ctx)
-        ctx.let([(name, argval)])
-
-    return evaluate(core.e, ctx)
-
-
-def interpret_pre(core, args, ctx=None):
-    if core.pre is None:
-        raise ValueError('core has no preconditions')
-
-    if len(core.inputs) != len(args):
-        raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'
-                         .format(len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
-
-    if ctx is None:
-        ctx = IEEECtx(props=core.props)
-
-    for arg, (name, props) in zip(args, core.inputs):
-        if props:
-            local_ctx = IEEECtx(props=props)
-        else:
-            local_ctx = ctx
-
-        if isinstance(arg, sinking.Sink):
-            argval = arg
-        else:
-            argval = arg_to_digital(arg, local_ctx)
-        ctx.let([(name, argval)])
-
-    return evaluate(core.pre, ctx)
-
-
-def evaluate(e, ctx):
-    """Recursive expression evaluator, with much isinstance()."""
-
-    # ValueExpr
-
-    if isinstance(e, ast.Val):
-        s = e.value.upper()
-        if s == 'TRUE':
-            return True
-        elif s == 'FALSE':
-            return False
-        else:
-            return arg_to_digital(e.value, ctx)
-
-    elif isinstance(e, ast.Var):
-        # never rounded
-        return ctx.bindings[e.value]
-
-    # and Digits
-
-    elif isinstance(e, ast.Digits):
-        raise ValueError('unimplemented')
-        # TODO yolo
-        spare_bits = 16
-        base = sinking.Sink(e.b)
-        exponent = sinking.Sink(e.e)
-        scale = gmpmath.pow(base, exponent,
-                            min_n = -(base.bit_length() * exponent) - spare_bits,
-                            max_p = ctx.w + ctx.p + spare_bits)
-        significand = sinking.Sink(e.m,
-                                   min_n = ctx.n - spare_bits,
-                                   max_p = ctx.p + spare_bits)
-        return gmpmath.mul(significand, scale, min_n=ctx.n, max_p=ctx.p)
-
-    # control flow
-
-    elif isinstance(e, ast.Ctx):
-        newctx = IEEECtx(props=e.props)
-        newctx.let(ctx.bindings)
-        return evaluate(e.body, newctx)
-
-    elif isinstance(e, ast.If):
-        if evaluate(e.cond, ctx):
-            return evaluate(e.then_body, ctx)
-        else:
-            return evaluate(e.else_body, ctx)
-
-    elif isinstance(e, ast.Let):
-        bindings = [(name, evaluate(expr, ctx)) for name, expr in e.let_bindings]
-        newctx = ctx.clone().let(bindings)
-        return evaluate(e.body, newctx)
-
-    elif isinstance(e, ast.While):
-        bindings = [(name, evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
-        newctx = ctx.clone().let(bindings)
-        while evaluate(e.cond, newctx):
-            bindings = [(name, evaluate(update_expr, newctx)) for name, init_expr, update_expr in e.while_bindings]
-            newctx = newctx.clone().let(bindings)
-        return evaluate(e.body, newctx)
-
-    # Unary/Binary/NaryExpr
-
-    else:
-        children = [evaluate(child, ctx) for child in e.children]
-
-        if isinstance(e, ast.Neg):
-            return neg(*children, ctx)
-
-        elif isinstance(e, ast.Sqrt):
-            return sqrt(*children, ctx)
-
-        elif isinstance(e, ast.Add):
-            return add(*children, ctx)
-
-        elif isinstance(e, ast.Sub):
-            return sub(*children, ctx)
-
-        elif isinstance(e, ast.Mul):
-            return mul(*children, ctx)
-
-        elif isinstance(e, ast.Div):
-            return div(*children, ctx)
-
-        elif isinstance(e, ast.Floor):
-            return floor(*children, ctx)
-
-        elif isinstance(e, ast.Fmod):
-            return fmod(*children, ctx)
-
-        elif isinstance(e, ast.Pow):
-            return pow(*children, ctx)
-
-        elif isinstance(e, ast.Sin):
-            return sin(*children, ctx)
-
-        elif isinstance(e, ast.Acos):
-            return acos(*children, ctx)
-
-        elif isinstance(e, ast.LT):
-            for x, y in zip(children, children[1:]):
-                if not x < y:
-                    return False
-            return True
-
-        elif isinstance(e, ast.GT):
-            for x, y in zip(children, children[1:]):
-                if not x > y:
-                    return False
-            return True
-
-        elif isinstance(e, ast.LEQ):
-            for x, y in zip(children, children[1:]):
-                if not x <= y:
-                    return False
-            return True
-
-        elif isinstance(e, ast.GEQ):
-            for x, y in zip(children, children[1:]):
-                if not x >= y:
-                    return False
-            return True
-
-        elif isinstance(e, ast.EQ):
-            for x in children:
-                for y in children[1:]:
-                    if not x == y:
-                        return False
-            return True
-
-        elif isinstance(e, ast.NEQ):
-            for x in children:
-                for y in children[1:]:
-                    if not x != y:
-                        return False
-            return True
-
-        elif isinstance(e, ast.Expr):
-            raise ValueError('unimplemented: {}'.format(repr(e)))
-
-        else:
-            raise ValueError('what is this: {}'.format(repr(e)))
-
-
-from ..fpbench import fpcparser
-
-fpc_minimal = fpcparser.compile(
-"""(FPCore (a b) (- (+ a b) a))
-""")[0]
-
-fpc_example = fpcparser.compile(
-"""(FPCore (a b c)
- :name "NMSE p42, positive"
- :cite (hamming-1987 herbie-2015)
- :fpbench-domain textbook
- :pre (and (>= (* b b) (* 4 (* a c))) (!= a 0))
- (/ (+ (- b) (sqrt (- (* b b) (* 4 (* a c))))) (* 2 a)))
-""")[0]
-
-fpc_fmod2pi = fpcparser.compile(
-"""(FPCore ()
- (- (* 2 (+ (+ (* 4 7.8539812564849853515625e-01) (* 4 3.7748947079307981766760e-08)) (* 4 2.6951514290790594840552e-15)))
-    (* 2 PI))
-)
-""")[0]
-
-fpc_loop = fpcparser.compile(
-"""(FPCore ()
- (while (< x 100) ([x 0 (+ x PI)]) x))
-""")[0]
+# import numpy as np
+# import sys
+# def bits_to_numpy(i, nbytes=8, dtype=np.float64):
+#     return np.frombuffer(
+#         i.to_bytes(nbytes, sys.byteorder),
+#         dtype=dtype, count=1, offset=0,
+#     )[0]
