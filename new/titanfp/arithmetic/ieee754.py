@@ -2,13 +2,139 @@
 """
 
 from ..titanic import gmpmath
-from ..titanic import wolfmath
-from ..titanic import sinking
-from ..fpbench import fpcast as ast
+from ..titanic import digital
 
 from ..titanic.integral import bitmask
 from ..titanic.ops import RM, OP
 from .evalctx import IEEECtx
+from . import interpreter
+
+
+used_ctxs = {}
+def ieee_ctx(w, p):
+    try:
+        return used_ctxs[(w, p)]
+    except KeyError:
+        ctx = IEEECtx(w=w, p=p)
+        used_ctxs[(w, p)] = ctx
+        return ctx
+
+
+class Float(digital.Digital):
+
+    _ctx : IEEECtx = ieee_ctx(11, 53)
+
+    @property
+    def ctx(self):
+        """The rounding context used to compute this value.
+        If a computation takes place between two values, then
+        it will either use a provided context (which will be recorded
+        on the result) or the more precise of the parent contexts
+        if none is provided.
+        """
+        return self._ctx
+
+    def is_identical_to(self, other):
+        if isinstance(other, Float):
+            return super().is_identical_to(other) and self.ctx.w == other.ctx.w and self.ctx.p == other.ctx.p
+        else:
+            return super().is_identical_to(other)
+
+    def __init__(self, x=None, ctx=None, **kwargs):
+        if ctx is None:
+            ctx = type(self)._ctx
+
+        if x is None or isinstance(x, digital.Digital):
+            super().__init__(x=x, **kwargs)
+        else:
+            f = gmpmath.mpfr(x, ctx.p)
+            unrounded = gmpmath.mpfr_to_digital(f)
+            super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True), **kwargs)
+
+        self._ctx = ctx
+
+    def __str__(self):
+        return str(gmpmath.digital_to_mpfr(self))
+
+    @staticmethod
+    def _select_context(*ctxs, ctx=None):
+        if ctx is not None:
+            return ieee_ctx(ctx.w, ctx.p)
+        else:
+            w = max((c.w for c in ctxs))
+            p = max((c.p for c in ctxs))
+            return ieee_ctx(w, p)
+
+    @classmethod
+    def _round_to_context(cls, unrounded, ctx=None, strict=False):
+        if ctx is None:
+            if hasattr(unrounded, 'ctx'):
+                ctx = unrounded.ctx
+            else:
+                raise ValueError('no context specified to round {}'.format(repr(unrounded)))
+
+        if ctx.rm != RM.RNE:
+            raise ValueError('unimplemented rounding mode {}'.format(repr(rm)))
+
+        if unrounded.isinf or unrounded.isnan:
+            return cls(unrounded, ctx=ctx)
+
+        magnitude = cls(unrounded, negative=False)
+        if magnitude > ctx.fbound:
+            return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+        else:
+            return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
+    
+    # operations
+    
+    def add(self, other, ctx=None):
+        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.add, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def sub(self, other, ctx=None):
+        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.sub, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def mul(self, other, ctx=None):
+        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.mul, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def div(self, other, ctx=None):
+        ctx = self._select_context(self.ctx, other.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.div, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def sqrt(self, ctx=None):
+        ctx = self._select_context(self.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.sqrt, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def fma(self, other1, other2, ctx=None):
+        ctx = self._select_context(self.ctx, other1.ctx, other2.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.fma, self, other1, other2, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+    
+    def neg(self, ctx=None):
+        ctx = self._select_context(self.ctx, ctx=ctx)
+        result = gmpmath.compute(OP.neg, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+
+class Interpreter(interpreter.StandardInterpreter):
+    dtype = Float
+    ctype = IEEECtx
+
+    @classmethod
+    def arg_to_digital(cls, x, ctx):
+        return cls.dtype(x, ctx=ctx)
+
+    @classmethod
+    def round_to_context(cls, x, ctx):
+        """Not actually used?"""
+        return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
 
 
 USE_GMP = True
@@ -133,11 +259,11 @@ def bits_to_digital(i, ctx=DEFAULT_IEEE_CTX):
 
     # unfortunately any rc / exactness information is lost
     return sinking.Sink(negative=negative, c=c, exp=exp, inexact=False, rc=0)
-        
+
 
 def show_bitpattern(x, ctx=DEFAULT_IEEE_CTX):
     print(x)
-    
+
     if isinstance(x, int):
         i = x
     elif isinstance(x, sinking.Sink):
@@ -150,7 +276,7 @@ def show_bitpattern(x, ctx=DEFAULT_IEEE_CTX):
         hidden = 0
     else:
         hidden = 1
-        
+
     return ('float{:d}({:d},{:d}): {:01b} {:0'+str(ctx.w)+'b} ({:01b}) {:0'+str(ctx.p-1)+'b}').format(
         ctx.w + ctx.p, ctx.w, ctx.p, S, E, hidden, C,
     )

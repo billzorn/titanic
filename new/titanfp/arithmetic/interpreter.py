@@ -472,156 +472,188 @@ class StandardInterpreter(SimpleInterpreter):
     """
 
     @classmethod
+    def _eval_add(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).add(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_sub(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).sub(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_mul(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).mul(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_div(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).div(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
     def _eval_sqrt(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sqrt()
+        return cls.evaluate(e.children[0], ctx).sqrt(ctx=ctx)
 
     @classmethod
     def _eval_fma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fma(cls.evaluate(e.children[1], ctx), cls.evaluate(e.children[2], ctx))
+        return cls.evaluate(e.children[0], ctx).fma(cls.evaluate(e.children[1], ctx), cls.evaluate(e.children[2], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_neg(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).neg(ctx=ctx)
 
     @classmethod
     def _eval_copysign(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).copysign(cls.evaluate(e.children[0], ctx))
+        return cls.evaluate(e.children[0], ctx).copysign(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_fabs(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).fabs(ctx=ctx)
 
     @classmethod
     def _eval_fdim(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fdim(cls.evaluate(e.children[1], ctx))
+        return cls.evaluate(e.children[0], ctx).fdim(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_fmax(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).fmax(cls.evaluate(e.children[1], ctx), ctx=ctx)
+
+    @classmethod
+    def _eval_fmin(cls, e, ctx):
+        return cls.evaluate(e.children[0], ctx).fmin(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_fmod(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmod(cls.evaluate(e.children[1], ctx))
+        return cls.evaluate(e.children[0], ctx).fmod(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_remainder(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).remainder(cls.evaluate(e.children[1], ctx))
+        return cls.evaluate(e.children[0], ctx).remainder(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_ceil(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).ceil()
+        return cls.evaluate(e.children[0], ctx).ceil(ctx=ctx)
 
     @classmethod
     def _eval_floor(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).floor()
+        return cls.evaluate(e.children[0], ctx).floor(ctx=ctx)
 
     @classmethod
     def _eval_nearbyint(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).nearbyint()
+        return cls.evaluate(e.children[0], ctx).nearbyint(ctx=ctx)
 
     @classmethod
     def _eval_round(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).round()
+        return cls.evaluate(e.children[0], ctx).round(ctx=ctx)
 
     @classmethod
     def _eval_trunc(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).trunc()
+        return cls.evaluate(e.children[0], ctx).trunc(ctx=ctx)
 
     @classmethod
     def _eval_acos(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).acos()
+        return cls.evaluate(e.children[0], ctx).acos(ctx=ctx)
 
     @classmethod
     def _eval_acosh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).acosh()
+        return cls.evaluate(e.children[0], ctx).acosh(ctx=ctx)
 
     @classmethod
     def _eval_asin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).asin()
+        return cls.evaluate(e.children[0], ctx).asin(ctx=ctx)
 
     @classmethod
     def _eval_asinh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).asinh()
+        return cls.evaluate(e.children[0], ctx).asinh(ctx=ctx)
 
     @classmethod
     def _eval_atan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atan()
+        return cls.evaluate(e.children[0], ctx).atan(ctx=ctx)
 
     @classmethod
     def _eval_atan2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atan2(cls.evaluate(e.children[1], ctx))
+        return cls.evaluate(e.children[0], ctx).atan2(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_atanh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atanh()
+        return cls.evaluate(e.children[0], ctx).atanh(ctx=ctx)
 
     @classmethod
     def _eval_cos(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cos()
+        return cls.evaluate(e.children[0], ctx).cos(ctx=ctx)
 
     @classmethod
     def _eval_cosh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cosh()
+        return cls.evaluate(e.children[0], ctx).cosh(ctx=ctx)
 
     @classmethod
     def _eval_sin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sin()
+        return cls.evaluate(e.children[0], ctx).sin(ctx=ctx)
 
     @classmethod
     def _eval_sinh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sinh()
+        return cls.evaluate(e.children[0], ctx).sinh(ctx=ctx)
 
     @classmethod
     def _eval_tan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tan()
+        return cls.evaluate(e.children[0], ctx).tan(ctx=ctx)
 
     @classmethod
     def _eval_tanh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tanh()
+        return cls.evaluate(e.children[0], ctx).tanh(ctx=ctx)
 
     @classmethod
     def _eval_exp(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).exp()
+        return cls.evaluate(e.children[0], ctx).exp(ctx=ctx)
 
     @classmethod
     def _eval_exp2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).exp2()
+        return cls.evaluate(e.children[0], ctx).exp2(ctx=ctx)
 
     @classmethod
     def _eval_expm1(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).expm1()
+        return cls.evaluate(e.children[0], ctx).expm1(ctx=ctx)
 
     @classmethod
     def _eval_log(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log()
+        return cls.evaluate(e.children[0], ctx).log(ctx=ctx)
 
     @classmethod
     def _eval_log10(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log10()
+        return cls.evaluate(e.children[0], ctx).log10(ctx=ctx)
 
     @classmethod
     def _eval_log1p(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log1p()
+        return cls.evaluate(e.children[0], ctx).log1p(ctx=ctx)
 
     @classmethod
     def _eval_log2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log2()
+        return cls.evaluate(e.children[0], ctx).log2(ctx=ctx)
 
     @classmethod
     def _eval_cbrt(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cbrt()
+        return cls.evaluate(e.children[0], ctx).cbrt(ctx=ctx)
 
     @classmethod
     def _eval_hypot(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).hypot(cls.evaluate(e.children[1], ctx))
+        return cls.evaluate(e.children[0], ctx).hypot(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_pow(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) ** cls.evaluate(e.children[1], ctx)
+        return cls.evaluate(e.children[0], ctx).pow(cls.evaluate(e.children[1], ctx), ctx=ctx)
 
     @classmethod
     def _eval_erf(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).erf()
+        return cls.evaluate(e.children[0], ctx).erf(ctx=ctx)
 
     @classmethod
     def _eval_erfc(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).erfc()
+        return cls.evaluate(e.children[0], ctx).erfc(ctx=ctx)
 
     @classmethod
     def _eval_lgamma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).lgamma()
+        return cls.evaluate(e.children[0], ctx).lgamma(ctx=ctx)
 
     @classmethod
     def _eval_tgamma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tgamma()
+        return cls.evaluate(e.children[0], ctx).tgamma(ctx=ctx)
 
     @classmethod
     def _eval_isfinite(cls, e, ctx):

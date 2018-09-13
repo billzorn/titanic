@@ -8,7 +8,27 @@ import gmpy2 as gmp
 from .integral import bitmask
 from . import conversion
 from . import ops
+from . import digital
 from .sinking import Sink
+
+
+def mpfr(x, prec):
+    with gmp.context(
+            # one extra bit, so that we can round from RTZ to RNE
+            precision=prec + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+            trap_expbound=True,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ):
+        return gmp.mpfr(x)
 
 
 def digital_to_mpfr(x):
@@ -27,34 +47,22 @@ def digital_to_mpfr(x):
         ):
             return gmp.mpfr('nan')
     elif x.isinf:
-        if x.negative:
-            with gmp.context(
-                    precision=2,
-                    emin=-1,
-                    emax=1,
-                    trap_underflow=True,
-                    trap_overflow=True,
-                    trap_inexact=True,
-                    trap_invalid=True,
-                    trap_erange=True,
-                    trap_divzero=True,
-                    trap_expbound=True,
-            ):
-                return gmp.mpfr('-inf')
-        else:
-            with gmp.context(
-                    precision=2,
-                    emin=-1,
-                    emax=1,
-                    trap_underflow=True,
-                    trap_overflow=True,
-                    trap_inexact=True,
-                    trap_invalid=True,
-                    trap_erange=True,
-                    trap_divzero=True,
-                    trap_expbound=True,
-            ):
-                return gmp.mpfr('+inf')
+         with gmp.context(
+                precision=2,
+                emin=-1,
+                emax=1,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=True,
+                trap_invalid=True,
+                trap_erange=True,
+                trap_divzero=True,
+                trap_expbound=True,
+        ):
+             if x.negative:
+                 return gmp.mpfr('-inf')
+             else:
+                 return gmp.mpfr('+inf')
 
     m = x.m
     exp = x.exp
@@ -114,12 +122,9 @@ def digital_to_mpfr(x):
 
 def mpfr_to_digital(x):
     if gmp.is_nan(x):
-        return Sink(
-            negative=False,
-            c=0,
-            exp=0,
-            nan=True,
-            rc=0, # not clear what envelope properties mean here
+        return digital.Digital(
+            isnan=True,
+            rc=0, # not clear what the return code should mean
         )
 
     negative = gmp.is_signed(x)
@@ -138,11 +143,9 @@ def mpfr_to_digital(x):
         rc = -x.rc
 
     if gmp.is_infinite(x):
-        return Sink(
+        return digital.Digital(
             negative=negative,
-            c=0,
-            exp=0,
-            inf=True,
+            isinf=True,
             rc=rc,
         )
 
@@ -154,7 +157,7 @@ def mpfr_to_digital(x):
         raise ValueError('unreachable: MPFR rounded the wrong way toward zero? got {}, rc={}'
                          .format(repr(x), repr(x.rc)))
 
-    return Sink(
+    return digital.Digital(
         negative=negative,
         c=c,
         exp=exp,
@@ -222,26 +225,33 @@ def compute(opcode, *args, prec=53):
     Arguments are treated as exact: the inexactness and result code of the result
     only reflect what happened during this single operation.
     Result is truncated towards 0, but will have inexactness and result code set
-    for further rounding.
-    Might not do the right thing for special values like nan.
+    for further rounding, and it is computed with one extra bit of precision.
+    NOTE: this function does not trap on invalid operations, so it will give the gmp/mpfr answer
+    for special cases like sqrt(-1), arcsin(3), and so on.
     """
     op = gmp_ops[opcode]
     inputs = [digital_to_mpfr(arg) for arg in args]
+    # gmpy2 really doesn't like it when you pass nan as an argument
+    for f in inputs:
+        if gmp.is_nan(f):
+            return digital.Digital(isnan=True, rc=0)
     with gmp.context(
             # one extra bit, so that we can round from RTZ to RNE
             precision=prec + 1,
             emin=gmp.get_emin_min(),
             emax=gmp.get_emax_max(),
+            subnormalize=False,
             trap_underflow=True,
             trap_overflow=True,
             trap_inexact=False,
-            trap_invalid=True,
-            trap_erange=True,
-            trap_divzero=True,
+            trap_invalid=False,
+            trap_erange=False,
+            trap_divzero=False,
             trap_expbound=True,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
+        print(inputs)
         result = op(*inputs)
 
     return mpfr_to_digital(result)
@@ -729,34 +739,3 @@ def pi(p):
         ):
             x = gmp.const_pi()
     return Sink(x, inexact=True, sided=False, full=False)
-
-def mpfr(x, p):
-    # TODO no support for rounding modes
-    if p < 2:
-        raise ValueError('precision must be at least 2')
-
-    if isinstance(x, str):
-        x = x.upper()
-
-    with gmp.context(
-            precision=p,
-            emin=gmp.get_emin_min(),
-            emax=gmp.get_emax_max(),
-            trap_underflow=True,
-            trap_overflow=True,
-            trap_inexact=False,
-            trap_invalid=True,
-            trap_erange=True,
-            trap_divzero=True,
-            trap_expbound=True,
-            # use RTZ for easy multiple rounding later
-            round=gmp.RoundToZero,
-    ):
-        if x == 'E':
-            return gmp.exp(1)
-        elif x == 'PI':
-            return gmp.const_pi()
-        elif x == 'LN2':
-            return gmp.const_log2()
-        else:
-            return gmp.mpfr(x)

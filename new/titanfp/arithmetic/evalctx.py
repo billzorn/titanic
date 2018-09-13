@@ -114,6 +114,28 @@ class IEEECtx(EvalCtx):
     n = emin - p
     fbound = gmpmath.ieee_fbound(w, p)
 
+    def __init__(self, w=None, p=None, rm=None, bindings=None, props=None):
+        if bindings:
+            self.bindings = bindings.copy()
+        else:
+            self.bindings = {}
+
+        self.props = {}
+        if props:
+            self._update_props(props)
+
+        # other keyword arguments can override the context
+        if w is not None:
+            self.w = w
+        if p is not None:
+            self.p = p
+        if rm is not None:
+            self.rm = rm
+        self.emax = (1 << (self.w - 1)) - 1
+        self.emin = 1 - self.emax
+        self.n = self.emin - self.p
+        self.fbound = gmpmath.ieee_fbound(self.w, self.p)
+
     def _update_props(self, props):
         if 'round' in props:
             try:
@@ -168,6 +190,25 @@ class PositCtx(EvalCtx):
     u = 1 << es
     emax = 1 << (nbits - 2)
     emin = -emax
+
+    def __init__(self, es=None, nbits=None, bindings=None, props=None):
+        if bindings:
+            self.bindings = bindings.copy()
+        else:
+            self.bindings = {}
+
+        self.props = {}
+        if props:
+            self._update_props(props)
+
+        # other keywords override the context
+        if es is not None:
+            self.es = es
+        if nbits is not None:
+            self.nbits = nbits
+        self.u = 1 << self.es
+        self.emax = 1 << (self.nbits - 2)
+        self.emin = -self.emax
 
     def _update_props(self, props):
         if 'precision' in props:
