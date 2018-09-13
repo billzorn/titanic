@@ -3,6 +3,8 @@ import math
 import itertools
 import multiprocessing
 
+import numpy as np
+
 from .fpbench import fpcparser
 from .arithmetic import ieee754
 from .arithmetic import optimistic
@@ -39,7 +41,13 @@ def linear_ulps(x, y):
 
 def bits_agreement(hi, lo):
     bitsim = gmpmath.geo_sim(hi, lo)
-    agreement = int(bitsim) + 4
+    if math.isinf(bitsim):
+        if bitsim > 0:
+            agreement = max(hi.p, lo.p)
+        else:
+            agreement = 1
+    else:
+        agreement = int(bitsim) + 4
 
     hi_exact = sinking.Sink(hi, inexact=False, rc=0)
     lo_exact = sinking.Sink(lo, inexact=False, rc=0)
@@ -62,15 +70,16 @@ def bits_agreement(hi, lo):
     if zero_ulp_agreement == None:
         zero_ulp_agreement = 0
 
-    if agreement > 0 and (agreement <= one_ulp_agreement or agreement <= zero_ulp_agreement):
-        print('possibly underestimated agreement:\n  {} vs {}\n  {}, {}, {}, {}'
-              .format(hi, lo, bitsim, agreement, one_ulp_agreement, zero_ulp_agreement))
+    # if agreement > 0 and (agreement <= one_ulp_agreement or agreement <= zero_ulp_agreement):
+    #     print('possibly underestimated agreement:\n  {} vs {}\n  {}, {}, {}, {}'
+    #           .format(hi, lo, bitsim, agreement, one_ulp_agreement, zero_ulp_agreement))
 
     return bitsim, one_ulp_agreement, zero_ulp_agreement
 
-
+ctx4096 = evalctx.IEEECtx(w=32, p=4096)
 ctx128 = evalctx.IEEECtx(w=32, p=128)
 ctx64 = evalctx.IEEECtx(w=16, p=64)
+ctx32 = evalctx.IEEECtx(w=16, p=32)
 
 rejections = 100
 progress_update = 10000
@@ -124,15 +133,15 @@ def iter_2arg(erange, prange, benches):
 
 def sweep(core, cases, nbits, ctx):
     records = []
-    
-    for es, ps in cases: 
+
+    for es, ps in cases:
         try:
             hi_args, lo_args = gen_core_arguments(core, es, ps, nbits, ctx)
         except Exception as e:
             if progress_update > 0:
                 print('!', end='', flush=True)
             continue
-                
+
         records.append(bench_core(core, hi_args, lo_args, ctx))
         if progress_update > 0 and len(records) % progress_update == 0:
             print('.', end='', flush=True)
@@ -144,7 +153,7 @@ def sweep_single(core, cases, nbits, ctx):
     print('{:s}\nrunning with {:d} total bits'.format(str(core), nbits), flush=True)
 
     records = sweep(core, cases, nbits, ctx)
-    
+
     if progress_update > 0:
         print('\ngenerated {:d} records'.format(len(records)), flush=True)
     else:
@@ -184,12 +193,12 @@ def sweep_multi(core, cases, nbits, ctx, nprocs=None):
         print('\nstarmap finished with {:d} invocations'.format(map_invocations), flush=True)
     else:
         print('starmap finished with {:d} invocations'.format(map_invocations), flush=True)
-        
+
     pool.close()
     pool.join()
 
     print('generated {:d} records'.format(len(all_records)), flush=True)
-    
+
     return all_records
 
 
@@ -244,96 +253,83 @@ cores = { k : fpcparser.compile(v)[0] for k, v in benchmarks.items() }
 
 
 
+def split_records(records, xidx, yidx):
+    xs = []
+    ys = []
+    for record in records:
+        xs.append(record[xidx])
+        ys.append(record[yidx])
+    return xs, ys
 
+def cdf(xs):
+    mass = len(xs)
+    xs_sorted = sorted(xs)
+    ys = [i / mass for i in range(len(xs))]
+    return xs_sorted, ys
 
-
+def split_xs(xs, ys):
+    cdfs = {}
+    for x, y in zip(xs, ys):
+        if x not in cdfs:
+            cdfs[x] = []
+        cdfs[x].append(y)
+    return cdfs
 
 
 # from ipython
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
-import matplotlib.transforms as mtransforms
 
-
-def process_data(data):
-    points = {}
-    for x, y in data:
-        if (x, y) in points:
-            points[(x, y)] += 1
-        else:
-            points[(x, y)] = 1
-
-    xs = []
-    ys = []
-    colors = []
-    maxc = 0
-
-    for (x, y), count in points.items():
-        xs.append(x)
-        ys.append(y)
-        #c = count.bit_length()
-        c = count
-        colors.append(c)
-        if c > maxc:
-            maxc = c
-
-    greyscale = [str(1 - (c / maxc)) for c in colors]
-
-
-    # cdf per x point
-
-    cdfs = {}
-    for (x, y), count in points.items():
-        if x not in cdfs:
-            cdfs[x] = {}
-        cdfs[x][y-x] = count
-
-    cdf_xys = {}
-    for cdf_x, cdf in cdfs.items():
-        sum = 0
-        cdf_xs = []
-        cdf_ys = []
-        for x in sorted(cdf):
-            sum += cdf[x]
-            cdf_xs.append(x)
-            cdf_ys.append(sum)
-        cdf_ys = [y / sum for y in cdf_ys]
-        cdf_xys[cdf_x] = [cdf_xs, cdf_ys]
-
-    return xs, ys, greyscale, cdf_xys
-
-
-def do_scatter(xs, ys, greyscale, fname):
+def do_scatter(xs, ys, title, fname):
     fig, ax = plt.subplots()
 
     fig.set_size_inches(8, 5.5)
 
-    ax.set_ylim(0, 20)
+    ax.set_ylim(-3, 15)
     ax.set_xlabel('sinking-point reported precision (bits)')
-    ax.set_ylabel('actual precision (bits)')
+    ax.set_ylabel('actual precision (bits accuracy)')
+    ax.set_title(title)
 
-    ax.scatter(xs, ys, s=100, color=greyscale)
+    ax.scatter(xs, ys, alpha=0.002)
 
     xlim = ax.get_xlim()
-    line = mlines.Line2D(xlim, xlim, color='red')
-    ax.add_line(line)
+    blackline = mlines.Line2D(xlim, xlim, color='black')
+    redline = mlines.Line2D(xlim, [y-1 for y in xlim], color='red')
+    ax.add_line(blackline)
+    ax.add_line(redline)
 
     fig.savefig(fname)
 
-
-def do_cdf(cdf_xys, fname):
+def do_cdf(xs, ys, title, fname, use_line2=False):
     fig, ax = plt.subplots()
+
+    #ax.set_xlim(-2, 2)
+    #ax.set_ylim(-0.1, 0.3)
 
     fig.set_size_inches(8, 5.5)
 
-    ax.set_xlabel('excess precision (bits)')
+    ax.set_xlabel('excess precision (bits accuracy)')
     ax.set_ylabel('fraction of results')
+    ax.set_title(title)
 
-    for x_name, (cdf_xs, cdf_ys) in cdf_xys.items():
+    cdfs = split_xs(xs, ys)
+
+    for x, ys2 in cdfs.items():
+        cdf_xs, cdf_ys = cdf([y - x for y in ys2])
         ax.plot(cdf_xs, cdf_ys)
 
-    fig.savefig(fname)
+    x_min, x_max = ax.get_xlim()
+    ref_x = np.linspace(x_min, x_max, 1000)
+    ref_y = [1 - (1) * (2**-x) for x in ref_x]
+    ref_y2 = [1 - (0.5) * (2**-x) for x in ref_x]
 
+    line = mlines.Line2D(ref_x, ref_y, color='black', linestyle='--', linewidth=1)
+    line2 = mlines.Line2D(ref_x, ref_y2, color='black', linestyle='-.', linewidth=1)
+    ax.add_line(line)
+    if use_line2:
+        ax.add_line(line2)
+
+    fig.savefig(fname)
 
 def make_figs():
     import matplotlib
@@ -341,21 +337,25 @@ def make_figs():
 
     erange = range(-14, 16)
     prange = range(1, 12)
-    reps = 10
-    nbits = 64
-    ctx = ctx128
+    nbits = 32
+    ctx = ctx64
 
-    for corename in ['add', 'sub', 'mul', 'div', 'sqrt']:
+    for corename in ['nop', 'add', 'sub', 'mul', 'div', 'sqrt']:
 
         core = cores[corename]
+
         if len(core.inputs) == 1:
-            data = sweep_core_1arg_multi(core, erange, prange, reps, nbits, ctx)
+            argiter = iter_1arg(erange, prange, 1000)
         else:
-            data = sweep_core_2arg_multi(core, erange, prange, reps, nbits, ctx)
+            argiter = iter_2arg(erange, prange, 3)
 
-        xs, ys, greyscale, cdf_xys = process_data(data)
+        if corename == 'sub':
+            line2 = True
+        else:
+            line2 = False
 
-        print('processed: {}'.format(len(xs)))
+        data = sweep_multi(core, argiter, nbits, ctx)
+        xs, ys = split_records(data, 0, 1)
 
-        do_scatter(xs, ys, greyscale, corename + '_scatter.pdf')
-        do_cdf(cdf_xys, corename + '_cdf.pdf')
+        do_scatter(xs, ys, 'accuracy for ' + corename, 'fig/' + corename + '_scatter.png')
+        do_cdf(xs, ys, 'excess precision for ' + corename, 'fig/' + corename + '_cdf.png', line2)
