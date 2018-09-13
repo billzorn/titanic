@@ -1,0 +1,22 @@
+{
+    "name": "titanfp",
+    "description": "web demo",
+    "license": "MIT",
+    "version": "0.0.3",
+    "dependencies": {
+        "jquery": "^3.3.1",
+        "brace": "^0.11.1",
+        "antlr4": "^4.7.1"
+    },
+    "devDependencies": {
+        "browserify": "^16.2.2",
+        "eslint": "^4.19.1",
+        "eslint-config-google": "^0.9.1",
+        "uglify-es": "^3.3.9",
+        "uglifyify": "^5.0.0"
+    },
+    "scripts": {
+        "build": "browserify -t uglifyify ./titanfp.js --standalone titanfp | uglifyjs -c > titanfp.min.js",
+        "build-debug": "browserify ./titanfp.js --standalone titanfp > titanfp.min.js"
+    }
+}
