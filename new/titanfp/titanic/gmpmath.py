@@ -245,17 +245,21 @@ def compute(opcode, *args, prec=53):
             emin=gmp.get_emin_min(),
             emax=gmp.get_emax_max(),
             subnormalize=False,
+            # in theory, we'd like to know about these...
             trap_underflow=True,
             trap_overflow=True,
+            # inexact and invalid operations should not be a problem
             trap_inexact=False,
             trap_invalid=False,
             trap_erange=False,
             trap_divzero=False,
-            trap_expbound=True,
+            # We'd really like to know about this as well, but it causes i.e.
+            #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
+            # I don't know if that behavior is more hilarious or annoying.
+            trap_expbound=False,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
-        print(inputs)
         result = op(*inputs)
 
     return mpfr_to_digital(result)
