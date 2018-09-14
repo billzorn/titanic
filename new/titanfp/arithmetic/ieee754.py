@@ -35,7 +35,7 @@ class Float(digital.Digital):
         return self._ctx
 
     def is_identical_to(self, other):
-        if isinstance(other, Float):
+        if isinstance(other, type(self)):
             return super().is_identical_to(other) and self.ctx.w == other.ctx.w and self.ctx.p == other.ctx.p
         else:
             return super().is_identical_to(other)
@@ -129,6 +129,16 @@ class Float(digital.Digital):
     def neg(self, ctx=None):
         ctx = self._select_context(self, ctx=ctx)
         result = gmpmath.compute(OP.neg, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def copysign(self, other, ctx=None):
+        ctx = self._select_context(self, other, ctx=ctx)
+        result = gmpmath.compute(OP.copysign, self, other, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=True)
+
+    def fabs(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.fabs, self, prec=ctx.p)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def fdim(self, other, ctx=None):
