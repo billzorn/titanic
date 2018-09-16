@@ -30,7 +30,7 @@ quadratic_herbified = fpcparser.compile1(
 
 quadratic_regime = fpcparser.compile1(
 """(FPCore (a b c)
- (/ 1 (* (+ (sqrt (- (* b b) (* c (* a 4)))) b) (/ 2 (/ (- 4) (/ 1 c))))))
+ (/ 1 (* (+ (sqrt (- (* b b) (* c (* a 4)))) b) (/ -1 (* 2 c)))))
 """)
 
 arguments = [

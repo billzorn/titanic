@@ -6,7 +6,7 @@ import pexpect
 from pexpect.replwrap import REPLWrapper
 
 from .integral import bitmask
-from .sinking import Sink
+from .digital import Digital
 from . import ops
 
 
@@ -49,7 +49,7 @@ def math_to_digital(digits):
     else:
         rc = 0
 
-    return Sink(
+    return Digital(
         negative=negative,
         c=c,
         exp=exp,
@@ -234,7 +234,7 @@ class MathRepl(object):
         # result_inexact = half > 0 or x > 0 or inexact
         # result_sided = True
 
-        # return Sink(c=sig,
+        # return Digital(c=sig,
         #             exp=target_n + 1,
         #             negative=negative,
         #             inexact=result_inexact,
@@ -255,4 +255,22 @@ def compute(opcode, *args, prec=54, repl=None):
 
     digits = repl.evaluate_to_digits(formula, prec=prec)
 
+    return math_to_digital(digits)
+
+def runmath(args_formula, *args, prec=53):
+    argnames, formstr = args_formula
+    if len(argnames) != len(args):
+        raise ValueError('argument number mismatch: got {}, {}'.format(repr(argnames), repr(args)))
+
+    withstr = ', '.join(name + ' = ' + digital_to_math(arg) for name, arg in zip(argnames, args))
+    
+    formula = 'With[{{{:s}}}, {:s}]'.format(withstr, formstr)
+
+    print(formula)
+    
+    if len(_repls) <= 0:
+        _repls.append(MathRepl())
+    repl = _repls[0]
+
+    digits = repl.evaluate_to_digits(formula, prec=prec+1)
     return math_to_digital(digits)

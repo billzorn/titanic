@@ -48,18 +48,21 @@ def compile(core, ctx=None):
 def translate(e, ctx, mangle_name):
     """Recursive expression evaluator, with much isinstance()."""
 
-    # Handle annotations for precision-specific computations.
-    if e.props:
-        local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
-    else:
-        local_ctx = ctx
+    # # Handle annotations for precision-specific computations.
+    # if e.props:
+    #     local_ctx = EvalCtx(w=ctx.w, p=ctx.p, props=e.props)
+    # else:
+    #     local_ctx = ctx
+
+    local_ctx = ctx
 
     # ValueExpr
 
     if isinstance(e, ast.Val):
         # this always rounds to some FP format, which may not be what you want
         # TODO
-        return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p).to_math()
+        #return sinking.Sink(e.value, min_n=local_ctx.n, max_p=local_ctx.p).to_math()
+        return e.value
 
     elif isinstance(e, ast.Var):
         return mangle_name(e.value)

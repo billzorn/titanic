@@ -353,6 +353,12 @@ def arith_sim(a, b):
     mpfr_a = digital_to_mpfr(a)
     mpfr_b = digital_to_mpfr(b)
 
+    if gmp.is_nan(mpfr_a) or gmp.is_nan(mpfr_b):
+        return float('nan')
+
+    if mpfr_a == mpfr_b:
+        return float('inf')
+    
     with gmp.context(
             precision=prec,
             emin=gmp.get_emin_min(),
@@ -361,9 +367,9 @@ def arith_sim(a, b):
             trap_overflow=True,
             trap_inexact=True,
             trap_invalid=True,
-            trap_erange=True,
+            trap_erange=False,
             trap_divzero=True,
-            trap_expbound=True
+            trap_expbound=False
     ):
         diff = abs(mpfr_a - mpfr_b)
 
@@ -375,9 +381,9 @@ def arith_sim(a, b):
             trap_overflow=True,
             trap_inexact=False,
             trap_invalid=True,
-            trap_erange=True,
-            trap_divzero=True,
-            trap_expbound=True
+            trap_erange=False,
+            trap_divzero=False,
+            trap_expbound=False
     ):
         reldiff = diff / min(abs(mpfr_a), abs(mpfr_b))
 
@@ -410,6 +416,9 @@ def geo_sim(a, b):
     mpfr_a = digital_to_mpfr(a)
     mpfr_b = digital_to_mpfr(b)
 
+    if gmp.is_nan(mpfr_a) or gmp.is_nan(mpfr_b):
+        return float('nan')
+
     if mpfr_a == 0 and mpfr_b == 0:
         return float('inf')
     elif mpfr_a == 0 or mpfr_b == 0:
@@ -424,8 +433,8 @@ def geo_sim(a, b):
             trap_inexact=False,
             trap_invalid=True,
             trap_erange=True,
-            trap_divzero=True,
-            trap_expbound=True
+            trap_divzero=False,
+            trap_expbound=False,
     ):
         ratio = mpfr_a / mpfr_b
         if ratio <= 0:
