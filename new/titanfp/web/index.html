@@ -40,8 +40,10 @@
             </header>
             <div style="padding-bottom:16px;">
               <select id="backend-select" style="width:100%;">
+                <option selected class="backend" value="ieee754">Interpret with IEEE 754 floats</option>
+                <option class="backend" value="posit">Interpret with Posits</option>
                 <option class="backend" value="native">Interpret with Python</option>
-                <option selected class="backend" value="np">Interpret with Numpy</option>
+                <option class="backend" value="np">Interpret with Numpy</option>
                 <option class="backend" value="softfloat">Interpret with SoftFloat</option>
                 <option class="backend" value="softposit">Interpret with SoftPosit</option>
                 <option class="backend" value="canonicalize">Canonicalize FPCore</option>
@@ -52,6 +54,19 @@
                 <option class="backend" value="core2js">Translate to JS</option>
                 <option class="backend" value="core2smtlib2">Translate to SMTLIB2</option>
               </select>
+              <div id="float-options">
+                <label for="float-w">w:</label>
+                <input id="float-w" class="code" style="width:3em;" name="w" type="number" min="2" max="32" value="11">
+                <label for="float-p">p:</label>
+                <input id="float-p" class="code" style="width:5em;" name="p" type="number" min="2" max="4096" value="53">
+              </div>
+              <div id="posit-options" style="display:none;">
+                <label for="posit-es">es:</label>
+                <input id="posit-es" class="code" style="width:3em;" name="es" type="number" min="0" max="32" value="4">
+                <label for="posit-nbits">nbits:</label>
+                <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="4096" value="64">
+              </div>
+
             </div>
             <div style="padding-bottom:16px;">
               <label for="args">Program Arguments</label>

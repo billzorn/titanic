@@ -16,6 +16,10 @@ function submit_core(editor) {
         'core' : editor.getValue(),
         'inputs' : $('#args').val(),
         'backend' : $('#backend-select').val(),
+        'w' : $('#float-w').val(),
+        'p' : $('#float-p').val(),
+        'es' : $('#posit-es').val(),
+        'nbits' : $('#posit-nbits').val(),
     });
 
     $.ajax({
@@ -29,7 +33,23 @@ function submit_core(editor) {
 
 function onBackend(x) {
     const selected = $('#backend-select').val();
+    switch(selected) {
+    case 'ieee754':
+        $('#float-options').css('display', '');
+        $('#posit-options').css('display', 'none');
+        break;
+    case 'posit':
+        $('#float-options').css('display', 'none');
+        $('#posit-options').css('display', '');
+        break;
+    default:
+        $('#float-options').css('display', 'none');
+        $('#posit-options').css('display', 'none');
+    }
+
     switch (selected) {
+    case 'ieee754':
+    case 'posit':
     case 'native':
     case 'np':
     case 'softfloat':

@@ -16,6 +16,7 @@ from .aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
 from ..fpbench import fpcparser
 from ..arithmetic import native, np
 from ..arithmetic import softfloat, softposit
+from ..arithmetic import ieee754, posit
 from ..arithmetic import canonicalize
 from ..arithmetic import evalctx
 
@@ -110,10 +111,10 @@ def demo_tool(success, output):
     else:
         return 'Error - tool subprocess returned nonzero value'
 
-def demo_arith(evaluator, arguments, core):
+def demo_arith(evaluator, arguments, core, ctx=None):
     if arguments is None:
         try:
-            return repr(evaluator(core))
+            return str(evaluator(core))
         except Exception:
             print('Exception in FPCore evaluation\n  evaluator={}\n  args={}\n  core={}'
                   .format(repr(evaluator), repr(arguments), core.sexp))
@@ -124,7 +125,7 @@ def demo_arith(evaluator, arguments, core):
         if len(inputs) != len(core.inputs):
             return 'Error - wrong number of arguments (core expects {:d})'.format(len(core.inputs))
         try:
-            return repr(evaluator(core, inputs))
+            return str(evaluator(core, inputs, ctx))
         except Exception:
             print('Exception in FPCore evaluation\n  evaluator={}\n  args={}\n  core={}'
                   .format(repr(evaluator), repr(arguments), core.sexp))
@@ -237,7 +238,13 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
                 try:
                     if core is not None:
                         backend = payload['backend']
-                        if backend == 'native':
+                        if backend == 'ieee754':
+                            ctx = ieee754.ieee_ctx(int(payload['w']), int(payload['p']))
+                            output = demo_arith(ieee754.Interpreter.interpret, payload['inputs'], core, ctx)
+                        elif backend == 'posit':
+                            ctx = posit.posit_ctx(int(payload['es']), int(payload['nbits']))
+                            output = demo_arith(posit.Interpreter.interpret, payload['inputs'], core, ctx)
+                        elif backend == 'native':
                             output = demo_arith(native.Interpreter.interpret, payload['inputs'], core)
                         elif backend == 'np':
                             output = demo_arith(np.Interpreter.interpret, payload['inputs'], core)
