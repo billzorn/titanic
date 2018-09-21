@@ -42,6 +42,7 @@
               <select id="backend-select" style="width:100%;">
                 <option selected class="backend" value="ieee754">Interpret with IEEE 754 floats</option>
                 <option class="backend" value="posit">Interpret with Posits</option>
+                <option class="backend" value="sink">Interpret with sinking-point</option>
                 <option class="backend" value="native">Interpret with Python</option>
                 <option class="backend" value="np">Interpret with Numpy</option>
                 <option class="backend" value="softfloat">Interpret with SoftFloat</option>
@@ -65,6 +66,8 @@
                 <input id="posit-es" class="code" style="width:3em;" name="es" type="number" min="0" max="32" value="4">
                 <label for="posit-nbits">nbits:</label>
                 <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="4096" value="64">
+                <br>
+                <p>NOTE: posit rounding is incorrect for some edge cases, such as 48.0 with es=0, nbits=8</p>
               </div>
 
             </div>

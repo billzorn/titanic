@@ -35,6 +35,7 @@ function onBackend(x) {
     const selected = $('#backend-select').val();
     switch(selected) {
     case 'ieee754':
+    case 'sink':
         $('#float-options').css('display', '');
         $('#posit-options').css('display', 'none');
         break;
@@ -50,6 +51,7 @@ function onBackend(x) {
     switch (selected) {
     case 'ieee754':
     case 'posit':
+    case 'sink':
     case 'native':
     case 'np':
     case 'softfloat':

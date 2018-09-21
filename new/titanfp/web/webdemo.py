@@ -17,6 +17,7 @@ from ..fpbench import fpcparser
 from ..arithmetic import native, np
 from ..arithmetic import softfloat, softposit
 from ..arithmetic import ieee754, posit
+from ..arithmetic import sinking
 from ..arithmetic import canonicalize
 from ..arithmetic import evalctx
 
@@ -238,7 +239,10 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
                 try:
                     if core is not None:
                         backend = payload['backend']
-                        if backend == 'ieee754':
+                        if backend == 'sink':
+                            ctx = ieee754.ieee_ctx(int(payload['w']), int(payload['p']))
+                            output = demo_arith(sinking.Interpreter.interpret, payload['inputs'], core, ctx)
+                        elif backend == 'ieee754':
                             ctx = ieee754.ieee_ctx(int(payload['w']), int(payload['p']))
                             output = demo_arith(ieee754.Interpreter.interpret, payload['inputs'], core, ctx)
                         elif backend == 'posit':
