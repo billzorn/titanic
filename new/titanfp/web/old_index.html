@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset="utf-8">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <title>Titanic</title>
+    <style type="text/css" media="screen">
+      #editor {
+      width: 100%;
+      height: 600px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+      font-size: 16px;
+      }
+      .backend {
+      font-family: Helvetica, Arial, sans; font-size: 16px;
+      }
+      .backend-rkt {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px;
+      }
+      button { font-family: Helvetica, Arial, sans; font-size: 16px; }
+      input { font-family: Helvetica, Arial, sans; font-size: 16px; }
+      label { font-family: Helvetica, Arial, sans; font-size: 16px; }
+      pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 16px; }
+
+      header { overflow: auto; display: block; font-family: Helvetica, Arial, sans; font-size: 16px;}
+      header img { float: left; margin-right: 48px; }
+      header h1 { font-size: 64px; margin: 0; padding-top: 20px; }
+    </style>
+    <script src="titanfp.min.js" type="text/javascript" charset="utf-8"></script>
+  </head>
+
+  <body>
+    <header>
+      <a href="/"><img width="128px" height="128px" src="piceberg_round.png" alt="Titanic logo"/></a>
+      <h1>Titanic</h1>
+      <p>FPCore editor and interpreter.</p>
+    </header>
+
+    <div id="editor">(FPCore (x)
+ :name "NMSE example 3.1"
+ :cite (hamming-1987 herbie-2015)
+ :fpbench-domain textbook
+ :precision binary32
+ :pre (&gt= x 0)
+ (- (sqrt (+ x 1)) (sqrt x)))</div>
+    <script>
+      var editor = titanfp.ace.edit("editor");
+      editor.setTheme("ace/theme/textmate");
+      editor.session.setMode("ace/mode/scheme");
+    </script>
+    <div>
+      <textarea id="args" rows="1" style="width:100%;">1.0e+6</textarea>
+      <br>
+      <span>
+        <label for="backend-select">Backend:</label>
+        <select id="backend-select">
+          <option class="backend" value="native">Python</option>
+          <option selected class="backend" value="np">Numpy</option>
+          <option class="backend" value="softfloat">SoftFloat</option>
+          <option class="backend" value="softposit">SoftPosit</option>
+          <option class="backend" value="canonicalize">Canonicalize</option>
+          <option class="backend" value="condense">Condense</option>
+          <option class="backend" value="minimize">Minimize</option>
+          <option class="backend-rkt" value="fpcore">fpcore</option>
+          <option class="backend-rkt" value="core2c">core2c</option>
+          <option class="backend-rkt" value="core2js">core2js</option>
+          <option class="backend-rkt" value="core2smtlib2">core2smtlib2</option>
+        </select>
+        <span class="backend-descr" id="descr-native" style="display:none"><label>FPCore interpreter in pure Python</label></span>
+        <span class="backend-descr" id="descr-np" style=""><label>FPCore interpreter using <a href="http://www.numpy.org/">Numpy</a></label></span>
+        <span class="backend-descr" id="descr-softfloat" style="display:none"><label>FPCore interpreter using <a href="https://github.com/ucb-bar/berkeley-softfloat-3">Berkeley Softfloat 3e</a></label></span>
+        <span class="backend-descr" id="descr-softposit" style="display:none"><label>FPCore interpreter using <a href="https://gitlab.com/cerlane/SoftPosit">SoftPosit</a></label></span>
+        <span class="backend-descr" id="descr-canonicalize" style="display:none"><label>FPCore Canonicalizer</label></span>
+        <span class="backend-descr" id="descr-condense" style="display:none"><label>FPCore Condenser</label></span>
+        <span class="backend-descr" id="descr-minimize" style="display:none"><label>FPCore Minimizer</label></span>
+        <span class="backend-descr" id="descr-fpcore" style="display:none"><label>FPBench reference FPCore interpreter</label></span>
+        <span class="backend-descr" id="descr-core2c" style="display:none"><label>FPBench FPCore to C compiler</label></span>
+        <span class="backend-descr" id="descr-core2js" style="display:none"><label>FPBench FPCore to JavaScript compiler</label></span>
+        <span class="backend-descr" id="descr-core2smtlib2" style="display:none"><label>FPBench FPCore to SMTLIB2 compiler</label></span>
+        <!-- <span class="backend-descr" id="descr-filter" style="display:none"><label>Filter FPCores from the FPBench benchmarks</label></span> -->
+      </span>
+
+      <!-- <label><input class="backend native" type="radio" name="backend" value="native" checked>Python native</label> -->
+      <!-- <label><input class="backend np" type="radio" name="backend" value="np">numpy</label> -->
+      <!-- &nbsp; -->
+      <!-- <span class="ieee754fmt"> -->
+      <!--   w: <input class="fmt wbits" type="number" name="w" value="11" min="2" style="width:3em;"> -->
+      <!--   p: <input class="fmt pbits" type="number" name="p" value="53" min="2" style="width:5em;"> -->
+      <!-- </span> -->
+      <!-- <span class="positfmt" style="display:none"> -->
+      <!--   nbits: <input class="fmt nbits" type="number" name="nbits" value="64" min="2" style="width:5em;"> -->
+      <!--   es: <input class="fmt es" type="number" name="es" value="4" min="0" style="width:3em;"> -->
+      <!-- </span> -->
+      <br> <br>
+      <button onclick="titanfp.submit_core(editor);">Submit FPCore</button>
+      <br> <br>
+      <pre class="result"></pre>
+    </div>
+    <script>titanfp.setup_page()</script>
+  </body>
+
+</html>

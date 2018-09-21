@@ -23,6 +23,8 @@ from ..arithmetic import evalctx
 here = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(here, 'index.html'), 'rb') as f:
     index = f.read()
+with open(os.path.join(here, 'titanic.css'), 'rb') as f:
+    css = f.read()
 with open(os.path.join(here, 'titanfp.min.js'), 'rb') as f:
     bundle = f.read()
 
@@ -189,6 +191,14 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
             )
             content = bundle
 
+        elif pr.path == '/titanic.css':
+            response = http.server.HTTPStatus.OK
+            msg = None
+            headers = (
+                ('Content-Type', 'text/css'),
+            )
+            content = css
+        
         else:
             response = http.server.HTTPStatus.OK
             msg = None
