@@ -12,7 +12,7 @@ from ..titanic import gmpmath
 softposit_precs = {
     (0, 8): Posit8,
     (1, 16): Posit16,
-    (3, 32): Posit32,
+    (2, 32): Posit32,
 }
 
 class Interpreter(interpreter.SimpleInterpreter):

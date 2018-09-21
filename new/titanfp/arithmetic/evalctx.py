@@ -177,7 +177,7 @@ class IEEECtx(EvalCtx):
 posit_esnbits = {}
 posit_esnbits.update((k, (0, 8)) for k in binary8_synonyms)
 posit_esnbits.update((k, (1, 16)) for k in binary16_synonyms)
-posit_esnbits.update((k, (3, 32)) for k in binary32_synonyms)
+posit_esnbits.update((k, (2, 32)) for k in binary32_synonyms)
 posit_esnbits.update((k, (4, 64)) for k in binary64_synonyms)
 posit_esnbits.update((k, (7, 128)) for k in binary128_synonyms)
 
@@ -188,8 +188,9 @@ class PositCtx(EvalCtx):
     es = 4
     nbits = 64
     u = 1 << es
-    emax = 1 << (nbits - 2)
+    emax = u * (nbits - 2)
     emin = -emax
+    p = nbits - 1
 
     def __init__(self, es=None, nbits=None, bindings=None, props=None):
         if bindings:
@@ -207,8 +208,9 @@ class PositCtx(EvalCtx):
         if nbits is not None:
             self.nbits = nbits
         self.u = 1 << self.es
-        self.emax = 1 << (self.nbits - 2)
+        self.emax = self.u * (self.nbits - 2)
         self.emin = -self.emax
+        self.p = self.nbits - 1
 
     def _update_props(self, props):
         if 'precision' in props:
@@ -220,8 +222,9 @@ class PositCtx(EvalCtx):
                 self.es = es
                 self.nbits = nbits
                 self.u = 1 << es
-                self.emax = 1 << (self.nbits - 2)
+                self.emax = self.u * (self.nbits - 2)
                 self.emin = -self.emax
+                self.p = self.nbits - 1
         self.props.update(props)
 
     def _import_fields(self, ctx):
@@ -230,6 +233,7 @@ class PositCtx(EvalCtx):
         self.u = ctx.u
         self.emax = ctx.emax
         self.emin = ctx.emin
+        self.p = ctx.p
 
     def __repr__(self):
         args = ['es=' + repr(self.es), 'nbits=' + repr(self.nbits)]

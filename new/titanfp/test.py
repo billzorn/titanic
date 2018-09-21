@@ -5,13 +5,14 @@ import random
 import math
 
 import numpy
+import sfpy
 
 from .arithmetic import evalctx
 from .arithmetic.canonicalize import Canonicalizer, Condenser
 from .arithmetic import native, np
 from .arithmetic import softfloat, softposit
-from .arithmetic import ieee754
-from .fpbench import fpcparser
+from .arithmetic import ieee754, posit
+from .fpbench import fpcparser, fpcast
 
 
 fpbench_root = '/home/bill/private/research/origin-FPBench'
@@ -80,24 +81,40 @@ def filter_cores(*args, benchmark_dir = fpbench_benchmarks):
 
     return stdout_data.decode('utf-8')
 
+def random_float(nbits):
+    if nbits == 64:
+        return float(sfpy.Float64(random.randint(0, 0xffffffffffffffff)))
+    elif nbits == 32:
+        return float(sfpy.Float32(random.randint(0, 0xffffffff)))
+    elif nbits == 16:
+        return float(sfpy.Float16(random.randint(0, 0xffff)))
+    else:
+        raise ValueError('nbits must be 64, 32, or 16, got: {}'.format(nbits))
 
-_r_f64_max = (1 << 64) - 1
-_r_f32_max = (1 << 32) - 1
-
-def random_float64():
-    bits = random.randint(1, _r_f64_max)
-    return float(numpy.frombuffer(bits.to_bytes(8, sys.byteorder),dtype=numpy.float64, count=1, offset=0))
-
-def random_float32():
-    bits = random.randint(1, _r_f32_max)
-    return float(numpy.frombuffer(bits.to_bytes(4, sys.byteorder),dtype=numpy.float32, count=1, offset=0))
-
+def random_posit(nbits):
+    if nbits == 32:
+        return float(sfpy.Posit32(random.randint(0, 0xffffffff)))
+    if nbits == 16:
+        return float(sfpy.Posit16(random.randint(0, 0xffff)))
+    if nbits == 8:
+        return float(sfpy.Posit8(random.randint(0, 0xff)))
+    else:
+        raise ValueError('nbits must be 32, 16, or 8, got: {}'.format(nbits))
 
 def type_to_precision(cores):
     for core in cores:
         if 'type' in core.props and 'precision' not in core.props:
             core.props['precision'] = core.props.pop('type')
 
+def strip_precision(cores):
+    for core in cores:
+        if 'type' in core.props or 'precision' in core.props:
+            core.props = core.props.copy()
+            if 'type' in core.props:
+                core.props.pop('type')
+            if 'precision' in core.props:
+                core.props.pop('precision')
+            
 
 def test_canon(core):
     ref = run_tool('canonicalizer.rkt', core)
@@ -141,9 +158,9 @@ def test_native_np(core):
         argctx = ctx.let(props=props)
         prec = str(argctx.props.get('precision', 'binary64')).strip().lower()
         if prec in evalctx.binary64_synonyms:
-            args.append(random_float64())
+            args.append(random_float(64))
         elif prec in evalctx.binary32_synonyms:
-            args.append(random_float32())
+            args.append(random_float(32))
             run_native = False
         else:
             return None
@@ -184,10 +201,10 @@ def test_np_softfloat_ieee754(core):
         np_argctx = npctx.let(props=props)
         prec = str(np_argctx.props.get('precision', 'binary64')).strip().lower()
         if prec in evalctx.binary64_synonyms:
-            args.append(random_float64())
+            args.append(random_float(64))
             run_posit = False
         elif prec in evalctx.binary32_synonyms:
-            args.append(random_float32())
+            args.append(random_float(32))
         else:
             return None
 
@@ -217,10 +234,58 @@ def test_np_softfloat_ieee754(core):
 
     return not isclose
 
+fctxs = [
+    evalctx.IEEECtx(props={'precision': fpcast.Var('binary64')}),
+    evalctx.IEEECtx(props={'precision': fpcast.Var('binary32')}),
+    evalctx.IEEECtx(props={'precision': fpcast.Var('binary16')}),
+]
 
+def test_float(core, ctx):
+    args = [random_float(ctx.w + ctx.p) for name, props in core.inputs]
+    sf_answer = float(softfloat.Interpreter.interpret(core, args, ctx=ctx))
+    ieee_answer = float(ieee754.Interpreter.interpret(core, args, ctx=ctx))
 
+    isexact = (math.isnan(sf_answer) and math.isnan(ieee_answer)) or sf_answer == ieee_answer
+    isclose = isexact or math.isclose(sf_answer, ieee_answer)
 
+    if not isclose:
+        print('failure on {}\n  {}\n  native={} vs. np={}'.format(
+            str(core.name), repr(args), repr(sf_answer), repr(ieee_answer),
+        ))
+    elif not isexact:
+        print('mismatch on {}\n  {}\n  native={} vs. np={}'.format(
+            str(core.name), repr(args), repr(sf_answer), repr(ieee_answer)
+        ))
 
+    return not isclose
+
+pctxs = [
+    evalctx.PositCtx(props={'precision': fpcast.Var('binary32')}),
+    evalctx.PositCtx(props={'precision': fpcast.Var('binary16')}),
+    evalctx.PositCtx(props={'precision': fpcast.Var('binary8')}),
+]
+
+def test_posit(core, ctx):
+    args = [random_posit(ctx.nbits) for name, props in core.inputs]
+    sp_answer = float(softposit.Interpreter.interpret(core, args, ctx=ctx))
+    posit_answer = float(posit.Interpreter.interpret(core, args, ctx=ctx))
+
+    isexact = (((math.isinf(sp_answer) or math.isnan(sp_answer))
+                and (math.isinf(posit_answer) or math.isnan(posit_answer)))
+               or sp_answer == posit_answer)
+    isclose = isexact or math.isclose(sp_answer, float(posit_answer))
+
+    if not isclose:
+        print('failure on {}\n  {}\n  native={} vs. np={}'.format(
+            str(core.name), repr(args), repr(sp_answer), repr(posit_answer),
+        ))
+    elif not isexact:
+        print('mismatch on {}\n  {}\n  native={} vs. np={}'.format(
+            str(core.name), repr(args), repr(sp_answer), repr(posit_answer)
+        ))
+
+    return not isclose
+        
 
 setup = """
 class A(object):
@@ -258,7 +323,7 @@ import timeit
 
 
 
-def run_test(test, cores, reps=10):
+def run_test(test, cores, reps=10, ctx=None):
     print('Running test {} on {:d} cores...'.format(repr(test), len(cores)))
     i = 0
     attempts = 0
@@ -269,7 +334,10 @@ def run_test(test, cores, reps=10):
             any_attempts = False
             any_fails = False
             for rep in range(reps):
-                attempt = test(core)
+                if ctx is None:
+                    attempt = test(core)
+                else:
+                    attempt = test(core, ctx)
                 any_attempts = any_attempts or (attempt is not None)
                 any_fails = any_fails or attempt
                 if attempt:
@@ -304,7 +372,14 @@ if __name__ == '__main__':
 
     print(len(smallcores), len(allcores))
 
+    barecores = fpcparser.compile(smalltext)
+    strip_precision(barecores)
+
     def go():
         #run_test(test_canon, allcores, reps=1)
         #run_test(test_native_np, allcores, reps=10)
-        run_test(test_np_softfloat_ieee754, smallcores, reps=1000)
+
+        for ctx in fctxs:
+            run_test(test_float, barecores, reps=3, ctx=ctx)
+        for ctx in pctxs:
+            run_test(test_posit, barecores, reps=3, ctx=ctx)
