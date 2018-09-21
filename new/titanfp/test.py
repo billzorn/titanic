@@ -114,7 +114,7 @@ def strip_precision(cores):
                 core.props.pop('type')
             if 'precision' in core.props:
                 core.props.pop('precision')
-            
+
 
 def test_canon(core):
     ref = run_tool('canonicalizer.rkt', core)
@@ -285,7 +285,7 @@ def test_posit(core, ctx):
         ))
 
     return not isclose
-        
+
 
 setup = """
 class A(object):
@@ -359,6 +359,53 @@ def run_test(test, cores, reps=10, ctx=None):
     print('\n...Done. {:d} attempts, {:d} failures.'.format(attempts, failures))
 
 
+def test_posit_conversion(es, nbits):
+    ptype = softposit.softposit_precs[(es, nbits)]
+    posit_values = [float(ptype(i)) for i in range(1 << nbits)]
+    posit_values.sort()
+
+    nearby_cases = set()
+    for a in posit_values:
+        nearby_cases.add(float(numpy.nextafter(a, -numpy.inf)))
+        nearby_cases.add(float(numpy.nextafter(a, numpy.inf)))
+
+    arithmetic_means = set()
+    geometric_means = set()
+    for a, b in zip(posit_values, posit_values[1:]):
+        mean = (a + b) / 2
+        arithmetic_means.add(float(mean))
+        nearby_cases.add(float(numpy.nextafter(mean, -numpy.inf)))
+        nearby_cases.add(float(numpy.nextafter(mean, numpy.inf)))
+
+        geomean = math.sqrt(a * b)
+        geometric_means.add(float(geomean))
+        nearby_cases.add(float(numpy.nextafter(geomean, -numpy.inf)))
+        nearby_cases.add(float(numpy.nextafter(geomean, numpy.inf)))
+
+    cases = set().union(posit_values, arithmetic_means, geometric_means, nearby_cases)
+    more_cases = set()
+
+    for case in cases:
+        more_cases.add(case)
+        more_cases.add(-case)
+        if case == 0.0:
+            more_cases.add(float('inf'))
+            more_cases.add(float('-inf'))
+        else:
+            more_cases.add(1/case)
+            more_cases.add(-1/case)
+
+    sorted_cases = sorted(more_cases)
+
+    print('{:d} test cases for rounding'.format(len(sorted_cases)))
+
+    for f in sorted_cases:
+        softposit_answer = ptype(f)
+        posit_answer = posit.Posit(f, ctx=posit.posit_ctx(es, nbits))
+
+        if not float(softposit_answer) == float(posit_answer):
+            print('case {}: {} != {}'.format(repr(f), str(softposit_answer), str(posit_answer)))
+
 if __name__ == '__main__':
     smalltext = filter_cores('operators', '+', '-', '*', '/', 'sqrt', 'nearbyint',
                              '<', '<=', '>', '>=', '==', '!=', 'fmin', 'fmax',
@@ -380,6 +427,6 @@ if __name__ == '__main__':
         #run_test(test_native_np, allcores, reps=10)
 
         for ctx in fctxs:
-            run_test(test_float, barecores, reps=3, ctx=ctx)
+            run_test(test_float, barecores, reps=50, ctx=ctx)
         for ctx in pctxs:
-            run_test(test_posit, barecores, reps=3, ctx=ctx)
+            run_test(test_posit, barecores, reps=50, ctx=ctx)

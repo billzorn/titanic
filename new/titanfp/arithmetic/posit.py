@@ -91,8 +91,16 @@ class Posit(mpnum.MPNum):
             return cls(isnan=True, ctx=ctx)
 
         else:
-            regime = max(abs(unrounded.e) - 1, 0) // ctx.u
-            sbits = ctx.nbits - 3 - ctx.es - regime
+            regime, e = divmod(unrounded.e, ctx.u)
+            if regime < 0:
+                rbits = -regime + 1
+            else:
+                rbits = regime + 2
+
+            sbits = ctx.nbits - 1 - rbits - ctx.es
+
+            # regime = max(abs(unrounded.e) - 1, 0) // ctx.u
+            # sbits = ctx.nbits - 3 - ctx.es - regime
 
             if sbits < -ctx.es:
                 # we are outside the representable range: return max / min
@@ -125,7 +133,7 @@ class Posit(mpnum.MPNum):
                     exp_inexact = True
                 else:
                     rc = unrounded.rc
-                    exp_inexact = x.inexact
+                    exp_inexact = unrounded.inexact
 
                 # We want to round on the geometric mean of the two numbers,
                 # but this is the same as rounding on the arithmetic mean of
