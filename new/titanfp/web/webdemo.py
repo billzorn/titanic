@@ -9,6 +9,7 @@ import multiprocessing
 import subprocess
 import http
 import html
+import urllib
 import argparse
 
 from .aserver import AsyncCache, AsyncTCPServer, AsyncHTTPRequestHandler
@@ -25,6 +26,10 @@ from ..arithmetic import evalctx
 here = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(here, 'index.html'), 'rb') as f:
     index = f.read()
+with open(os.path.join(here, 'evaluate.html'), 'rb') as f:
+    evaluate_page = f.read()
+with open(os.path.join(here, 'translate.html'), 'rb') as f:
+    translate_page = f.read()
 with open(os.path.join(here, 'titanic.css'), 'rb') as f:
     css = f.read()
 with open(os.path.join(here, 'titanfp.min.js'), 'rb') as f:
@@ -182,6 +187,10 @@ def demo_canon(evaluator, arguments, core, use_prop=False):
 
 class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
 
+    def import_core_from_query(self, content, query):
+        qd = urllib.parse.parse_qs(query)
+        return content.decode('utf-8').format(qd.get('core', [''])[-1]).encode('utf-8')
+    
     def construct_content(self, data):
         pr = self.translate_path()
 
@@ -204,7 +213,7 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
         else:
             response = http.server.HTTPStatus.OK
             msg = None
-
+            
             if data is None:
                 if pr.path == '/favicon.ico':
                     headers = (
@@ -216,7 +225,18 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
                         ('Content-Type', 'image/png'),
                     )
                     content = logo
+                elif pr.path == '/evaluate':
+                    headers = (
+                        ('Content-Type', 'text/html'),
+                    )
+                    content = self.import_core_from_query(evaluate_page, pr.query)
+                elif pr.path == '/translate':
+                    headers = (
+                        ('Content-Type', 'text/html'),
+                    )
+                    content = self.import_core_from_query(translate_page, pr.query)
                 else:
+                    print(pr)
                     headers = (
                         ('Content-Type', 'text/html'),
                     )

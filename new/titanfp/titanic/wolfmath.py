@@ -9,6 +9,52 @@ from .integral import bitmask
 from .digital import Digital
 from . import ops
 
+p4nb = """setpositenv[{n_Integer /; n >= 2, e_Integer /; e >= 0}] := 
+  ({nbits, es} = {n, e}; npat = 2^nbits; useed = 2^2^es; 
+   {minpos, maxpos} = {useed^(-nbits + 2), useed^(nbits - 2)}; 
+   qsize = 2^Ceiling[Log[2, (nbits - 2)*2^(es + 2) + 5]]; 
+   qextra = qsize - (nbits - 2)*2^(es + 2); );
+positQ[p_Integer] := Inequality[0, LessEqual, p, Less, npat];
+twoscomp[sign_, p_] := Mod[If[sign > 0, p, npat - p], npat];
+signbit[p_ /; positQ[p]] := IntegerDigits[p, 2, nbits][[1]];
+regimebits[p_ /; positQ[p]] := Module[{q = twoscomp[1 - signbit[p], p], bits, 
+    bit2, npower, tempbits}, bits = IntegerDigits[q, 2, nbits]; bit2 = bits[[2]]; 
+    tempbits = Join[Drop[bits, 1], {1 - bit2}]; 
+    npower = Position[tempbits, 1 - bit2, 1, 1][[1]] - 1; 
+    Take[bits, {2, Min[npower + 1, nbits]}]];
+regimevalue[bits_] := If[bits[[1]] == 1, Length[bits] - 1, -Length[bits]];
+exponentbits[p_ /; positQ[p]] := Module[{q = twoscomp[1 - signbit[p], p], bits, 
+    startbit}, startbit = Length[regimebits[q]] + 3; 
+    bits = IntegerDigits[q, 2, nbits]; If[startbit > nbits, {}, 
+     Take[bits, {startbit, Min[startbit + es - 1, nbits]}]]];
+fractionbits[p_ /; positQ[p]] := Module[{q = twoscomp[1 - signbit[p], p], bits, 
+    startbit}, startbit = Length[regimebits[q]] + 3 + es; 
+    bits = IntegerDigits[q, 2, nbits]; If[startbit > nbits, {}, 
+     Take[bits, {startbit, nbits}]]];
+p2x[p_ /; positQ[p]] := Module[{s = (-1)^signbit[p], 
+    k = regimevalue[regimebits[p]], e = exponentbits[p], f = fractionbits[p]}, 
+   e = Join[e, Table[0, es - Length[e]]]; e = FromDigits[e, 2]; 
+    If[f == {}, f = 1, f = 1 + FromDigits[f, 2]/2^Length[f]]; 
+    Which[p == 0, 0, p == npat/2, ComplexInfinity, True, s*useed^k*2^e*f]];
+positableQ[x_] := Abs[x] == Infinity || Element[x, Reals];
+x2p[x_ /; positableQ[x]] := Module[{i, p, e = 2^(es - 1), y = Abs[x]}, 
+   Which[y == 0, 0, y == Infinity, BitShiftLeft[1, nbits - 1], True, 
+    If[y >= 1, p = 1; i = 2; While[y >= useed && i < nbits, 
+        {p, y, i} = {2*p + 1, y/useed, i + 1}]; p = 2*p; i++, 
+      p = 0; i = 1; While[y < 1 && i <= nbits, {y, i} = {y*useed, i + 1}]; 
+       If[i >= nbits, p = 2; i = nbits + 1, p = 1; i++]]; 
+     While[e > 1/2 && i <= nbits, p = 2*p; If[y >= 2^e, y /= 2^e; p++]; e /= 2; 
+       i++]; y--; While[y > 0 && i <= nbits, y = 2*y; p = 2*p + Floor[y]; 
+       y -= Floor[y]; i++]; p *= 2^(nbits + 1 - i); i++; i = BitAnd[p, 1]; 
+     p = Floor[p/2]; p = Which[i == 0, p, y == 1 || y == 0, p + BitAnd[p, 1], 
+       True, p + 1]; Mod[If[x < 0, npat - p, p], npat]]];"""
+
+bdig = """bdigits[x_, n_] := With[{EXACT = x, SIMPLIFIED = Simplify[x]}, 
+   Which[SIMPLIFIED === Indeterminate, Indeterminate, 
+    Abs[SIMPLIFIED] == Infinity, Infinity, True, 
+    With[{DIGITS = RealDigits[EXACT, 2, n]}, 
+     With[{ROUNDED = FromDigits[DIGITS, 2], NEGATIVE = EXACT < 0}, 
+      {DIGITS, NEGATIVE, If[NEGATIVE, -ROUNDED != EXACT, ROUNDED != EXACT]}]]]];"""
 
 def digital_to_math(x):
     if x.isnan:
@@ -26,6 +72,11 @@ def digital_to_math(x):
 
 
 def math_to_digital(digits):
+    if digits == 'Infinity':
+        return Digital(inf=True)
+    elif digits == 'Indeterminate':
+        return Digital(nan=True)
+    
     m = _mathdigits.match(digits)
     if m is None:
         raise ValueError('unable to get digits, math returned:\n{}'.format(digits))
@@ -128,9 +179,12 @@ _digitsep = re.compile(r'[, ]')
 class MathRepl(object):
     def __init__(self, max_extra_precision = 100000):
         self.i = 1
-        self.repl = REPLWrapper('math -rawterm', _mathprompt(self.i), None)
+        self.log_f = open('mathlog.txt', 'wt')
+        P = pexpect.spawn('math -rawterm', encoding='ascii', logfile=self.log_f)
+        self.repl = REPLWrapper(P, _mathprompt(self.i), None)
         self.run('SetOptions["stdout", PageWidth -> Infinity]')
         self.run('$MaxExtraPrecision = {}'.format(max_extra_precision))
+        self.run(bdig)
 
     def __enter__(self):
         return self
@@ -141,14 +195,15 @@ class MathRepl(object):
     def run(self, cmd):
         self.i += 1
         self.repl.prompt = _mathprompt(self.i)
-        # print(cmd)
-        # print('--')
-        output = self.repl.run_command(cmd)
-        # print(output)
-        # print('==\n')
+        #print(cmd)
+        #print('--')
+        output = self.repl.run_command(cmd.replace('\n', ' ').replace('\r', ' '))
+        #print(output)
+        #print('==\n')
         prefmatch = _outprompt.search(output)
         if prefmatch is None:
-            raise ValueError('missing output prompt, got:\n{}'.format(output))
+            return None
+            #raise ValueError('missing output prompt, got:\n{}'.format(output))
         return output[prefmatch.end():].strip()
 
     def exit_repl(self):
@@ -158,12 +213,13 @@ class MathRepl(object):
             pass
         else:
             print('failed to exit math, got:{}'.format(output))
+        self.log_f.close()
 
     def evaluate_to_digits(self, expr, prec=54):
         if len(expr) <= 0:
             raise ValueError('cannot evaluate empty expression')
 
-        cmd = 'With[{{EXACT = {:s}}}, With[{{DIGITS = RealDigits[EXACT, 2, {:d}]}}, With[{{ROUNDED = FromDigits[DIGITS, 2], NEGATIVE = EXACT < 0}}, {{DIGITS, NEGATIVE, If[NEGATIVE, -ROUNDED != EXACT, ROUNDED != EXACT]}}]]]'.format(expr, prec)
+        cmd = 'bdigits[{:s}, {:d}]'.format(expr, prec)
         output = self.run(cmd)
 
         return output

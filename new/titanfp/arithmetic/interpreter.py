@@ -171,7 +171,19 @@ class Evaluator(object):
         # if cls.evals & 0xfffff == 0xfffff:
         #     print(',', end='', flush=True)
 
+
+        # result = method(e, ctx)
+        # print(repr(method))
+        # print(str(e))
+        # print(str(ctx.bindings))
+        # print(' ->', str(result))
+        # print()
+
+        # return result
+    
+        
         return method(e, ctx)
+        
 
 
 class BaseInterpreter(Evaluator):

@@ -16,14 +16,7 @@
         <div class="columns">
 
           <main class="left">
-            <div id="editor">(FPCore (x)
- :name "NMSE example 3.1"
- :cite (hamming-1987 herbie-2015)
- :fpbench-domain textbook
- :precision binary32
- :pre (&gt= x 0)
- (- (sqrt (+ x 1)) (sqrt x)))
-</div>
+            <div id="editor">{}</div>
             <script>
               var editor = titanfp.ace.edit("editor");
               editor.setTheme("ace/theme/textmate");
@@ -36,26 +29,28 @@
           <aside class="right">
             <header style="padding-bottom:32px;">
               <a href="/"><img style="float:left; margin-right:12px;" width="24px" height="24px" src="piceberg_round.png" alt="logo"/></a>
-              <h1 class="noborder" style="font-size:24px;">Titanic</h1>
+              <h1 class="noborder" style="font-size:24px;">Titanic translator</h1>
+              <button id="evaluate_btn" onclick="window.location.href = '/evaluate?core=' + encodeURIComponent(editor.getValue());">Evaluate Cores</button>
             </header>
             <div style="padding-bottom:16px;">
               <select id="backend-select" style="width:100%;">
-                <option selected class="backend" value="ieee754">Interpret with IEEE 754 floats</option>
-                <option class="backend" value="posit">Interpret with Posits</option>
-                <option class="backend" value="sink">Interpret with sinking-point</option>
-                <option class="backend" value="native">Interpret with Python</option>
-                <option class="backend" value="np">Interpret with Numpy</option>
-                <option class="backend" value="softfloat">Interpret with SoftFloat</option>
-                <option class="backend" value="softposit">Interpret with SoftPosit</option>
+                <!-- <option class="backend" value="ieee754">Interpret with IEEE 754 floats</option> -->
+                <!-- <option class="backend" value="posit">Interpret with Posits</option> -->
+                <!-- <option class="backend" value="sink">Interpret with sinking-point</option> -->
+                <!-- <option class="backend" value="native">Interpret with Python</option> -->
+                <!-- <option class="backend" value="np">Interpret with Numpy</option> -->
+                <!-- <option class="backend" value="softfloat">Interpret with SoftFloat</option> -->
+                <!-- <option class="backend" value="softposit">Interpret with SoftPosit</option> -->
+                <!-- <option class="backend" value="fpcore">Interpret with reference interpreter</option> -->
+                
+                <option selected class="backend" value="core2c">Translate to C</option>
+                <option class="backend" value="core2js">Translate to JS</option>
+                <option class="backend" value="core2smtlib2">Translate to SMTLIB2</option>
                 <option class="backend" value="canonicalize">Canonicalize FPCore</option>
                 <option class="backend" value="condense">Condense FPCore</option>
                 <option class="backend" value="minimize">Minimize FPCore</option>
-                <option class="backend" value="fpcore">Interpret with reference interpreter</option>
-                <option class="backend" value="core2c">Translate to C</option>
-                <option class="backend" value="core2js">Translate to JS</option>
-                <option class="backend" value="core2smtlib2">Translate to SMTLIB2</option>
               </select>
-              <div id="float-options">
+              <div id="float-options" style="display:none;">
                 <label for="float-w">w:</label>
                 <input id="float-w" class="code" style="width:3em;" name="w" type="number" min="2" max="32" value="11">
                 <label for="float-p">p:</label>
@@ -76,7 +71,7 @@
               <textarea id="args" class="code" rows="5" style="width:294px; resize:vertical;"></textarea>
             </div>
             <div style="padding-bottom:32px;">
-              <button id="submit_btn" onclick="titanfp.submit_core(editor);">Interpret FPCore</button>
+              <button id="submit_btn" onclick="titanfp.submit_core(editor);">Translate FPCore</button>
             </div>
             <pre id="result" style="white-space:pre-wrap; word-break:break-word;"></pre>
           </aside>

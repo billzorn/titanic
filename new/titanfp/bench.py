@@ -2,6 +2,8 @@ import random
 import math
 import itertools
 import multiprocessing
+import subprocess
+import os
 
 import numpy as np
 
@@ -13,6 +15,33 @@ from .titanic import digital
 
 from .titanic import gmpmath
 from .titanic import wolfmath
+
+
+fpbench_root = '/home/bill/private/research/origin-FPBench'
+fpbench_tools = os.path.join(fpbench_root, 'tools')
+fpbench_benchmarks = os.path.join(fpbench_root, 'benchmarks')
+
+def run_tool(toolname, core, *args):
+    tool = subprocess.Popen(
+        args=['racket', os.path.join(fpbench_tools, toolname), *args],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout_data, stderr_data = tool.communicate(input=core.sexp.encode('utf-8'))
+
+    success = True
+    retval = tool.wait()
+    if retval != 0:
+        success = False
+        print('subprocess:\n  {}\nreturned {:d}'.format(' '.join(tool.args), retval),
+              file=sys.stderr, flush=True)
+
+    if stderr_data:
+        print(stderr_data, file=sys.stderr, flush=True)
+
+    return success, stdout_data.decode('utf-8')
+
 
 
 def gen_input(e, p, nbits, negative=False):
@@ -467,7 +496,18 @@ corenames = [
 ]
 corenames += ['herbified_' + name for name in corenames]
 
+maths = {corename: run_tool('core2wls.rkt', cores[corename]) for corename in corenames}
 
+
+repl = wolfmath.MathRepl()
+def get_exact_answer(corename, args):
+    mathfn = maths[corename][1]
+
+    expr = 'Block[{}, ' + mathfn + '; ex0[' + ', '.join([wolfmath.digital_to_math(ieee754.Float(arg)) for arg in args]) + ']]'
+
+    text_result = repl.evaluate_to_digits(expr)
+
+    return wolfmath.math_to_digital(text_result)
 
 
 def gen_random_double_arguments(core):
@@ -493,9 +533,20 @@ def run_example(corename, n):
 
         exactish_result = ieee754.Interpreter.interpret(core, rargs, ctx=ctx512)
         sinking_result = sinking.Interpreter.interpret(core, rargs, ctx=ctx_double)
+        exact_result = get_exact_answer(corename, rargs)
 
         bits_acc = gmpmath.geo_sim(exactish_result, sinking_result)
+        exact_acc = gmpmath.geo_sim(exact_result, sinking_result)
 
+        print(sinking_result)
+        print(exactish_result)
+        print(exact_result)
+
+        print('exactish acc: {}'.format(bits_acc))
+        print('exact acc: {}'.format(exact_acc))
+        print('sinking precision: {}'.format(sinking_result.p))
+        print('\n\n')
+        
         if math.isnan(bits_acc):
             rejects += 1
         else:
@@ -506,11 +557,11 @@ def run_example(corename, n):
             total_bits_acc += bits_acc
             total_sink_acc += (bits_acc - sinking_result.p)
 
-    print('{}: {:d} trials with {:d} rejections'.format(corename, n, rejects))
+    print('{}: {:d} trials with {:d} rejections\n\n'.format(corename, n, rejects))
     successes = n - rejects
     return total_sink_prec / successes, total_bits_acc / successes, total_sink_acc / successes
 
 def make_table():
     for name in corenames:
-        sink_prec, bits_acc, sink_acc = run_example(name, 10000)
+        sink_prec, bits_acc, sink_acc = run_example(name, 5)
         print(repr(sink_prec), repr(bits_acc), repr(sink_acc))

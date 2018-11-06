@@ -62,8 +62,19 @@ button {
     flex: 1;
 }
 
+/* .splitter { */
+/*     flex: 0 auto; */
+/*     width: 16px; */
+/*     background: url(https://raw.githubusercontent.com/RickStrahl/jquery-resizable/master/assets/vsizegrip.png) center center no-repeat #aaaaaa; */
+/*     cursor: col-resize; */
+/* } */
+
+.splitter {
+    width: 16px;
+}
+
 .right {
-    width: 300px;
+    flex: 1;
 }
 
 .spacer {

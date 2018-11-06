@@ -406,6 +406,7 @@ def test_posit_conversion(es, nbits):
         if not float(softposit_answer) == float(posit_answer):
             print('case {}: {} != {}'.format(repr(f), str(softposit_answer), str(posit_answer)))
 
+
 if __name__ == '__main__':
     smalltext = filter_cores('operators', '+', '-', '*', '/', 'sqrt', 'nearbyint',
                              '<', '<=', '>', '>=', '==', '!=', 'fmin', 'fmax',

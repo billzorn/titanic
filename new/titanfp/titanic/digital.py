@@ -390,10 +390,9 @@ class Digital(object):
             else:
                 # If the number is exact, then we can always extend with zeros. This is independent
                 # of the rounding mode.
-                # If we're not strict, keep the old rc and inexactness (even though we will make
-                # the rounding envelope look smaller than it should be, that way we won't lose
-                # info about which side we were on).
-                return type(self)(self, c=self.c << -offset, exp=self.exp + offset)
+                # Shrinking the envelope invalidates the rc, so set it to 0. We know longer
+                # know anything useful.
+                return type(self)(self, c=self.c << -offset, exp=self.exp + offset, rc=0)
 
         # Break up the significand
         lost_bits = self.c & bitmask(offset)

@@ -4,6 +4,7 @@ require('brace/mode/scheme');
 exports.ace = ace;
 
 const $ = require('jquery');
+require('jquery-resizable-dom');
 exports.$ = $;
 
 function handle_result(data) {
@@ -80,6 +81,10 @@ function onBackend(x) {
 
 function setup_page() {
     $("#backend-select").on("change", onBackend);
+    $(".left").resizable({
+        handleSelector: ".splitter",
+        resizeHeight: false
+    });
 }
 
 exports.submit_core = submit_core;
