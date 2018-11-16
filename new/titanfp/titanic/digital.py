@@ -471,3 +471,204 @@ class Digital(object):
             raise ValueError('unimplemented: round to previous')
 
         return type(self)(self, c=c, exp=exp, inexact=inexact, rc=rc)
+
+
+    # Rounding is hard. We can break it up into 3 phases:
+    #  - determine the target p and n, and split up the input
+    #  - determine which direction to round
+    #  - actually apply the rounding
+
+    # The first and last phases are independent of the "rounding mode"
+
+    def _round_setup(max_p, min_n=None, ext_fn=None, strict=True):
+        """Determine p and n, and split the significand accordingly.
+        Will fail for any inf or nan, as these non-numbers cannot be rounded.
+        If strict is True, will fail if the split cannot be performed precisely.
+        """
+
+        if self.isinf or self.isnan:
+            raise ValueError('cannot round non-number: {}'.format(repr(self)))
+
+        if min_n is None:
+            n = self.e - max_p
+        else:
+            n = max(min_n, self.e - max_p)
+
+        offset = n - self.n
+
+        if offset < 0:
+            if strict and self.inexact:
+                raise PrecisionError('cannot precisely split {} at p={}, n={}'.format(repr(self), repr(max_p), repr(min_n)))
+            else:
+                if ext_fn is None:
+                    # extend with zeros
+                    left_bits = self.c << -offset
+                    lost_bits = 0
+                    # extension always blows away the return code
+                    rc = 0
+                else:
+                    raise ValueError('unsupported: ext_fn = {}'.format(repr(ext_fn)))
+
+        elif offset == 0:
+            left_bits = self.c
+            lost_bits = 0
+
+            if self.inexact:
+                rc = self.rc
+            else:
+                # ignore rc if the value is exact
+                rc = 0
+
+        else: # offset > 0
+            left_bits = self.c >> offset
+            lost_bits = self.c & bitmask(offset)
+
+            if self.inexact:
+                rc = self.rc
+            else:
+                # again, zero the rc if exact
+                rc = 0
+
+        return max_p, n, offset, left_bits, lost_bits, half_bit, low_bits, rc
+
+
+    _TOWARD_ZERO = 0
+    _AWAY_ZERO = 1
+    _TO_EVEN = 2
+
+    _ROUND_DOWN = -1
+    _TRUNCATE = 0
+    _ROUND_AWAY = 1
+
+    def _round_direction(offset, left_bits, lost_bits, rc,
+                         nearest=True, mode=_TO_EVEN, strict=True):
+        """Determine which direction to round, based on two criteria:"
+            - nearest, which determines if we should round to nearest when possible,
+            - mode, which determines which way to break ties if rounding to nearest,
+              or which direction to round in general otherwise.
+        The _TO_EVEN mode is only supported when rounding to nearest.
+        If strict is True, will fail if the direction cannot be determined precisely,
+        i.e. if an inexact number on a boundary is given without a return code.
+        """
+
+        if offset <= 0:
+            half_bit == 0
+            low_bits == 0
+        else:
+            offset_m1 = offset - 1
+            half_bit = lost_bits >> offset_m1
+            low_bits = lost_bits & bitmask(offset_m1)
+
+        if nearest:
+            if half_bit == 0:
+                return Digital._TRUNCATE
+            else:
+                if low_bits != 0:
+                    return Digital._ROUND_AWAY
+                else:
+                    # note that if the number is exact, it must have rc 0
+                    elif rc < 0:
+                        return Digital._TRUNCATE
+                    if rc > 0:
+                        return Digital._ROUND_AWAY
+                    else: # rc == 0
+                        if strict and self.inexact:
+                            raise ValueError('unable to determine which way to round at this precision')
+                        # break tie
+                        if mode == Digital._TOWARD_ZERO:
+                            return Digital._TRUNCATE
+                        elif mode == Digital._AWAY_ZERO:
+                            return Digital._ROUND_AWAY
+                        elif mode == Digital._TO_EVEN:
+                            if left_bits & 1 == 0:
+                                return Digital._TRUNCATE
+                            else:
+                                return Digital._ROUND_AWAY
+                        else:
+                            raise ValueError('Unknown rounding mode {}'.format(mode))
+
+        else:
+            if mode == Digital._TOWARD_ZERO:
+                if lost_bits == 0:
+                    # again, if the number is exact, then this rc is 0
+                    if rc < 0:
+                        # special case: this number was rounded away from zero, but now we want to
+                        # round it toward zero, so undo the previous rounding by actually subtracting
+                        return Digital._ROUND_DOWN
+                    elif rc > 0:
+                        return Digital._TRUNCATE
+                    else: # rc == 0
+                        if strict and self.inexact:
+                            raise ValueError('unable to determine which way to round at this precision')
+                        # assume exact case: just keep this number
+                        return Digital._TRUNCATE
+                else:
+                    return Digital._TRUNCATE
+
+            elif mode == Digital._AWAY_ZERO:
+                if lost_bits == 0:
+                    # if the number is exact, then rc must be 0, blah blah blah
+                    if rc < 0:
+                        # we rounded away to get here; keep it
+                        return Digital._TRUNCATE
+                    elif rc > 0:
+                        return Digital._ROUND_AWAY
+                    else: # rc == 0
+                        if strict and self.inexact:
+                            raise ValueError('unable to determine which way to round at this precision')
+                        # assume exact case: just keep this number
+                        return Digital._TRUNCATE
+                else:
+                    return Digital._ROUND_AWAY
+
+            elif mode == Digital._TO_EVEN:
+                raise ValueError('unsupported: nearest={}, mode={}'.format(nearest, mode))
+
+            else:
+                raise ValueError('Unknown rounding mode {}'.format(mode))
+
+
+    def _round_apply(max_p, offset, left_bits, lost_bits, rc,
+                     direction):
+        """Apply a rounding direction, to produce a rounded result.
+        Will fail if an attempt is made to _ROUND_DOWN zero; this direction should
+        never be attempted in practice, as a zero cannot be computed with a
+        negative return code (i.e. we can't have an inexact zero such that the
+        true result was actually smaller than it).
+        """
+
+        c = left_bits
+        exp = self.exp + offset
+
+        if direction == Digital._ROUND_AWAY:
+            c += 1
+            if c.bit_length() > max_p:
+                # we carried: shift over to preserve p
+                c >>= 1
+                exp += 1
+            new_rc = -1
+
+        elif direction == Digital._TRUNCATE:
+            if lost_bits != 0:
+                new_rc = 1
+            else:
+                new_rc = rc
+
+
+        elif direction == Digital._ROUND_DOWN:
+            if c == 0:
+                raise ValueError('cannot round zero down')
+
+            c -= 1
+            if c.bit_length() < max_p:
+                # we borrowed: shift back to preserve p
+                c <<= 1
+                exp -= 1
+            new_rc = 1
+
+        else:
+            raise ValueError('Unknown direction {}'.format(direction))
+
+        inexact = self.inexact or (rc != 0)
+
+        return type(self)(self, c=c, exp=exp, inexact=inexact, rc=new_rc)
