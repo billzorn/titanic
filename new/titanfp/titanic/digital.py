@@ -516,12 +516,81 @@ class Digital(object):
         if self.isinf or self.isnan:
             raise ValueError('cannot round something that does not have a real value: {}'.format(repr(self)))
 
+        # compute offset
+
         if min_n is None:
             n = self.e - max_p
         else:
             n = max(min_n, self.e - max_p)
 
         offset = n - self.n
+
+        # Convert from envelope full / down / closed flags
+        # to half bit / low bit, before shifting the significand.
+        # This will be processed based on the offset later.
+
+        c = self.c
+
+        if self.inexact:
+
+            if self.interval_full:
+                known_half_bit = False
+                half_bit = 0
+
+                if self.interval_down:
+                    if c == 0:
+                        raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
+                    else:
+                        c -= 1
+
+                    if self.interval_closed:
+                        # Closed intervals only occur when we round a point exactly on the border;
+                        # here, we have rounded an exact value away to the next representable value.
+                        # Note that this situation will never be produced by typical
+                        # IEEE 754 rounding modes.
+                        low_bit = 0
+                    else: # not self.interval_closed
+                        low_bit = 1
+
+                else: # not self.interval_down
+                    if self.interval_closed:
+                        # We rounded an exact value towards zero, somehow.
+                        c += 1
+                        low_bit = 0
+                    else: # not self.interval_closed
+                        low_bit = 1
+
+            else: # not self.interval_full
+                known_half_bit = True
+
+                if self.interval_down:
+                    if c == 0:
+                        raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
+                    else:
+                        c -= 1
+
+                    if self.interval_closed:
+                        half_bit = 1
+                        low_bit = 0
+                    else: # not self.interval_closed
+                        half_bit = 1
+                        low_bit = 1
+
+                else: # not self.interval_down
+                    if self.interval_closed:
+                        half_bit = 1
+                        low_bit = 0
+                    else:
+                        half_bit = 0
+                        low_bit = 1
+
+        else: # not self.inexact
+            known_half_bit = True
+            half_bit = 0
+            low_bit = 0
+
+
+
 
         if offset < 0:
             if strict and self.inexact:
@@ -542,14 +611,14 @@ class Digital(object):
         elif offset == 0:
             left_bits = self.c
             lost_bits = 0
-            
+
             # since we didn't lose any bits, try to recover low bits from the envelope
             if self.inexact:
-                
+
                 if self.interval_full:
                     known_half_bit = False
                     half_bit = 0
-                    
+
                     if self.interval_down:
                         if left_bits == 0:
                             raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
@@ -577,7 +646,7 @@ class Digital(object):
 
                     if self.interval_down:
                         known_half_bit = True
-                        
+
                         if left_bits == 0:
                             raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
                         else:
@@ -603,14 +672,15 @@ class Digital(object):
             else: # not self.inexact
                 known_half_bit = True
                 half_bit = 0
-                low_bit = 0            
+                low_bit = 0
 
         else: # offset > 0
             left_bits = self.c >> offset
             lost_bits = self.c & bitmask(offset)
 
-            
-            
+            if offset == 1:
+                half_bit
+
             if self.inexact:
                 rc = self.rc
             else:
