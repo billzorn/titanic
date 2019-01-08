@@ -100,11 +100,10 @@ class Digital(object):
     # 0 if value is exact, -1 if it was rounded away, 1 if was rounded toward zero.
     _rc: int = 0
 
-    # # rounding envelope
-    # _interval_full : bool = False
-    # _interval_sided : bool = False
-    # _interval_open_top : bool = False
-    # _interval_open_bottom : bool = False
+    # rounding envelope
+    _interval_full: bool = False
+    _interval_down: bool = False
+    _interval_closed: bool = False
 
     @property
     def inexact(self):
@@ -119,36 +118,39 @@ class Digital(object):
         If the rc is 1, this value was computed inexactly, and rounded away from zero.
         I.e. if the exact magnitude should be (c * base**exp) + (epsilon < base**n),
         then the rc gives the sign of the epsilon, or 0 if the epsilon is 0.
+        This is now being replaced with the 3 interval flags.
         """
         return self._rc
 
-    # @property
-    # def interval_full(self):
-    #     """Does the rounding envelope for this number extend a full ulp
-    #     on each side? (if False, it is a half ulp)
-    #     """
-    #     return self._interval_full
+    @property
+    def interval_full(self):
+        """Size of the rounding envelope.
+        If True, then rounding was not to nearest, i.e. the interval covers
+        the full space between this number and the next one with the same precision.
+        If False, then rounding was to nearest, so the half bit can be recovered
+        with certainty.
+        """
+        return self._interval_full
 
-    # @property
-    # def interval_sided(self):
-    #     """Does the rounding envelope only extend away from zero?
-    #     (if False, it is symmetric on both sides)
-    #     """
-    #     return self._interval_sided
+    @property
+    def interval_down(self):
+        """Direction of the rounding envelope.
+        If True, then the interval points towards zero, i.e. this value is an
+        upper bound on the true magnitude.
+        If False, then the interval points away from zero.
+        """
+        return self._interval_down
 
-    # @property
-    # def interval_open_top(self):
-    #     """Is the top of the rounding envelope exclusive?
-    #     (if False, it is inclusive, or closed)
-    #     """
-    #     return self._interval_open_top
+    @property
+    def interval_closed(self):
+        """A proxy for the half bit.
+        If true, then the interval includes the opposite endpoint.
+        This isn't used for proper interval logic, but rather as a way to track
+        round-nearest behavior in cases where a result exactly between two
+        representable numbers has to be rounded, without losing information.
+        """
+        return self._interval_closed
 
-    # @property
-    # def interval_open_bottom(self):
-    #     """Is the bottom of the rounding envelope exclusive?
-    #     (if False, it is inclusive, or closed)
-    #     """
-    #     return self._interval_open_bottom
 
     def is_exactly_zero(self):
         return self._c == 0 and not self._inexact
@@ -168,10 +170,9 @@ class Digital(object):
             and self._isnan == other._isnan
             and self._inexact == other._inexact
             and self._rc == other._rc
-            # and self._interval_full == other._interval_full
-            # and self._interval_sided == other._interval_sided
-            # and self._interval_open_top == other._interval_open_top
-            # and self._interval_open_bottom == other._interval_open_bottom
+            and self._interval_full == other._interval_full
+            and self._interval_down == other._interval_down
+            and self._interval_closed == other._interval_closed
         )
 
     def __init__(self,
@@ -184,7 +185,10 @@ class Digital(object):
                  isinf=None,
                  isnan=None,
                  inexact=None,
-                 rc=None
+                 rc=None,
+                 interval_full=None,
+                 interval_down=None,
+                 interval_closed=None,
     ):
         """Create a new digital number. The first argument, "x", is a base number
         to clone and update, otherwise the default values will be used.
@@ -267,10 +271,33 @@ class Digital(object):
         else:
             self._rc = type(self)._rc
 
+        # interval stuff
+        if interval_full is not None:
+            self._interval_full = interval_full
+        elif x is not None:
+            self._interval_full = x._interval_full
+        else:
+            self._interval_full = type(self)._interval_full
+
+        if interval_down is not None:
+            self._interval_down = interval_down
+        elif x is not None:
+            self._interval_down = x._interval_down
+        else:
+            self._interval_down = type(self)._interval_down
+
+        if interval_closed is not None:
+            self._interval_closed = interval_closed
+        elif x is not None:
+            self._interval_closed = x._interval_closed
+        else:
+            self._interval_closed = type(self)._interval_closed
+
     def __repr__(self):
-        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={})'.format(
+        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, interval_full={}, interval_down={}, interval_closed={})'.format(
             type(self).__name__, repr(self._negative), repr(self._c), repr(self._exp),
-            repr(self._inexact), repr(self._rc), repr(self._isinf), repr(self._isnan)
+            repr(self._inexact), repr(self._rc), repr(self._isinf), repr(self._isnan),
+            repr(self._interval_full), repr(self._interval_down), repr(self._interval_closed),
         )
 
     def __str__(self):
@@ -482,12 +509,12 @@ class Digital(object):
 
     def _round_setup(max_p, min_n=None, ext_fn=None, strict=True):
         """Determine p and n, and split the significand accordingly.
-        Will fail for any inf or nan, as these non-numbers cannot be rounded.
+        Will fail for any inf or nan, as these non-real values cannot be rounded.
         If strict is True, will fail if the split cannot be performed precisely.
         """
 
         if self.isinf or self.isnan:
-            raise ValueError('cannot round non-number: {}'.format(repr(self)))
+            raise ValueError('cannot round something that does not have a real value: {}'.format(repr(self)))
 
         if min_n is None:
             n = self.e - max_p
@@ -503,26 +530,87 @@ class Digital(object):
                 if ext_fn is None:
                     # extend with zeros
                     left_bits = self.c << -offset
+                    # no bits are lost
                     lost_bits = 0
-                    # extension always blows away the return code
-                    rc = 0
+                    # all envelope information is destroyed, so we will always end up creating an exact value
+                    known_half_bit = True
+                    half_bit = 0
+                    low_bit = 0
                 else:
-                    raise ValueError('unsupported: ext_fn = {}'.format(repr(ext_fn)))
+                    raise ValueError('unsupported: ext_fn={}'.format(repr(ext_fn)))
 
         elif offset == 0:
             left_bits = self.c
             lost_bits = 0
-
+            
+            # since we didn't lose any bits, try to recover low bits from the envelope
             if self.inexact:
-                rc = self.rc
-            else:
-                # ignore rc if the value is exact
-                rc = 0
+                
+                if self.interval_full:
+                    known_half_bit = False
+                    half_bit = 0
+                    
+                    if self.interval_down:
+                        if left_bits == 0:
+                            raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
+                        else:
+                            left_bits -= 1
+
+                        if self.interval_closed:
+                            # Closed intervals only occur when we round a point exactly on the border;
+                            # here, we have rounded an exact value away to the next representable value.
+                            # Note that this situation will never be produced by typical
+                            # IEEE 754 rounding modes.
+                            low_bit = 0
+                        else: # not self.interval_closed
+                            low_bit = 1
+
+                    else: # not self.interval_down
+                        if self.interval_closed:
+                            # We rounded an exact value towards zero, somehow.
+                            left_bits += 1
+                            low_bit = 0
+                        else: # not self.interval_closed
+                            low_bit = 1
+
+                else: # not self.interval_full
+
+                    if self.interval_down:
+                        known_half_bit = True
+                        
+                        if left_bits == 0:
+                            raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
+                        else:
+                            left_bits -= 1
+
+                        if self.interval_closed:
+                            half_bit = 1
+                            low_bit = 0
+                        else: # not self.interval_closed
+                            not self.interval_closed:
+                            half_bit = 1
+                            low_bit = 1
+
+                    else: # not self.interval_down
+                        if self.interval_closed:
+                            half_bit = 1
+                            low_bit = 0
+                        else:
+                            half_bit = 0
+                            low_bit = 1
+
+            # unless there is no envelope, in which case, do nothing
+            else: # not self.inexact
+                known_half_bit = True
+                half_bit = 0
+                low_bit = 0            
 
         else: # offset > 0
             left_bits = self.c >> offset
             lost_bits = self.c & bitmask(offset)
 
+            
+            
             if self.inexact:
                 rc = self.rc
             else:
@@ -567,9 +655,9 @@ class Digital(object):
                     return Digital._ROUND_AWAY
                 else:
                     # note that if the number is exact, it must have rc 0
-                    elif rc < 0:
+                    if rc < 0:
                         return Digital._TRUNCATE
-                    if rc > 0:
+                    elif rc > 0:
                         return Digital._ROUND_AWAY
                     else: # rc == 0
                         if strict and self.inexact:
