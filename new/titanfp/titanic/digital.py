@@ -527,7 +527,10 @@ class Digital(object):
 
         # Convert from envelope full / down / closed flags
         # to half bit / low bit, before shifting the significand.
-        # This will be processed based on the offset later.
+        # This information will be processed based on the offset later.
+        # Note that this computed c might not have the expected max_p precision:
+        # it goes with self.exp + offset, not necessarily with self.e.
+        # This is ok - we have to fix it up later in round_apply.
 
         c = self.c
 
@@ -549,6 +552,7 @@ class Digital(object):
                         # Note that this situation will never be produced by typical
                         # IEEE 754 rounding modes.
                         low_bit = 0
+                        known_half_bit = True
                     else: # not self.interval_closed
                         low_bit = 1
 
@@ -557,6 +561,7 @@ class Digital(object):
                         # We rounded an exact value towards zero, somehow.
                         c += 1
                         low_bit = 0
+                        known_half_bit = True
                     else: # not self.interval_closed
                         low_bit = 1
 
@@ -589,90 +594,55 @@ class Digital(object):
             half_bit = 0
             low_bit = 0
 
-
-
-
         if offset < 0:
-            if strict and self.inexact:
-                raise PrecisionError('cannot precisely split {} at p={}, n={}'.format(repr(self), repr(max_p), repr(min_n)))
-            else:
-                if ext_fn is None:
-                    # extend with zeros
-                    left_bits = self.c << -offset
-                    # no bits are lost
-                    lost_bits = 0
+            # Negative offset: we are trying to make the representation more precise.
+            # This is ok for exact numbers: just extend with zeros.
+            # For inexact numbers, we don't have enough information to produce a smaller
+            # envelope; if strict == True, we raise an exception,
+            # otherwise there are various different ways to proceed.
+            # If the ext_fn (Extension Function) is None, then treat the number as exact
+            # and extend with zeros as usual. Note that this can throw away some information,
+            # particularly in the case where a result was rounded from exactly halfway.
+            # For consistency, using strict == False will extend the rounded result,
+            # instead of recovering the (exactly known) halfway result that must have been rounded.
+            # Passing ext_fn can get around this, or implement novel behaviors such as filling
+            # in unknown bits randomly.
+            if ext_fn is None:
+                if strict and self.inexact:
+                    raise PrecisionError('cannot precisely split {} at p={}, n={}'.format(repr(self), repr(max_p), repr(min_n)))
+                else:
+                    # extend with zeros, exactly as if the value had been exact
+                    c = self.c << -offset
                     # all envelope information is destroyed, so we will always end up creating an exact value
                     known_half_bit = True
                     half_bit = 0
                     low_bit = 0
-                else:
-                    raise ValueError('unsupported: ext_fn={}'.format(repr(ext_fn)))
+            else:
+                raise ValueError('unsupported: ext_fn={}'.format(repr(ext_fn)))
 
-        elif offset == 0:
-            left_bits = self.c
-            lost_bits = 0
+        # don't need to do anything else in case where offset == 0
 
-            # since we didn't lose any bits, try to recover low bits from the envelope
-            if self.inexact:
+        elif offset > 0:
+            # Shift over for positive offset.
+            # This will always allow us to compute a new, known half bit;
+            # any previous information about the half or low bit is carried
+            # along in the low bit.
+            left_bits = c >> offset
+            new_half_bit = (c >> (offset - 1)) & 1
+            lost_bits = c & bitmask(offset - 1)
 
-                if self.interval_full:
-                    known_half_bit = False
-                    half_bit = 0
-
-                    if self.interval_down:
-                        if left_bits == 0:
-                            raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
-                        else:
-                            left_bits -= 1
-
-                        if self.interval_closed:
-                            # Closed intervals only occur when we round a point exactly on the border;
-                            # here, we have rounded an exact value away to the next representable value.
-                            # Note that this situation will never be produced by typical
-                            # IEEE 754 rounding modes.
-                            low_bit = 0
-                        else: # not self.interval_closed
-                            low_bit = 1
-
-                    else: # not self.interval_down
-                        if self.interval_closed:
-                            # We rounded an exact value towards zero, somehow.
-                            left_bits += 1
-                            low_bit = 0
-                        else: # not self.interval_closed
-                            low_bit = 1
-
-                else: # not self.interval_full
-
-                    if self.interval_down:
-                        known_half_bit = True
-
-                        if left_bits == 0:
-                            raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
-                        else:
-                            left_bits -= 1
-
-                        if self.interval_closed:
-                            half_bit = 1
-                            low_bit = 0
-                        else: # not self.interval_closed
-                            not self.interval_closed:
-                            half_bit = 1
-                            low_bit = 1
-
-                    else: # not self.interval_down
-                        if self.interval_closed:
-                            half_bit = 1
-                            low_bit = 0
-                        else:
-                            half_bit = 0
-                            low_bit = 1
-
-            # unless there is no envelope, in which case, do nothing
-            else: # not self.inexact
-                known_half_bit = True
-                half_bit = 0
+            if lost_bits != 0 or (known_half_bit and half_bit != 0) or low_bit != 0:
+                low_bit = 1
+            else:
                 low_bit = 0
+                
+            known_half_bit = True
+            half_bit = new_half_bit
+
+            c = left_bits
+
+        return max_p, n
+            
 
         else: # offset > 0
             left_bits = self.c >> offset
@@ -687,7 +657,7 @@ class Digital(object):
                 # again, zero the rc if exact
                 rc = 0
 
-        return max_p, n, offset, left_bits, lost_bits, half_bit, low_bits, rc
+        return max_p, n, offset, c, known_half_bit, half_bit, low_bit
 
 
     _TOWARD_ZERO = 0
