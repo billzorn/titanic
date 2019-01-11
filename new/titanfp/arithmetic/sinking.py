@@ -177,6 +177,7 @@ class Sink(digital.Digital):
         # experimentally, it seems that precision increases for fractional exact powers
         if p is not None:
             p += 1
+            p = min(p, ctx.p)
         inexact = self._limiting_exactness(self)
         result = gmpmath.compute(OP.sqrt, self, prec=ctx.p)
         return self._round_to_context(result, max_p=p, inexact=inexact, ctx=ctx, strict=True)
@@ -199,6 +200,10 @@ class Interpreter(interpreter.StandardInterpreter):
     @classmethod
     def arg_to_digital(cls, x, ctx):
         return cls.dtype(x, ctx=ctx)
+
+    @classmethod
+    def _eval_constant(cls, e, ctx):
+        return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
 
     @classmethod
     def round_to_context(cls, x, ctx):

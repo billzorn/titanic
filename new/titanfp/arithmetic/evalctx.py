@@ -146,7 +146,15 @@ class IEEECtx(EvalCtx):
             try:
                 w, p = IEEE_wp[str(props['precision']).strip().lower()]
             except KeyError:
-                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+                precsym = str(props['precision']).strip().lower()
+                if precsym.startswith('custom_binary'):
+                    spec = precsym[13:]
+                    specbits, specw = spec.split('_')
+                    nbits = int(specbits)
+                    w = int(specw)
+                    p = nbits - w
+                else:
+                    raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
             if w != self.w or p != self.p:
                 self.w = w
                 self.p = p

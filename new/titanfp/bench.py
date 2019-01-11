@@ -9,6 +9,7 @@ import numpy as np
 
 from .fpbench import fpcparser
 from .arithmetic import ieee754, sinking
+from .arithmetic import posit
 from .arithmetic import core2math
 from .arithmetic import evalctx
 from .titanic import digital
@@ -349,6 +350,20 @@ benchmarks = {
  :pre (!= x 0 1 -1)
  (/ (/ 2 (* (+ x 1) x)) (- x 1)))
 """,
+
+    'accbench': """(FPCore ()
+        :name "Accuracy on a 32-bit budget"
+        (pow (/ (- (/ 27 10) E)
+                (- PI (+ (sqrt 2) (sqrt 3))))
+             (/ 67 16)))
+""",
+
+    'sinkbench': """(FPCore ()
+        :name "Accuracy on a 32-bit budget (simplified)"
+        (let [(tmp (/ (- (/ 27 10) E)
+                      (- PI (+ (sqrt 2) (sqrt 3)))))]
+          (sqrt (* (* tmp tmp) tmp))))
+""",
 }
 
 cores = { k : fpcparser.compile1(v) for k, v in benchmarks.items() }
@@ -496,7 +511,7 @@ corenames = [
 ]
 corenames += ['herbified_' + name for name in corenames]
 
-maths = {corename: run_tool('core2wls.rkt', cores[corename]) for corename in corenames}
+#maths = {corename: run_tool('core2wls.rkt', cores[corename]) for corename in corenames}
 
 
 repl = wolfmath.MathRepl()
@@ -546,7 +561,7 @@ def run_example(corename, n):
         print('exact acc: {}'.format(exact_acc))
         print('sinking precision: {}'.format(sinking_result.p))
         print('\n\n')
-        
+
         if math.isnan(bits_acc):
             rejects += 1
         else:
@@ -565,3 +580,132 @@ def make_table():
     for name in corenames:
         sink_prec, bits_acc, sink_acc = run_example(name, 5)
         print(repr(sink_prec), repr(bits_acc), repr(sink_acc))
+
+
+
+def accbench(use_posit=False, w_es=8, p_nbits=24):
+    core = cores['accbench']
+    if use_posit:
+        ctx = evalctx.PositCtx(es=w_es, nbits=p_nbits)
+        return posit.Interpreter.interpret(core, [], ctx=ctx)
+    else:
+        ctx = evalctx.IEEECtx(w=w_es, p=p_nbits)
+        return ieee754.Interpreter.interpret(core, [], ctx=ctx)
+
+annotated_accbench = """(FPCore ()
+:name "Accuracy on a 32-bit budget"
+(! :precision {} (pow
+  (! :precision {} (/
+    (! :precision {} (- (! :precision {} (/ (! :precision binary32 27) (! :precision binary32 10))) (! :precision {} E)))
+    (! :precision {} (- (! :precision {} PI) (! :precision {} (+ (! :precision {} (sqrt 2)) (! :precision {} (sqrt 3))))))
+))
+(! :precision {} (/ (! :precison binary32 67) (! :precision binary32 16)))
+))
+)
+"""
+
+accbench_pt1 = """(FPCore ()
+  (- (/ 27 10) E))
+"""
+
+accbench_pt2 = """(FPCore ()
+  (- PI (+ (sqrt 2) (sqrt 3))))
+"""
+
+def runit(text, w, p):
+    core = fpcparser.compile1(text)
+    ctx = evalctx.IEEECtx(w=w, p=p)
+    return float(ieee754.Interpreter.interpret(core, [], ctx=ctx))
+
+def accbench2(precs):
+    annotations = ['custom_binary32_{:d}'.format(i) for i in precs]
+    if len(annotations) < 11:
+        annotations += ['binary32'] * (11 - len(annotations))
+
+    text = annotated_accbench.format(*annotations)
+    core = fpcparser.compile1(text)
+
+    ctx = evalctx.IEEECtx(w=8, p=24)
+    return ieee754.Interpreter.interpret(core, [], ctx=ctx)
+
+
+reference_answer = ieee754.Float(302.88271965546954925)
+
+print(str(ieee754.Float(float(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])), ctx4096)))
+
+def accbench_acc(x):
+    fx = float(x)
+    if fx <= 0 or fx >= 1000000 or math.isnan(fx):
+        return None
+    else:
+        return gmpmath.geo_sim10(x, reference_answer)
+
+
+def accbench_data():
+    for i in range(2,31):
+        result = accbench2([i] * 11)
+        print(str(ieee754.Float(float(result), ctx4096)), accbench_acc(result))
+
+choices = [2,3,4,5,6,7,8,9]
+choices2 = [2,3,4]
+choices_c = [2]
+def accsweep_yolo():
+    best = None
+    for i1 in choices: # pow
+        for i2 in choices: # div
+            for i3 in choices2: # sub 27. - E
+                for i4 in choices2: # div -> 2.7
+                    for i5 in choices_c: # E
+                        for i6 in choices2: # sub PI - sqrt2 - sqrt3
+                            for i7 in choices_c: # PI
+                                for i8 in choices_c: # sqrt2
+                                    for i9 in choices_c: # sqrt3
+                                        for i10 in choices2: # add sqrt2 + sqrt3
+                                            for i11 in choices: # div -> 67/16
+                                                result = accbench2([i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11])
+                                                acc = accbench_acc(result)
+                                                if acc is not None and (best is None or acc > best):
+                                                    best = acc
+                                                    print([i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11])
+                                                    print(str(result))
+                                                    print(acc)
+
+
+sinkref = ieee754.Float(7.741315095243402580371)
+
+def sinkbench_acc(x):
+    fx = float(x)
+    if fx <= 0 or fx >= 1000000 or math.isnan(fx):
+        return None
+    else:
+        return gmpmath.geo_sim(x, sinkref)
+
+def sinkbench(w, p):
+    core = cores['sinkbench']
+    ctx = evalctx.IEEECtx(w=w, p=p)
+    return sinking.Interpreter.interpret(core, [], ctx=ctx)
+
+def sinksweep():
+    print('{},{}\t{}'.format('w', 'p', str(sinkref)))
+    
+    for i in range(2, 31):
+        w = i
+        p = 32 - i
+
+        sunk = sinkbench(w, p)
+        bits_acc = sinkbench_acc(sunk)
+
+        #print('{:d},{:d}\t{:12s}\t{:d}, {:d}, {}'.format(w, p, str(sunk) + str(sunk.n + 1), sunk.p, sunk.n + 1, bits_acc))
+        if bits_acc is None:
+            bits_acc = -1
+        print('{:d} & {:s} & {:d} & {:0.1f}'.format(w, str(sunk) + str(sunk.n + 1), sunk.p, bits_acc))
+
+def quadratic(a):
+    core = cores['herbified_quadratic']
+    ctx = evalctx.IEEECtx(w=11, p=53)
+    inputs = [sinking.Sink(a, ctx), sinking.Sink(2.0, ctx), sinking.Sink(3.0, ctx)]
+
+    result = sinking.Interpreter.interpret(core, inputs, ctx=ctx)
+    print(str(result))
+    print(result.p)
+    print(result.n + 1)

@@ -507,7 +507,25 @@ class Digital(object):
 
     # The first and last phases are independent of the "rounding mode"
 
-    def _round_setup(max_p, min_n=None, ext_fn=None, strict=True):
+    def round_recover():
+        """Recover the information that was used to round to this number.
+        This will give back a modified significand and exponent,
+        as well as the low bit. The half bit (if it was known)
+        is part of the new significand.
+        Note that the precision of the new significand may change;
+        in some cases, it could be less than the precision of the input significand
+        (for example, fixed point rounding up to a power of two).
+        """
+        if self.inexact:
+            pass
+        else:
+            c = self.c
+            exp = self.exp
+            low_bit = 0
+
+        return c, exp, low_bit
+
+    def _round_setup(self, max_p, min_n=None, ext_fn=None, strict=True):
         """Determine p and n, and split the significand accordingly.
         Will fail for any inf or nan, as these non-real values cannot be rounded.
         If strict is True, will fail if the split cannot be performed precisely.
@@ -668,7 +686,7 @@ class Digital(object):
     _TRUNCATE = 0
     _ROUND_AWAY = 1
 
-    def _round_direction(offset, left_bits, lost_bits, rc,
+    def _round_direction(self, offset, left_bits, lost_bits, rc,
                          nearest=True, mode=_TO_EVEN, strict=True):
         """Determine which direction to round, based on two criteria:"
             - nearest, which determines if we should round to nearest when possible,
@@ -756,7 +774,7 @@ class Digital(object):
                 raise ValueError('Unknown rounding mode {}'.format(mode))
 
 
-    def _round_apply(max_p, offset, left_bits, lost_bits, rc,
+    def _round_apply(self, max_p, offset, left_bits, lost_bits, rc,
                      direction):
         """Apply a rounding direction, to produce a rounded result.
         Will fail if an attempt is made to _ROUND_DOWN zero; this direction should

@@ -265,6 +265,38 @@ def compute(opcode, *args, prec=53):
     return mpfr_to_digital(result)
 
 
+def compute_constant(name, prec=53):
+    with gmp.context(
+            # one extra bit, so that we can round from RTZ to RNE
+            precision=prec + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            subnormalize=False,
+            # in theory, we'd like to know about these...
+            trap_underflow=True,
+            trap_overflow=True,
+            # inexact and invalid operations should not be a problem
+            trap_inexact=False,
+            trap_invalid=False,
+            trap_erange=False,
+            trap_divzero=False,
+            # We'd really like to know about this as well, but it causes i.e.
+            #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
+            # I don't know if that behavior is more hilarious or annoying.
+            trap_expbound=False,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ) as gmpctx:
+        if name == 'E':
+            result = gmp.exp(1)
+        elif name == 'PI':
+            result = gmp.const_pi()
+        else:
+            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
+
+    return mpfr_to_digital(result)
+
+
 def compute_digits(m, e, b, prec=53):
     """Compute m * b**e, with precision equal to prec. e and b must be integers, and
     b must be at least 2.
@@ -443,6 +475,48 @@ def geo_sim(a, b):
 
     with gmp.ieee(64):
         sim = -gmp.log2(reldiff)
+
+    return float(sim)
+
+def geo_sim10(a, b):
+    """Compute the 'decimals of accuracy' between a and b, defined as:
+                |        a    |
+        -log10( | log10( --- ) | )
+                |        b    |
+
+    """
+    prec = max(53, 1 + max(a.e, b.e) - min(a.n, b.n))
+
+    mpfr_a = digital_to_mpfr(a)
+    mpfr_b = digital_to_mpfr(b)
+
+    if gmp.is_nan(mpfr_a) or gmp.is_nan(mpfr_b):
+        return float('nan')
+
+    if mpfr_a == 0 and mpfr_b == 0:
+        return float('inf')
+    elif mpfr_a == 0 or mpfr_b == 0:
+        return float('-inf')
+
+    with gmp.context(
+            precision=prec,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=False,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=False,
+            trap_expbound=False,
+    ):
+        ratio = mpfr_a / mpfr_b
+        if ratio <= 0:
+            return float('-inf')
+        reldiff = abs(gmp.log10(ratio))
+
+    with gmp.ieee(64):
+        sim = -gmp.log10(reldiff)
 
     return float(sim)
 

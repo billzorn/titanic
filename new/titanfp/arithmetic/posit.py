@@ -195,6 +195,10 @@ class Interpreter(interpreter.StandardInterpreter):
         return cls.dtype(x, ctx=ctx)
 
     @classmethod
+    def _eval_constant(cls, e, ctx):
+        return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.nbits), ctx=ctx)
+
+    @classmethod
     def round_to_context(cls, x, ctx):
         """Not actually used???"""
         return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
