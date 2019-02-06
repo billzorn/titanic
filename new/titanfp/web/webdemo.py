@@ -225,22 +225,23 @@ class TitanfpHTTPRequestHandler(AsyncHTTPRequestHandler):
                         ('Content-Type', 'image/png'),
                     )
                     content = logo
-                elif pr.path == '/evaluate':
+                # elif pr.path == '/evaluate':
+                else:
                     headers = (
                         ('Content-Type', 'text/html'),
                     )
                     content = self.import_core_from_query(evaluate_page, pr.query)
-                elif pr.path == '/translate':
-                    headers = (
-                        ('Content-Type', 'text/html'),
-                    )
-                    content = self.import_core_from_query(translate_page, pr.query)
-                else:
-                    print(pr)
-                    headers = (
-                        ('Content-Type', 'text/html'),
-                    )
-                    content = index
+                # elif pr.path == '/translate':
+                #     headers = (
+                #         ('Content-Type', 'text/html'),
+                #     )
+                #     content = self.import_core_from_query(translate_page, pr.query)
+                # else:
+                #     print(pr)
+                #     headers = (
+                #         ('Content-Type', 'text/html'),
+                #     )
+                #     content = index
             else:
                 try:
                     payload = json.loads(data.decode('utf-8'))
