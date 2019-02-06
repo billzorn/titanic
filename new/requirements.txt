@@ -1,0 +1,10 @@
+# math libs
+numpy ~= 1.16.1
+gmpy2 ~= 2.0.8
+
+# antlr
+antlr4-python3-runtime ~= 4.7.2
+
+# softfloat libs
+sfpy ~= 0.4.2
+softposit ~= 0.3.3

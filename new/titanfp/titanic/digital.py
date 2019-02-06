@@ -659,7 +659,7 @@ class Digital(object):
 
             c = left_bits
 
-        return max_p, n
+            return max_p, n
             
 
         else: # offset > 0
