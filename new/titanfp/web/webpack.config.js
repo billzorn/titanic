@@ -13,14 +13,19 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
     },
     module: {
-        rules: [{
-            test: /\.css$/,
-            use: ['style-loader', 'css-loader'],
-        }],
+        rules: [
+            {
+                test: /\.css$/,
+                use: ['style-loader', 'css-loader'],
+            },
+        ],
     },
     plugins: [
         new MonacoWebpackPlugin(),
-        new HtmlWebpackPlugin(),
+        new HtmlWebpackPlugin({
+            template: 'index.html',
+            favicon: 'favicon.ico',
+        }),
         new CleanWebpackPlugin(['dist']),
     ],
 };
