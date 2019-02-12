@@ -1,10 +1,79 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="titanic.css" type="text/css">
     <title>Titanic Web Demo</title>
   </head>
+
   <body>
-    <div id="container" style="width:800px;height:600px;border:1px solid #ccc"></div>
+    <div class="wrapper">
+      <div class="top"></div>
+      <section class="content">
+        <div class="columns">
+
+          <main class="left">
+            <div id="editor"></div>
+          </main>
+
+          <div class="splitter"></div>
+
+          <aside class="right">
+            <header style="padding-bottom:32px;">
+              <a href="/"><img style="float:left; margin-right:12px;" width="24px" height="24px" src="piceberg.png" alt="logo"/></a>
+              <h1 class="noborder" style="font-size:24px;">Titanic evaluator</h1>
+              <!-- <button id="translate_btn" onclick="window.location.href = '/translate?core=' + encodeURIComponent(editor.getValue());">Translate Cores</button> -->
+            </header>
+            <div style="padding-bottom:16px;">
+              <select id="backend-select" style="width:100%;">
+                <option selected class="backend" value="ieee754">Interpret with IEEE 754 floats</option>
+                <!-- <option class="backend" value="posit">Interpret with Posits</option> -->
+                <!-- <option class="backend" value="sink">Interpret with sinking-point</option> -->
+                <!-- <option class="backend" value="native">Interpret with Python</option> -->
+                <!-- <option class="backend" value="np">Interpret with Numpy</option> -->
+                <option class="backend" value="softfloat">Interpret with SoftFloat</option>
+                <option class="backend" value="softposit">Interpret with SoftPosit</option>
+                <!-- <option class="backend" value="fpcore">Interpret with reference interpreter</option> -->
+                
+                <!-- <option class="backend" value="core2c">Translate to C</option> -->
+                <!-- <option class="backend" value="core2js">Translate to JS</option> -->
+                <!-- <option class="backend" value="core2smtlib2">Translate to SMTLIB2</option> -->
+                <!-- <option class="backend" value="canonicalize">Canonicalize FPCore</option> -->
+                <!-- <option class="backend" value="condense">Condense FPCore</option> -->
+                <!-- <option class="backend" value="minimize">Minimize FPCore</option> -->
+              </select>
+              <div id="float-options">
+                <label for="float-w">w:</label>
+                <input id="float-w" class="code" style="width:3em;" name="w" type="number" min="2" max="32" value="11">
+                <label for="float-p">p:</label>
+                <input id="float-p" class="code" style="width:5em;" name="p" type="number" min="2" max="4096" value="53">
+              </div>
+              <div id="posit-options" style="display:none;">
+                <label for="posit-es">es:</label>
+                <input id="posit-es" class="code" style="width:3em;" name="es" type="number" min="0" max="32" value="4">
+                <label for="posit-nbits">nbits:</label>
+                <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="4096" value="64">
+                <br>
+                <p>NOTE: posit rounding is incorrect for some edge cases, such as 48.0 with es=0, nbits=8</p>
+              </div>
+
+            </div>
+            <div style="padding-bottom:16px;">
+              <label for="args">Program Arguments</label>
+              <textarea id="args" class="code" rows="5" style="width:294px; resize:vertical;"></textarea>
+            </div>
+            <div style="padding-bottom:32px;">
+              <button id="submit_btn" onclick="titanfp.submit_core(editor);">Interpret FPCore</button>
+            </div>
+            <pre id="result" style="white-space:pre-wrap; word-break:break-word;"></pre>
+          </aside>
+
+          <div class="spacer"></div>
+
+        </div>
+      </section>
+      <div class="bottom"></div>
+    </div>
   </body>
+
 </html>
