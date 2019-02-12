@@ -59,9 +59,10 @@ export const fpcore = {
 
             // symbols, including keywords and operators
             [/@symbol/, {cases: {'@keywords': 'keyword',
-                                  '@operators': 'keyword.operator',
-                                  '@constants': 'number.constant',
-                                  '@default': 'identifier'}}],
+                                 '@operators': 'keyword.operator',
+                                 '@constants': 'number.constant',
+                                 ':.+': 'string.property',
+                                 '@default': 'identifier'}}],
 
             // number literals
             [/@decnum/, 'number.float'],
@@ -82,7 +83,18 @@ export const fpcore = {
 
         whitespace: [
             [/[ \t\r\n]+/, 'white'],
+            // line comment
             [/;.*$/, 'comment'],
+            // block comment (like racket)
+            [/#\|/, 'comment', '@comment' ],
+        ],
+
+        // comments can nest!
+        comment: [
+            [/[^#|]+/, 'comment' ],
+            [/#\|/, 'comment', '@push'],
+            [/\|#/, 'comment', '@pop'],
+            [/[#|]/, 'comment'],
         ],
     }
 
