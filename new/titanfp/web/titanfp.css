@@ -1,0 +1,39 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+    background-color: #D6E9FE;
+}
+
+#webtool {
+    width: 800px;
+    height: 600px;
+
+    background-color: #bfbfbf;
+}
+
+.container {
+    position: absolute;
+}
+
+.left {
+    overflow: hidden;
+    top: 16px;
+    left: 0px;
+    width: 392px;
+    height: 568px;
+
+    background-color: #9f9f9f;
+}
+
+.right {
+    top: 16px;
+    left: 408px;
+    width: 376px;
+    height: 568px;
+
+    background-color: #7f7f7f;
+}

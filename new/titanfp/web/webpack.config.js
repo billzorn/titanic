@@ -7,7 +7,8 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 module.exports = {
     mode: 'development',
     entry: {
-        app: './titanfp.js',
+        layout: './layout.js',
+        titanic: './titanfp.js',
     },
     output: {
         filename: '[name].bundle.js',
@@ -28,7 +29,7 @@ module.exports = {
             favicon: 'favicon.ico',
         }),
         new CopyWebpackPlugin([
-            'titanic.css',
+            'titanfp.css',
             'piceberg.png',
         ]),
         new CleanWebpackPlugin(['dist']),

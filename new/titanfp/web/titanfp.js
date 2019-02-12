@@ -1,6 +1,7 @@
-import * as monaco from 'monaco-editor';
-// import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+// import * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 
+import {editor_box, resize_webtool} from './layout';
 
 // import {smt2} from './monaco_smt2';
 // import {getSMT2} from './editor_demo';
@@ -81,7 +82,11 @@ monaco.languages.setLanguageConfiguration('fpcore', {
 // });
 
 
-monaco.editor.create(document.getElementById('editor'), {
+const editor = monaco.editor.create(document.getElementById('editor'), {
     language: editor_lang,
     value: editor_val,
+    scrollBeyondLastLine: false,
 });
+
+editor_box.push(editor);
+resize_webtool();
