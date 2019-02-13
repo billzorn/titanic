@@ -9,16 +9,17 @@ const min_width = 640;
 const min_height = 320;
 
 export function resize_webtool() {
-    const vh = window.innerHeight;
-    const vw = window.innerWidth;
-    const h = vh - (border_px * 2);
+    const vw = Math.max(window.innerWidth, min_width);
+    const vh = Math.max(window.innerHeight, min_height);
     const w = (vw - (border_px * 3)) / 2;
+    const h = vh - (border_px * 2);
 
     $('#webtool').css({
         width: vw + 'px',
         height: vh + 'px',
     });
     $('.left').css({
+        // no left border; monaco can put line numbers over there
         width: (w + border_px) + 'px',
         height:  h + 'px',
         left: '0px',
