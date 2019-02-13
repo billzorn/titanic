@@ -18,6 +18,7 @@ body {
 
 .left {
     overflow: hidden; /* because the monaco editor is actually bigger than its container, sigh... */
+
     top: 16px;
     left: 0px;
     width: 392px;
@@ -29,29 +30,35 @@ body {
     left: 408px;
     width: 376px;
     height: 568px;
+
     display: flex;
     flex-direction: column;
+    justify-content: flex-start;
     align-items: stretch;
-    overflow-y: scroll;
 }
 
 .controls {
     background: #bfbfbf;
+    flex: initial;
+
     display: flex;
-    flex-direction: column;
-    justify-content: center;
+    flex-direction: row;
+    justify-content: space-around;
     align-items: center;
 }
 
 .output {
     background: #8f8f8f;
+    flex: 1;
+    overflow-y: scroll;
+
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: stretch;
 }
 
 .filler {
-    height: 200px;
+    flex: initial;
     border: 1px solid #222;
 }

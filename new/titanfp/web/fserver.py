@@ -256,7 +256,9 @@ class FServerRequestHandler(AsyncHTTPRequestHandler):
         path = pr.path.lstrip('/')
 
         if path in self.the_content:
-            ctype, cont = self.the_content[path]
+            ctype_enc, cont = self.the_content[path]
+
+            ctype, enc = ctype_enc
 
             response = HTTPStatus.OK
             msg = None
