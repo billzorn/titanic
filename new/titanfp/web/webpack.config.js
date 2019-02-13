@@ -31,6 +31,7 @@ module.exports = {
         new CopyWebpackPlugin([
             'titanfp.css',
             'piceberg.png',
+            'piceberg_round.png',
         ]),
         new CleanWebpackPlugin(['dist']),
     ],

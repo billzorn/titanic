@@ -1,10 +1,15 @@
 * {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
-body {
+.text {
+    font-family: Helvetica, Arial, sans;
+}
+
+.code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
 #webtool {
@@ -42,9 +47,37 @@ body {
     flex: initial;
 
     display: flex;
+    flex-direction: column;
+    justify-content: flex-first;
+    align-items: stretch;
+}
+
+.control-header {
+    flex: initial;
+
+    display: flex;
     flex-direction: row;
-    justify-content: space-around;
+    justify-content: flex-first;
     align-items: center;
+}
+
+.control-element {
+    flex: initial;
+    padding-top: 8px;
+
+    display: flex;
+}
+
+.backend-opts {
+    flex-direction: row;
+    justify-content: flex-first;
+    align-items: baseline;
+}
+
+.args {
+    flex-direction: column;
+    justify-content: flex-first;
+    align-items: stretch;
 }
 
 .output {
@@ -58,7 +91,7 @@ body {
     align-items: stretch;
 }
 
-.filler {
+.output-item {
     flex: initial;
     border: 1px solid #222;
 }

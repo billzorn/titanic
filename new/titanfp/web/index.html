@@ -3,24 +3,72 @@
   <head>
     <meta charset="utf-8">
     <link rel="stylesheet" href="titanfp.css" type="text/css">
-    <title>Titanic Web Demo</title>
+    <title>Titanic Evaluator</title>
   </head>
 
   <body>
 
     <section id="webtool">
-      <div id="editor" class="left container"></div>
+      <div id="editor" class="left container code"></div>
       <div class="right container">
         <div class="controls">
-          <img width="128px" height="128px" src="piceberg.png"/>
-          <h1>Titanic</h1>
+
+          <div class="control-header">
+            <img width="32px" height="32px" src="piceberg_round.png"/>
+            <h1 class="text" style="padding-left:16px;">Titanic Evaluator</h1>
+          </div>
+
+          <div class="control-element">
+            <select id="backend" class="text">
+              <option selected value="ieee754">Evaluate FPCore with IEEE 754 floating-point</option>
+              <option value="posit">Evaluate FPCore with Posits</option>
+              <option value="softfloat">Evaluate FPCore with SoftFloat</option>
+              <option value="softposit">Evaluate FPCore with SoftPosit</option>
+            </select>
+          </div>
+
+          <div id="float-opts" class="backend-opts control-element">
+            <label for="float-w" class="text" style="padding-left:8px;">w:</label>
+            <input id="float-w" class="code" style="width:4em;" name="w" type="number" min="2" max="1024" value="11">
+            <label for="float-p" class="text" style="padding-left:8px;">p:</label>
+            <input id="float-p" class="code" style="width:6em;" name="p" type="number" min="2" max="65536" value="53">
+            <select id="float-select" class="code" style="margin-left:16px;">
+              <option value="binary16">binary16</option>
+              <option value="binary32">binary32</option>
+              <option selected value="binary64">binary64</option>
+              <option value="custom">custom</option>
+            </select>
+          </div>
+          <div id="posit-opts" class="backend-opts control-element">
+            <label for="posit-es" class="text" style="padding-left:8px;">es:</label>
+            <input id="posit-es" class="code" style="width:4em;" name="es" type="number" min="0" max="1024" value="4">
+            <label for="posit-nbits" class="text" style="padding-left:8px;">nbits:</label>
+            <input id="posit-nbits" class="code" style="width:6em;" name="nbits" type="number" min="2" max="65536" value="64">
+            <select id="posit-select" class="code" style="margin-left:16px;">
+              <option value="posit8">posit8</option>
+              <option value="posit16">posit16</option>
+              <option value="posit32">posit32</option>
+              <option selected value="posit64">posit64</option>
+              <option value="custom">custom</option>
+            </select>
+          </div>
+
+          <div class="args control-element">
+            <label for="args" class="text">FPCore arguments:</label>
+            <textarea id="args" class="code" rows="5" style="resize:vertical;"></textarea>
+          </div>
+
+          <div class="control-element" style="padding-bottom:16px;">
+            <button id="evaluate" class="text" onclick="">Evaluate FPCore</button>
+          </div>
+
         </div>
         <div class="output">
-          <div class="filler"><img width="200px" height="200px" src="piceberg.png"/></div>
-          <div class="filler"><img width="200px" height="200px" src="piceberg.png"/></div>
-          <div class="filler"><img width="200px" height="200px" src="piceberg.png"/></div>
-          <div class="filler"><img width="200px" height="200px" src="piceberg.png"/></div>
-          <div class="filler"><img width="200px" height="200px" src="piceberg.png"/></div>
+          <div class="output-item"><img width="128px" height="128px" src="piceberg_round.png"/></div>
+          <div class="output-item"><img width="128px" height="128px" src="piceberg_round.png"/></div>
+          <div class="output-item"><img width="128px" height="128px" src="piceberg_round.png"/></div>
+          <div class="output-item"><img width="128px" height="128px" src="piceberg_round.png"/></div>
+          <div class="output-item"><img width="128px" height="128px" src="piceberg_round.png"/></div>
         </div>
       </div>
     </section>
