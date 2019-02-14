@@ -5,8 +5,8 @@ export const editor_box = [];
 
 const border_px = 16;
 
-const min_width = 640;
-const min_height = 320;
+const min_width = 800;
+const min_height = 480;
 
 export function resize_webtool() {
     const vw = Math.max(window.innerWidth, min_width);
