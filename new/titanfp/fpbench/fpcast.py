@@ -1,7 +1,19 @@
 """A reusable AST for manipulating or executing FPCores in python."""
 
-
 import typing
+
+
+def sexp_to_string(e):
+    if isinstance(e, list):
+        return '(' + ' '.join((sexp_to_string(x) for x in e)) + ')'
+    else:
+        return str(e)
+
+def annotation_to_string(e, props):
+    if props:
+        return '(! ' + ''.join((':' + k + ' ' + sexp_to_string(v) + ' ' for k, v in props.items())) + str(e) + ')'
+    else:
+        return str(e)
 
 
 # base ast class
@@ -9,16 +21,17 @@ import typing
 class Expr(object):
     name: str = 'Expr'
 
-# arbitrary data (usually s-expressions in properties)
+
+# arbitrary s-expression data (usually from properties)
 
 class Data(Expr):
     name: str = 'Data'
 
-    def __init__(self, value: str) -> None:
-        self.value: str = value
+    def __init__(self, value) -> None:
+        self.value = value
 
     def __str__(self):
-        return self.value
+        return sexp_to_string(self.value)
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
@@ -27,6 +40,38 @@ class Data(Expr):
         if not isinstance(other, Data):
             return False
         return self.value == other.value
+
+    def as_number(self, strict=False) -> Expr:
+        if isinstance(self.value, Val) and not isinstance(self.value, Constant):
+            return self.value
+        elif strict:
+            raise TypeError('data is not a number')
+        else:
+            return None
+
+    def as_symbol(self, strict=False) -> str:
+        if isinstance(self.value, Var) or isinstance(self.value, Constant):
+            return self.value.value
+        elif strict:
+            raise TypeError('data is not a symbol')
+        else:
+            return None
+
+    def as_string(self, strict=False) -> str:
+        if isinstance(self.value, String):
+            return self.value.value
+        elif strict:
+            raise TypeError('data is not a string')
+        else:
+            return None
+
+    def as_list(self, strict=False) -> typing.List[Expr]:
+        if isinstance(self.value, list):
+            return self.value
+        elif strict:
+            raise TypeError('data is not a list')
+        else:
+            return None
 
 
 # operations
@@ -128,7 +173,6 @@ class Rational(Val):
             return False
         return self.p == other.p and self.q == other.q
 
-
 class Digits(Val):
     name: str = 'digits'
 
@@ -149,6 +193,9 @@ class Digits(Val):
             return False
         return self.m == other.m and self.e == other.e and self.b == other.b
 
+class String(ValueExpr):
+    name: str = 'String'
+
 
 # rounding contexts
 
@@ -161,7 +208,7 @@ class Ctx(Expr):
 
     def __str__(self):
         return ('(' + self.name + ' '
-                + ''.join((':' + k + ' ' + _prop_to_sexp(v) + ' ' for k, v in self.props.items()))
+                + ''.join((':' + k + ' ' + sexp_to_string(v) + ' ' for k, v in self.props.items()))
                 + str(self.body) + ')')
 
     def __repr__(self):
@@ -450,22 +497,21 @@ class Not(UnaryExpr):
 # fpcore objects and helpers
 
 class FPCore(object):
-    def __init__(self, inputs, e, props = None):
+    def __init__(self, inputs, e, props=None, name=None, pre=None, spec=None):
         self.inputs = inputs
         self.e = e
         if props is None:
             self.props = {}
         else:
             self.props = props
-
-        self.name = self.props.get('name', None)
-        self.pre = self.props.get('pre', None)
-        self.spec = self.props.get('spec', None)
+        self.name = name
+        self.pre = pre
+        self.spec = spec
 
     def __str__(self):
         return 'FPCore ({})\n  name: {}\n   pre: {}\n  spec: {}\n  {}'.format(
-            ' '.join((_annotate_input(name, props) for name, props in self.inputs)),
-            self.name, self.pre, self.spec, self.e)
+            ' '.join((annotation_to_string(name, props) for name, props in self.inputs)),
+            str(self.name), str(self.pre), str(self.spec), str(self.e))
 
     def __repr__(self):
         return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
@@ -479,20 +525,6 @@ class FPCore(object):
     @property
     def sexp(self):
         return '(FPCore ({}) {}{})'.format(
-            ' '.join((_annotate_input(name, props) for name, props in self.inputs)),
-            ''.join(':' + name + ' ' + _prop_to_sexp(prop) + ' ' for name, prop in self.props.items()),
+            ' '.join((annotation_to_string(name, props) for name, props in self.inputs)),
+            ''.join(':' + name + ' ' + sexp_to_string(prop) + ' ' for name, prop in self.props.items()),
             str(self.e))
-
-def _annotate_input(name, props):
-    if props:
-        return '(! ' + ''.join((':' + k + ' ' + _prop_to_sexp(v) + ' ' for k, v in props.items())) + name + ')'
-    else:
-        return name
-
-def _prop_to_sexp(p):
-    if isinstance(p, str):
-        return '"' + p + '"'
-    elif isinstance(p, list):
-        return '(' + ' '.join(p) + ')'
-    else:
-        return str(p)

@@ -1,6 +1,13 @@
 grammar FPCore;
 
-parse : fpcore* EOF ;
+// main entrypoint for .fpcore benchmark files
+parse_fpcore : fpcore* EOF ;
+
+// secondary entrypoint for parsing arguments, preconditions, etc.
+parse_exprs : expr* EOF ;
+
+
+// FPCore grammar, implementing the standard from fpbench.org
 
 fpcore : OPEN 'FPCore' OPEN (inputs+=argument)* CLOSE (props+=prop)* e=expr CLOSE ;
 
@@ -29,20 +36,16 @@ number
 
 // Keywords in properties are not required by the grammar to start with a colon;
 // it's up to the visitor to check that.
-prop
-    : name=SYMBOL s=STRING # PropStr
-    | name=SYMBOL OPEN (xs+=SYMBOL)* CLOSE # PropList
-    // Properties specified as symbols will end up being parsed as symbolic expressions.
-    | name=SYMBOL e=expr # PropExpr
-    | name=SYMBOL d=datum # PropDatum
-    ;
+prop : name=SYMBOL d=datum ;
 
 datum
-    : number
-    | SYMBOL
-    | STRING
-    | OPEN datum* CLOSE
+    : n=number #DatumNum
+    | x=SYMBOL #DatumSym
+    | s=STRING #DatumStr
+    | OPEN (data+=datum)* CLOSE # DatumList
     ;
+
+// Some tokens.
 
 OPEN : '(' | '[' ;
 CLOSE : ')' | ']' ;
