@@ -80,6 +80,12 @@
     align-items: stretch;
 }
 
+.actions {
+    flex-direction: row;
+    justify-content: flex-first;
+    align-items: baseline;
+}
+
 .output {
     background: #8f8f8f;
     flex: 1;

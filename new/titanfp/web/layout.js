@@ -37,6 +37,10 @@ export function resize_webtool() {
     }
 }
 
+resize_webtool();
+
+$(window).on('resize', debounce(resize_webtool, 100));
+
 
 function on_backend() {
     const selected = $('#backend').val();
@@ -126,19 +130,20 @@ function on_posit_prec_select() {
     }
 }
 
+export function do_layout() {
+    on_backend();
+    on_float_prec();
+    on_posit_prec();
+}
 
-resize_webtool();
-$(window).on('resize', debounce(resize_webtool, 100));
+do_layout();
 
-on_backend();
 $('#backend').on('change', on_backend);
 
-on_float_prec();
 $('#float-w').on('change', on_float_prec);
 $('#float-p').on('change', on_float_prec);
 $('#float-select').on('change', on_float_prec_select);
 
-on_posit_prec();
 $('#posit-es').on('change', on_posit_prec);
 $('#posit-nbits').on('change', on_posit_prec);
 $('#posit-select').on('change', on_posit_prec_select);
