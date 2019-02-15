@@ -141,7 +141,7 @@ function set_webtool_state(state) {
 
 // submission logic
 
-function eval_result() {
+function eval_result(result) {
     console.log(result);
 }
 
@@ -150,7 +150,7 @@ function submit_eval() {
 
     $.ajax({
         type: 'POST',
-        url: 'test',
+        url: 'eval',
         data: payload,
         contentType: 'application/json',
         success: eval_result,
