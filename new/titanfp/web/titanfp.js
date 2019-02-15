@@ -142,7 +142,34 @@ function set_webtool_state(state) {
 // submission logic
 
 function eval_result(result) {
-    console.log(result);
+    //console.log(result);
+    let body = '';
+
+    if (result.success) {
+        body += '<div class="output-row">';
+        for (let [k, v] of result.args) {
+            body += '<p>' + k + ' = ' + v + '</p>';
+        }
+        if (result.pre_val == 'False') {
+            body += '<p class="text">(precondition not satisfied)</p>'
+        }
+        body += '</div>';
+        body += '<div class="output-row">'
+        body += '<pre class="output-pre code">' + result.e_val + '</pre>'
+        body += '</div>';
+    } else {
+        if (result.message) {
+            body = '<pre class="output-pre code">' + result.message + '</pre>';
+        } else {
+            body = '<p>Something went wrong, oops!</p>';
+        }
+    }
+
+    $('#output').append(
+        '<div class="output-item">'
+            + body
+            + '</div>'
+    );
 }
 
 function submit_eval() {
@@ -185,7 +212,6 @@ function restore_from_permalink() {
 }
 
 function on_link() {
-    console.log('hi');
     $('#permalink').prop('href', create_permalink());
 }
 

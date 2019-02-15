@@ -27,10 +27,10 @@ def path_aliases(path):
         yield stripped_path + '.html'
 
 webdemo_eval_backends = {
-    'ieee754': ieee754.Interpreter.interpret,
-    'posit': posit.Interpreter.interpret,
-    'softfloat': softfloat.Interpreter.interpret,
-    'softposit': softposit.Interpreter.interpret,
+    'ieee754': ieee754.Interpreter,
+    'posit': posit.Interpreter,
+    'softfloat': softfloat.Interpreter,
+    'softposit': softposit.Interpreter,
 }
 
 webdemo_float_backends = {
@@ -90,13 +90,13 @@ class WebtoolState(object):
 
         if 'core' in payload:
             try:
-                self.cores = fpcparser.compile(payload['core'])
+                self.cores = fpcparser.compile(str(payload['core']).strip())
             except fpcparser.FPCoreParserError as e:
                 raise WebtoolParseError(str(e))
 
         if 'args' in payload:
             try:
-                self.args = fpcparser.read_exprs(payload['args'])
+                self.args = fpcparser.read_exprs(str(payload['args']).strip())
             except fpcparser.FPCoreParserError as e:
                 raise WebtoolArgumentError('invalid arguments for FPCore: ' + str(e))
 
@@ -132,38 +132,65 @@ class WebtoolState(object):
         else:
             return None
 
+    @property
+    def override(self):
+        if self.backend in webdemo_float_backends:
+            return self.float_override
+        elif self.backend in webdemo_posit_backends:
+            return self.posit_override
+        else:
+            return None
+
+
 def run_eval(data):
+    #print('Eval yo!')
+    #print(repr(data))
+
     try:
         state = WebtoolState(data)
         if state.cores is None or len(state.cores) != 1:
             raise WebtoolError('must provide exactly one FPCore')
         core = state.cores[0]
         if len(state.args) != len(core.inputs):
-            raise WebtoolArgumentError('expected {:d} arguments for FPCore; got {:d}'
-                                       .format(len(core.inputs), len(state.args)))
+            raise WebtoolArgumentError('expected {:d} arguments for FPCore, got {:d}:\n  {}'
+                                       .format(len(core.inputs), len(state.args), ', '.join(map(str, state.args))))
 
         if state.backend in webdemo_eval_backends:
             interpreter = webdemo_eval_backends[state.backend]
         else:
             raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
 
+        props = {}
+        precision = state.precision
+        if precision is not None:
+            props['precision'] = precision
+
+        ctx = interpreter.ctype(props=props)
+        arg_ctx = interpreter.arg_ctx(core, state.args, ctx=ctx, override=state.override)
+
+        named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props in core.inputs]
+        e_val = interpreter.interpret(core, state.args, ctx=ctx, override=state.override)
+        pre_val = interpreter.interpret_pre(core, state.args, ctx=ctx, override=state.override)
 
         result = {
-            'core': core.sexp,
-            'args': ' '.join(str(arg) for arg in state.args),
-            'prec': str(state.precision),
+            'success': 1,
+            'args': named_args,
+            'e_val': str(e_val),
+            'pre_val': str(pre_val),
         }
 
     except WebtoolError as e:
         result = {
-            'error' : str(e),
+            'success': 0,
+            'message' : str(e),
         }
     except:
         print('Exception during titanic evaluation:', file=sys.stderr, flush=True)
         traceback.print_exc()
         print('', file=sys.stderr, flush=True)
         result = {
-            'bad': '1',
+            'success': 0,
+            'message': 'internal evaluator error',
         }
 
     try:
@@ -172,7 +199,7 @@ def run_eval(data):
         print('Exception encoding titanic evaluator result:', file=sys.stderr, flush=True)
         traceback.print_exc()
         print('', file=sys.stderr, flush=True)
-        return b'{"bad": 1}'
+        return b'{"success": 0}'
 
 
 class TitanicHTTPRequestHandler(fserver.AsyncHTTPRequestHandler):

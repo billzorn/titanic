@@ -154,7 +154,12 @@ class IEEECtx(EvalCtx):
                     w = int(specw)
                     p = nbits - w
                 else:
-                    raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+                    precl = props['precision'].as_list()
+                    if precl is not None and len(precl) == 3 and str(precl[0]) == 'float':
+                        w = int(str(precl[1]))
+                        p = int(str(precl[2]))
+                    else:
+                        raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
             if w != self.w or p != self.p:
                 self.w = w
                 self.p = p
@@ -225,7 +230,12 @@ class PositCtx(EvalCtx):
             try:
                 es, nbits = posit_esnbits[str(props['precision']).strip().lower()]
             except KeyError:
-                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+                precl = props['precision'].as_list()
+                if precl is not None and len(precl) == 3 and str(precl[0]) == 'posit':
+                    es = int(str(precl[1]))
+                    nbits = int(str(precl[2]))
+                else:
+                    raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
             if es != self.es or nbits != self.nbits:
                 self.es = es
                 self.nbits = nbits

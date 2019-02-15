@@ -180,10 +180,10 @@ class Evaluator(object):
         # print()
 
         # return result
-    
-        
+
+
         return method(e, ctx)
-        
+
 
 
 class BaseInterpreter(Evaluator):
@@ -258,13 +258,15 @@ class BaseInterpreter(Evaluator):
     # interpreter interface
 
     @classmethod
-    def arg_ctx(cls, core, args, ctx=None):
+    def arg_ctx(cls, core, args, ctx=None, override=True):
         if len(core.inputs) != len(args):
             raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'.format(
                 len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
         if ctx is None:
             ctx = cls.ctype(props=core.props)
+        elif override:
+            ctx = cls.ctype(props=core.props).let(props=ctx.props)
         else:
             ctx = ctx.let(props=core.props)
 
@@ -285,16 +287,16 @@ class BaseInterpreter(Evaluator):
         return ctx.let(bindings=arg_bindings)
 
     @classmethod
-    def interpret(cls, core, args, ctx=None):
-        ctx = cls.arg_ctx(core, args, ctx=ctx)
+    def interpret(cls, core, args, ctx=None, override=True):
+        ctx = cls.arg_ctx(core, args, ctx=ctx, override=override)
         return cls.evaluate(core.e, ctx)
 
     @classmethod
-    def interpret_pre(cls, core, args, ctx=None):
+    def interpret_pre(cls, core, args, ctx=None, override=True):
         if core.pre is None:
             return True
         else:
-            ctx = cls.arg_ctx(core, args, ctx=ctx)
+            ctx = cls.arg_ctx(core, args, ctx=ctx, override=override)
             return cls.evaluate(core.pre, ctx)
 
 
