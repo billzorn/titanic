@@ -29,9 +29,9 @@
 
           <div id="float-opts" class="backend-opts control-element">
             <label for="float-w" class="text" style="padding-left:8px;" title="The number of bits in the exponent">w:</label>
-            <input id="float-w" class="code" style="width:4em;" name="w" type="number" min="2" max="1024" value="11" title="The number of bits in the exponent">
+            <input id="float-w" class="code" style="width:4em;" name="w" type="number" min="2" max="1024" value="16" title="The number of bits in the exponent">
             <label for="float-p" class="text" style="padding-left:8px;" title="The number of bits in the significand">p:</label>
-            <input id="float-p" class="code" style="width:5em;" name="p" type="number" min="2" max="65536" value="53" title="The number of bits in the significand">
+            <input id="float-p" class="code" style="width:5em;" name="p" type="number" min="2" max="1024" value="53" title="The number of bits in the significand">
             <select id="float-select" class="code" style="margin-left:16px;" title="Shorhand IEEE 754 name">
               <option value="binary16">binary16</option>
               <option value="binary32">binary32</option>
@@ -44,9 +44,9 @@
 
           <div id="posit-opts" class="backend-opts control-element" style="display:none;">
             <label for="posit-es" class="text" style="padding-left:8px;" title="The number of exponent bits (note the posit exponent is mostly stored in the regime)">es:</label>
-            <input id="posit-es" class="code" style="width:4em;" name="es" type="number" min="0" max="1024" value="4" title="The number of exponent bits (note the posit exponent is mostly stored in the regime)">
+            <input id="posit-es" class="code" style="width:4em;" name="es" type="number" min="0" max="16" value="4" title="The number of exponent bits (note the posit exponent is mostly stored in the regime)">
             <label for="posit-nbits" class="text" style="padding-left:8px;" title="The total number of bits in the posit">nbits:</label>
-            <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="65536" value="64" title="The total number of bits in the posit">
+            <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="128" value="64" title="The total number of bits in the posit">
             <select id="posit-select" class="code" style="margin-left:16px;" title="Shorhand posit name">
               <option value="posit8">posit8</option>
               <option value="posit16">posit16</option>

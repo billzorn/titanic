@@ -6,10 +6,12 @@
 
 .text {
     font-family: Helvetica, Arial, sans;
+    font-size: 18px;
 }
 
 .code {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-size: 18px;
 }
 
 #webtool {
@@ -43,7 +45,6 @@
 }
 
 .controls {
-    background: #bfbfbf;
     flex: initial;
 
     display: flex;
@@ -87,7 +88,6 @@
 }
 
 .output {
-    background: #8f8f8f;
     flex: 1;
     overflow-y: scroll;
 
@@ -99,7 +99,8 @@
 
 .output-item {
     flex: initial;
-    border: 1px solid #222;
+    border: 1px solid #aaa;
+    margin-bottom: 4px;
 
     display: flex;
     flex-direction: column;

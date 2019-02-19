@@ -54,11 +54,18 @@ class WebtoolArgumentError(WebtoolError):
 
 class WebtoolState(object):
 
-    def _read_int(self, x, name):
+    def _read_int(self, x, name, minimum=None, maximum=None):
         try:
-            return int(x)
+            i = int(x)
         except ValueError as e:
             raise WebtoolError(name + ' must be an integer')
+
+        if minimum is not None and i < minimum:
+            raise WebtoolError(name + ' must be at least ' + str(minimum))
+        elif maximum is not None and i > maximum:
+            raise WebtoolError(name + ' can be at most ' + str(maximum))
+        else:
+            return i
 
     def _read_bool(self, x, name):
         if x is True or x is False:
@@ -104,19 +111,19 @@ class WebtoolState(object):
             self.backend = str(payload['backend']).strip()
 
         if 'w' in payload:
-            self.w = self._read_int(payload['w'], 'w')
+            self.w = self._read_int(payload['w'], 'w', minimum=2, maximum=16)
 
         if 'p' in payload:
-            self.p = self._read_int(payload['p'], 'p')
+            self.p = self._read_int(payload['p'], 'p', minimum=2, maximum=1024)
 
         if 'float_override' in payload:
             self.float_override = self._read_bool(payload['float_override'], 'float_override')
 
         if 'es' in payload:
-            self.es = self._read_int(payload['es'], 'es')
+            self.es = self._read_int(payload['es'], 'es', minimum=0, maximum=16)
 
         if 'nbits' in payload:
-            self.nbits = self._read_int(payload['nbits'], 'nbits')
+            self.nbits = self._read_int(payload['nbits'], 'nbits', minimum=2, maximum=128)
 
         if 'posit_override' in payload:
             self.posit_override = self._read_bool(payload['posit_override'], 'posit_override')

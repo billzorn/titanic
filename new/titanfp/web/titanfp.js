@@ -141,8 +141,20 @@ function set_webtool_state(state) {
 
 // submission logic
 
-function eval_result(result) {
-    //console.log(result);
+let result_id = 1;
+
+function register_result() {
+    const result_id_name = 'result-' + result_id;
+    result_id += 1;
+
+    $('#output').append(
+        '<div id="' + result_id_name + '" class="output-item"></div>'
+    );
+
+    return result_id_name;
+}
+
+function eval_result(result, id_name) {
     let body = '';
 
     if (result.success) {
@@ -165,22 +177,21 @@ function eval_result(result) {
         }
     }
 
-    $('#output').append(
-        '<div class="output-item">'
-            + body
-            + '</div>'
-    );
+    $('#' + id_name).html(body);
 }
 
 function submit_eval() {
     const payload = JSON.stringify(get_webtool_state());
+    const id_name = register_result();
 
+    $('#' + id_name).html('<div class="output-row><p class="code">Evaluating...</p></div>');
+    
     $.ajax({
         type: 'POST',
         url: 'eval',
         data: payload,
         contentType: 'application/json',
-        success: eval_result,
+        success: (result) => eval_result(result, id_name),
     });
 }
 
