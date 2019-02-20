@@ -101,7 +101,7 @@ class Digital(object):
     _rc: int = 0
 
     # rounding envelope
-    _interval_full: bool = False
+    _interval_size: int = 0
     _interval_down: bool = False
     _interval_closed: bool = False
 
@@ -123,14 +123,22 @@ class Digital(object):
         return self._rc
 
     @property
-    def interval_full(self):
+    def interval_size(self):
         """Size of the rounding envelope.
-        If True, then rounding was not to nearest, i.e. the interval covers
-        the full space between this number and the next one with the same precision.
-        If False, then rounding was to nearest, so the half bit can be recovered
-        with certainty.
+        The envelope use to round to this number was 2 ** _interval_size
+        units in the last place. For example:
+        Fixed-point rounding, not to nearest, will have a size of 0.
+        Fixed-point rounding, to nearest, will have a size of -1.
+        Floating-point rounding, to nearest, which also round the significand
+        up to a power of two, (thereby increasing _exp to keep precision the same)
+        will have a size of -2.
+        Other sizes are possible; in general, positive sizes don't make sense,
+        and will cause further rounding to fail (the envelope is bigger than a whole ulp,
+        so we have no idea which number this was supposed to be)
+        while smaller negative sizes indicate that there was a known run of zeros or ones
+        at the end of the significand.
         """
-        return self._interval_full
+        return self._interval_size
 
     @property
     def interval_down(self):
@@ -170,7 +178,7 @@ class Digital(object):
             and self._isnan == other._isnan
             and self._inexact == other._inexact
             and self._rc == other._rc
-            and self._interval_full == other._interval_full
+            and self._interval_size == other._interval_size
             and self._interval_down == other._interval_down
             and self._interval_closed == other._interval_closed
         )
@@ -186,7 +194,7 @@ class Digital(object):
                  isnan=None,
                  inexact=None,
                  rc=None,
-                 interval_full=None,
+                 interval_size=None,
                  interval_down=None,
                  interval_closed=None,
     ):
@@ -272,12 +280,12 @@ class Digital(object):
             self._rc = type(self)._rc
 
         # interval stuff
-        if interval_full is not None:
-            self._interval_full = interval_full
+        if interval_size is not None:
+            self._interval_size = interval_size
         elif x is not None:
-            self._interval_full = x._interval_full
+            self._interval_size = x._interval_size
         else:
-            self._interval_full = type(self)._interval_full
+            self._interval_size = type(self)._interval_size
 
         if interval_down is not None:
             self._interval_down = interval_down
@@ -294,10 +302,10 @@ class Digital(object):
             self._interval_closed = type(self)._interval_closed
 
     def __repr__(self):
-        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, interval_full={}, interval_down={}, interval_closed={})'.format(
+        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, interval_size={}, interval_down={}, interval_closed={})'.format(
             type(self).__name__, repr(self._negative), repr(self._c), repr(self._exp),
             repr(self._inexact), repr(self._rc), repr(self._isinf), repr(self._isnan),
-            repr(self._interval_full), repr(self._interval_down), repr(self._interval_closed),
+            repr(self._interval_size), repr(self._interval_down), repr(self._interval_closed),
         )
 
     def __str__(self):
@@ -517,7 +525,7 @@ class Digital(object):
         (for example, fixed point rounding up to a power of two).
         """
         if self.inexact:
-            pass
+
         else:
             c = self.c
             exp = self.exp
@@ -653,14 +661,14 @@ class Digital(object):
                 low_bit = 1
             else:
                 low_bit = 0
-                
+
             known_half_bit = True
             half_bit = new_half_bit
 
             c = left_bits
 
-            return max_p, n
-            
+        return max_p, n
+
 
         else: # offset > 0
             left_bits = self.c >> offset
