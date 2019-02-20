@@ -366,7 +366,7 @@ class SimpleInterpreter(BaseInterpreter):
             return True
         else:
             a = cls.evaluate(e.children[0], ctx)
-            for child in cls.children[1:]:
+            for child in e.children[1:]:
                 b = cls.evaluate(child, ctx)
                 if not a < b:
                     return False
@@ -381,7 +381,7 @@ class SimpleInterpreter(BaseInterpreter):
             return True
         else:
             a = cls.evaluate(e.children[0], ctx)
-            for child in cls.children[1:]:
+            for child in e.children[1:]:
                 b = cls.evaluate(child, ctx)
                 if not a > b:
                     return False
@@ -396,7 +396,7 @@ class SimpleInterpreter(BaseInterpreter):
             return True
         else:
             a = cls.evaluate(e.children[0], ctx)
-            for child in cls.children[1:]:
+            for child in e.children[1:]:
                 b = cls.evaluate(child, ctx)
                 if not a <= b:
                     return False
@@ -411,7 +411,7 @@ class SimpleInterpreter(BaseInterpreter):
             return True
         else:
             a = cls.evaluate(e.children[0], ctx)
-            for child in cls.children[1:]:
+            for child in e.children[1:]:
                 b = cls.evaluate(child, ctx)
                 if not a >= b:
                     return False
@@ -426,7 +426,7 @@ class SimpleInterpreter(BaseInterpreter):
             return True
         else:
             a = cls.evaluate(e.children[0], ctx)
-            for child in cls.children[1:]:
+            for child in e.children[1:]:
                 b = cls.evaluate(child, ctx)
                 if not a == b:
                     return False
