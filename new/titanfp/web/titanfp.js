@@ -26,7 +26,8 @@ import {getFPCore} from './editor_demo';
 monaco.languages.register({id: 'fpcore'});
 monaco.languages.setMonarchTokensProvider('fpcore', fpcore);
 const editor_lang = 'fpcore';
-const editor_val = getFPCore();
+// const editor_val = getFPCore();
+const editor_val = '';
 
 
 monaco.languages.setLanguageConfiguration('fpcore', {
