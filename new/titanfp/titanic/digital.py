@@ -3,7 +3,7 @@
 import typing
 
 from .ops import RM
-from .integral import bitmask
+from .utils import bitmask, RoundingError, PrecisionError
 
 class PrecisionError(Exception):
     """Insufficient precision given to rounding operation."""
@@ -515,7 +515,7 @@ class Digital(object):
 
     # The first and last phases are independent of the "rounding mode"
 
-    def round_recover():
+    def round_recover(self):
         """Recover the information that was used to round to this number.
         This will give back a modified significand and exponent,
         as well as the low bit. The half bit (if it was known)
