@@ -159,17 +159,42 @@ class Digital(object):
         """
         return self._interval_closed
 
-
-    def is_exactly_zero(self):
-        return self._c == 0 and not self._inexact
-
     def is_zero(self):
+        """Is this value a "classic" floating-point zero, with a zero significand?"""
         return self._c == 0
 
+    def is_exactly_zero(self):
+        """Is this value exactly zero, with a zero significand and the inexact flag unset?"""
+        return self._c == 0 and (not self._inexact)
+
+    def is_nonzero(self):
+        """Is this value definitely not zero, with a nonzero significand?"""
+        return self.c != 0
+
+    def is_possibly_nonzero(self):
+        """Is this value possibly nonzero, with a nonzero significand or the inexact flag set?"""
+        return (self._c != 0) or self._inexact
+
     def is_integer(self):
-        return self._exp >= 0 or self._c & bitmask(-self._exp) == 0
+        """Is this value an integer (though not necessarily an exact one)?"""
+        return (self._exp >= 0) or (self._c & bitmask(-self._exp) == 0)
+
+    def is_exact_integer(self):
+        """Is this value an exact integer?"""
+        return (not self._inexact) and ((self._exp >= 0) or (self._c & bitmask(-self._exp) == 0))
+
+    def is_finite_real(self):
+        """Is this value a finite real number, i.e. not an infinity or NaN?"""
+        return not (self._isinf or self._isnan)
+
+    def is_nar(self):
+        """Is this value "not a real" number, i.e. an infinity or NaN?"""
+        return self._isinf or self._isnan
 
     def is_identical_to(self, other):
+        """Is this value encoded identically to some other value?
+        This is a structural property, and may be stricter than real valued equality.
+        """
         return (
             self._c == other._c
             and self._exp == other._exp
@@ -523,10 +548,72 @@ class Digital(object):
         Note that the precision of the new significand may change;
         in some cases, it could be less than the precision of the input significand
         (for example, fixed point rounding up to a power of two).
-        """
-        if self.inexact:
 
-        else:
+        The result is provided as a canonical significand and exponent c, exp
+        such that the exact, pre_rounded number is exactly c * 2**exp if low_bit is 0,
+        or somewhere (precise value unknown) between c * 2**exp and (c + 1) * 2**exp
+        if low_bit is 1;
+        i.e. c is the longest known prefix of the significand, rounded towards zero,
+        and low_bit is the "sticky bit" which tells if there might be another 1
+        somewhere in the lower bits of the significand.
+        """
+        if self.is_nar():
+            raise RoundingError('cannot recover rounding information from infinite or non-real values')
+
+        if self.inexact:
+            # Interval points towards zero, so we must have rounded UP.
+            # The true significand is smaller.
+            if self.interval_down:
+                if self.is_zero():
+                    raise RoundingError('invalid interval for zero: cannot have rounded away from zero')
+                # this subtraction may change the effective p and e, but not exp
+                c = self.c - 1
+                # now fix up based on interval size
+                if self.interval_size < 0:
+                    pad_len = -self.interval_size
+                    pad = bitmask(pad_len)
+                    c = (c << pad_len) | pad
+                    exp = self.exp - pad_len
+                elif self.interval_size == 0:
+                    exp = self.exp
+                else: # self.interval_size > 0
+                    raise RoundingError('unimplemented: interval size {} is larger than one ulp'
+                                        .format(repr(self.interval_size)))
+
+                # For closed intervals, use the modified significand exactly;
+                # otherwise, we rounded up, so there must have been some low bits.
+                if self.interval_closed:
+                    low_bit = 0
+                else:
+                    low_bit = 1
+
+            # Otherwise, interval points away from zero, so we rounded DOWN.
+            # We may need to pad with zeros to extend the precision
+            # based on how tight the interval is,
+            # but we only change the value if the interval is known to be closed.
+            else: # not self.interval_down
+                c = self.c
+                if self.interval_size < 0:
+                    pad_len = -self.interval_size
+                    # pad is zeros
+                    c = c << pad_len
+                    exp = self.exp - pad_len
+                elif self.interval_size == 0:
+                    exp = self.exp
+                else: # self.interval_size > 0
+                    raise RoundingError('unimplemented: interval size {} is larger than one ulp'
+                                        .format(repr(self.interval_size)))
+
+                # For closed intervals, we need to move one ulp away
+                # (of the newly modified size); otherwise, there must have been some lower bits.
+                if self.interval_closed:
+                    # this addition may change the effective p and e (further), but not exp
+                    c += 1
+                    low_bit = 0
+                else:
+                    low_bit = 1
+
+        else: # not self.inexact
             c = self.c
             exp = self.exp
             low_bit = 0
@@ -667,7 +754,7 @@ class Digital(object):
 
             c = left_bits
 
-        return max_p, n
+            return max_p, n
 
 
         else: # offset > 0
