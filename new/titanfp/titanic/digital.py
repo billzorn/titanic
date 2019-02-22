@@ -752,7 +752,7 @@ class Digital(object):
             if mode is RoundingMode.TOWARD_ZERO:
                 direction = RoundingDirection.TRUNCATE
             elif mode is RoundingMode.AWAY_ZERO:
-                direction = RoundingDirection.AWAY_ZERO
+                direction = RoundingDirection.ROUND_AWAY
             elif mode is RoundingMode.TO_EVEN:
                 if utils.is_even_for_rounding(c, exp):
                     direction = RoundingDirection.TRUNCATE
@@ -857,5 +857,17 @@ class Digital(object):
         # as well as for unroundable values like NaN.
         p, exp, c, half_bit, low_bit = self.round_setup(max_p=max_p, min_n=min_n)
 
+        # convert the rounding mode and sign of this number into the internal rounding mode
         try:
-            
+            nearest, mode = Digital._rounding_modes[(self.negative, rm)]
+        except KeyError:
+            raise ValueError('invalid rounding mode: {} (negative={})'
+                             .format(repr(rm), repr(self.negative)))
+
+        # determine rounding direction and interval parameters
+        direction, interval_size, interval_closed = self.round_direction(p, exp, c, half_bit, low_bit,
+                                                                         nearest=nearest, mode=mode)
+
+        # all done
+        return self.round_apply(p, exp, c, half_bit, low_bit,
+                                direction, interval_size, interval_closed)
