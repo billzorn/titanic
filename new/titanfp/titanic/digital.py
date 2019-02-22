@@ -1,12 +1,23 @@
 """Universal representation for digital numbers (in base 2)"""
 
 import typing
+from enum import IntEnum, unique
 
+from . import utils
 from .ops import RM
-from .utils import bitmask, RoundingError, PrecisionError
 
-class PrecisionError(Exception):
-    """Insufficient precision given to rounding operation."""
+
+@unique
+class RoundingMode(IntEnum):
+    TOWARD_ZERO = 0
+    AWAY_ZERO = 1
+    TO_EVEN = 2
+
+@unique
+class RoundingDirection(IntEnum):
+    ROUND_DOWN = -1 # unused
+    TRUNCATE = 0
+    ROUND_AWAY = 1
 
 
 class Digital(object):
@@ -177,11 +188,11 @@ class Digital(object):
 
     def is_integer(self):
         """Is this value an integer (though not necessarily an exact one)?"""
-        return (self._exp >= 0) or (self._c & bitmask(-self._exp) == 0)
+        return (self._exp >= 0) or (utils.maskbits(self._c, -self._exp) == 0)
 
     def is_exact_integer(self):
         """Is this value an exact integer?"""
-        return (not self._inexact) and ((self._exp >= 0) or (self._c & bitmask(-self._exp) == 0))
+        return (not self._inexact) and ((self._exp >= 0) or (utils.maskbits(self._c, -self._exp) == 0))
 
     def is_finite_real(self):
         """Is this value a finite real number, i.e. not an infinity or NaN?"""
@@ -360,7 +371,7 @@ class Digital(object):
         if self.isinf:
             if other.isinf and self.negative == other.negative:
                 if strict and (self.inexact or other.inexact):
-                    raise PrecisionError('cannot compare {} and {} with certainty'
+                    raise utils.PrecisionError('cannot compare {} and {} with certainty'
                                          .format(str(self), str(other)))
                 return 0
             elif self.negative:
@@ -389,7 +400,7 @@ class Digital(object):
             return -1
         elif self_ord == other_ord:
             if strict and (self.inexact or other.inexact):
-                raise PrecisionError('cannot compare {} and {} with certainty'
+                raise utils.PrecisionError('cannot compare {} and {} with certainty'
                                      .format(str(self), str(other)))
             return 0
         else:
@@ -446,7 +457,7 @@ class Digital(object):
             if strict and self.inexact:
                 # If this number is inexact, then we'd have to make up bits to
                 # extend the precision.
-                raise PrecisionError('cannot precisely round {} to p={}, n={}'.format(str(self), str(max_p), str(min_n)))
+                raise utils.PrecisionError('cannot precisely round {} to p={}, n={}'.format(str(self), str(max_p), str(min_n)))
             else:
                 # If the number is exact, then we can always extend with zeros. This is independent
                 # of the rounding mode.
@@ -455,12 +466,12 @@ class Digital(object):
                 return type(self)(self, c=self.c << -offset, exp=self.exp + offset, rc=0)
 
         # Break up the significand
-        lost_bits = self.c & bitmask(offset)
+        lost_bits = utils.maskbits(self.c, offset)
         left_bits = self.c >> offset
 
         if offset > 0:
             offset_m1 = offset - 1
-            low_bits = lost_bits & bitmask(offset_m1)
+            low_bits = utils.maskbits(lost_bits, offset_m1)
             half_bit = lost_bits >> offset_m1
         else:
             # Rounding to the same precision is equivalent to having zero in the
@@ -532,13 +543,14 @@ class Digital(object):
 
         return type(self)(self, c=c, exp=exp, inexact=inexact, rc=rc)
 
-
     # Rounding is hard. We can break it up into 3 phases:
     #  - determine the target p and n, and split up the input
     #  - determine which direction to round
     #  - actually apply the rounding
 
-    # The first and last phases are independent of the "rounding mode"
+    # Most of the work done in the first phase is separated out into another
+    # function that recovers what we know about the original significand.
+    # The first and last phases are independent of the rounding mode.
 
     def round_recover(self):
         """Recover the information that was used to round to this number.
@@ -558,26 +570,26 @@ class Digital(object):
         somewhere in the lower bits of the significand.
         """
         if self.is_nar():
-            raise RoundingError('cannot recover rounding information from infinite or non-real values')
+            raise utils.RoundingError('cannot recover rounding information from infinite or non-real values')
 
         if self.inexact:
             # Interval points towards zero, so we must have rounded UP.
             # The true significand is smaller.
             if self.interval_down:
                 if self.is_zero():
-                    raise RoundingError('invalid interval for zero: cannot have rounded away from zero')
+                    raise utils.RoundingError('invalid interval for zero: cannot have rounded away from zero')
                 # this subtraction may change the effective p and e, but not exp
                 c = self.c - 1
                 # now fix up based on interval size
                 if self.interval_size < 0:
                     pad_len = -self.interval_size
-                    pad = bitmask(pad_len)
+                    pad = utils.bitmask(pad_len)
                     c = (c << pad_len) | pad
                     exp = self.exp - pad_len
                 elif self.interval_size == 0:
                     exp = self.exp
                 else: # self.interval_size > 0
-                    raise RoundingError('unimplemented: interval size {} is larger than one ulp'
+                    raise utils.RoundingError('unsupported: interval size {} is larger than one ulp'
                                         .format(repr(self.interval_size)))
 
                 # For closed intervals, use the modified significand exactly;
@@ -601,7 +613,7 @@ class Digital(object):
                 elif self.interval_size == 0:
                     exp = self.exp
                 else: # self.interval_size > 0
-                    raise RoundingError('unimplemented: interval size {} is larger than one ulp'
+                    raise utils.RoundingError('unsupported: interval size {} is larger than one ulp'
                                         .format(repr(self.interval_size)))
 
                 # For closed intervals, we need to move one ulp away
@@ -620,296 +632,230 @@ class Digital(object):
 
         return c, exp, low_bit
 
-    def _round_setup(self, max_p, min_n=None, ext_fn=None, strict=True):
-        """Determine p and n, and split the significand accordingly.
-        Will fail for any inf or nan, as these non-real values cannot be rounded.
-        If strict is True, will fail if the split cannot be performed precisely.
+    def round_setup(self, max_p=None, min_n=None, ext_fn=None):
+        """Split the significand in preparation for rounding.
+        Will fail for any value that cannot round_recover(),
+        specifically infinities and NaN.
+
+        The result is the precision p (or none, if using fixed-point style rounding),
+        as well as the exponent, and the split significand: c, the half bit, and the low bit.
         """
+        c, exp, low_bit = self.round_recover()
 
-        if self.isinf or self.isnan:
-            raise ValueError('cannot round something that does not have a real value: {}'.format(repr(self)))
+        # compute p, n, and offset
 
-        # compute offset
+        if max_p is None:
+            p = None
+            if min_n is None:
+                # How are we supposed to round???
+                raise ValueError('must specify max_p or min_n')
+            else: # min_n is not None
+                # Fixed-point rounding: limited by n, precision can change.
+                n = min_n
+        else: # max_p is not None:
+            p = max_p
+            e = (exp - 1) + c.bit_length()
+            if min_n is None:
+                # Floating-point rounding: limited by some fixed precision.
+                n = e - max_p
+            else: # min_n is not None
+                # Floating-point rounding, with subnormals:
+                # limited by some fixed precision, or a smallest representable bit.
+                n = max(min_n, e - max_p)
 
-        if min_n is None:
-            n = self.e - max_p
-        else:
-            n = max(min_n, self.e - max_p)
+        offset = n - (exp - 1)
 
-        offset = n - self.n
+        # split significand
 
-        # Convert from envelope full / down / closed flags
-        # to half bit / low bit, before shifting the significand.
-        # This information will be processed based on the offset later.
-        # Note that this computed c might not have the expected max_p precision:
-        # it goes with self.exp + offset, not necessarily with self.e.
-        # This is ok - we have to fix it up later in round_apply.
+        # Round off offset bits.
+        if offset > 0:
+            left_bits = c >> offset
+            half_bit = (c >> (offset - 1)) & 1
+            lost_bits = utils.maskbits(c, offset - 1)
 
-        c = self.c
+            c = left_bits
+            exp += offset
 
-        if self.inexact:
+            if low_bit != 0 or lost_bits != 0:
+                low_bit = 1
+            else:
+                low_bit = 0
 
-            if self.interval_full:
-                known_half_bit = False
-                half_bit = 0
+        # Keep all of the bits; this means there can't be any half_bit.
+        elif offset == 0:
+            half_bit = None
 
-                if self.interval_down:
-                    if c == 0:
-                        raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
-                    else:
-                        c -= 1
-
-                    if self.interval_closed:
-                        # Closed intervals only occur when we round a point exactly on the border;
-                        # here, we have rounded an exact value away to the next representable value.
-                        # Note that this situation will never be produced by typical
-                        # IEEE 754 rounding modes.
-                        low_bit = 0
-                        known_half_bit = True
-                    else: # not self.interval_closed
-                        low_bit = 1
-
-                else: # not self.interval_down
-                    if self.interval_closed:
-                        # We rounded an exact value towards zero, somehow.
-                        c += 1
-                        low_bit = 0
-                        known_half_bit = True
-                    else: # not self.interval_closed
-                        low_bit = 1
-
-            else: # not self.interval_full
-                known_half_bit = True
-
-                if self.interval_down:
-                    if c == 0:
-                        raise ValueError('inexact zero cannot have envelope down: {}'.format(repr(self)))
-                    else:
-                        c -= 1
-
-                    if self.interval_closed:
-                        half_bit = 1
-                        low_bit = 0
-                    else: # not self.interval_closed
-                        half_bit = 1
-                        low_bit = 1
-
-                else: # not self.interval_down
-                    if self.interval_closed:
-                        half_bit = 1
-                        low_bit = 0
-                    else:
-                        half_bit = 0
-                        low_bit = 1
-
-        else: # not self.inexact
-            known_half_bit = True
-            half_bit = 0
-            low_bit = 0
-
-        if offset < 0:
-            # Negative offset: we are trying to make the representation more precise.
-            # This is ok for exact numbers: just extend with zeros.
-            # For inexact numbers, we don't have enough information to produce a smaller
-            # envelope; if strict == True, we raise an exception,
-            # otherwise there are various different ways to proceed.
-            # If the ext_fn (Extension Function) is None, then treat the number as exact
-            # and extend with zeros as usual. Note that this can throw away some information,
-            # particularly in the case where a result was rounded from exactly halfway.
-            # For consistency, using strict == False will extend the rounded result,
-            # instead of recovering the (exactly known) halfway result that must have been rounded.
-            # Passing ext_fn can get around this, or implement novel behaviors such as filling
-            # in unknown bits randomly.
+        # Add on -offset bits to the right;
+        # we're trying to make the number more precise.
+        else: # offset < 0
             if ext_fn is None:
-                if strict and self.inexact:
-                    raise PrecisionError('cannot precisely split {} at p={}, n={}'.format(repr(self), repr(max_p), repr(min_n)))
+                if low_bit != 0:
+                    raise utils.PrecisionError('cannot precisely split {} for rounding with p={}, n={}'
+                                         .format(repr(self), repr(max_p), repr(min_n)))
                 else:
-                    # extend with zeros, exactly as if the value had been exact
-                    c = self.c << -offset
-                    # all envelope information is destroyed, so we will always end up creating an exact value
-                    known_half_bit = True
+                    # extend with zeros, which is entirely fine for exact values
+                    c <<= -offset
+                    exp += offset
+                    # All information about the envelope is destroyed,
+                    # so we always end up creating an exact value.
                     half_bit = 0
                     low_bit = 0
             else:
                 raise ValueError('unsupported: ext_fn={}'.format(repr(ext_fn)))
 
-        # don't need to do anything else in case where offset == 0
+        # TODO: sanity check
+        assert exp == n+1
+        assert p is None or (c.bit_length() == p)
 
-        elif offset > 0:
-            # Shift over for positive offset.
-            # This will always allow us to compute a new, known half bit;
-            # any previous information about the half or low bit is carried
-            # along in the low bit.
-            left_bits = c >> offset
-            new_half_bit = (c >> (offset - 1)) & 1
-            lost_bits = c & bitmask(offset - 1)
+        return p, exp, c, half_bit, low_bit
 
-            if lost_bits != 0 or (known_half_bit and half_bit != 0) or low_bit != 0:
-                low_bit = 1
-            else:
-                low_bit = 0
-
-            known_half_bit = True
-            half_bit = new_half_bit
-
-            c = left_bits
-
-            return max_p, n
-
-
-        else: # offset > 0
-            left_bits = self.c >> offset
-            lost_bits = self.c & bitmask(offset)
-
-            if offset == 1:
-                half_bit
-
-            if self.inexact:
-                rc = self.rc
-            else:
-                # again, zero the rc if exact
-                rc = 0
-
-        return max_p, n, offset, c, known_half_bit, half_bit, low_bit
-
-
-    _TOWARD_ZERO = 0
-    _AWAY_ZERO = 1
-    _TO_EVEN = 2
-
-    _ROUND_DOWN = -1
-    _TRUNCATE = 0
-    _ROUND_AWAY = 1
-
-    def _round_direction(self, offset, left_bits, lost_bits, rc,
-                         nearest=True, mode=_TO_EVEN, strict=True):
-        """Determine which direction to round, based on two criteria:"
-            - nearest, which determines if we should round to nearest when possible,
+    def round_direction(self, p, exp, c, half_bit, low_bit,
+                        nearest=True, mode=RoundingMode.TO_EVEN):
+        """Determine which direction to round, based on two criteria:
+            - nearest, which determines if we should round to nearest when possible.
             - mode, which determines which way to break ties if rounding to nearest,
               or which direction to round in general otherwise.
-        The _TO_EVEN mode is only supported when rounding to nearest.
-        If strict is True, will fail if the direction cannot be determined precisely,
-        i.e. if an inexact number on a boundary is given without a return code.
+        Returns the direction, the size of the interval (which is purely based on nearest:
+        -1 if nearest is True, otherwise 0), and whether the interval is closed
+        (which is only true for exact halfway values when rounding to nearest).
         """
-
-        if offset <= 0:
-            half_bit == 0
-            low_bits == 0
-        else:
-            offset_m1 = offset - 1
-            half_bit = lost_bits >> offset_m1
-            low_bits = lost_bits & bitmask(offset_m1)
-
+        interval_closed = False
         if nearest:
+            interval_size = -1
+            if half_bit is None:
+                raise utils.PrecisionError('insufficient precision to round {} to nearest with p={}, n={}'
+                                     .format(repr(self), repr(p), repr(n)))
+            # below half: truncate
             if half_bit == 0:
-                return Digital._TRUNCATE
-            else:
-                if low_bits != 0:
-                    return Digital._ROUND_AWAY
-                else:
-                    # note that if the number is exact, it must have rc 0
-                    if rc < 0:
-                        return Digital._TRUNCATE
-                    elif rc > 0:
-                        return Digital._ROUND_AWAY
-                    else: # rc == 0
-                        if strict and self.inexact:
-                            raise ValueError('unable to determine which way to round at this precision')
-                        # break tie
-                        if mode == Digital._TOWARD_ZERO:
-                            return Digital._TRUNCATE
-                        elif mode == Digital._AWAY_ZERO:
-                            return Digital._ROUND_AWAY
-                        elif mode == Digital._TO_EVEN:
-                            if left_bits & 1 == 0:
-                                return Digital._TRUNCATE
-                            else:
-                                return Digital._ROUND_AWAY
+                direction = RoundingDirection.TRUNCATE
+            else: # half_bit == 1
+                # above half: round away
+                if low_bit != 0:
+                    direction = RoundingDirection.ROUND_AWAY
+                # exactly halfway
+                else: # low_bit == 0 and half_bit == 1
+                    interval_closed = True
+                    if mode is RoundingMode.TOWARD_ZERO:
+                        direction = RoundingDirection.TRUNCATE
+                    elif mode is RoundingMode.AWAY_ZERO:
+                        direction = RoundingDirection.ROUND_AWAY
+                    elif mode is RoundingMode.TO_EVEN:
+                        if utils.is_even_for_rounding(c, exp):
+                            direction = RoundingDirection.TRUNCATE
                         else:
-                            raise ValueError('Unknown rounding mode {}'.format(mode))
+                            direction = RoundingDirection.ROUND_AWAY
+                    else:
+                        raise ValueError('unknown rounding mode: {}'.format(repr(mode)))
 
-        else:
-            if mode == Digital._TOWARD_ZERO:
-                if lost_bits == 0:
-                    # again, if the number is exact, then this rc is 0
-                    if rc < 0:
-                        # special case: this number was rounded away from zero, but now we want to
-                        # round it toward zero, so undo the previous rounding by actually subtracting
-                        return Digital._ROUND_DOWN
-                    elif rc > 0:
-                        return Digital._TRUNCATE
-                    else: # rc == 0
-                        if strict and self.inexact:
-                            raise ValueError('unable to determine which way to round at this precision')
-                        # assume exact case: just keep this number
-                        return Digital._TRUNCATE
+        else: # not nearest
+            interval_size = 0
+            if mode is RoundingMode.TOWARD_ZERO:
+                direction = RoundingDirection.TRUNCATE
+            elif mode is RoundingMode.AWAY_ZERO:
+                direction = RoundingDirection.AWAY_ZERO
+            elif mode is RoundingMode.TO_EVEN:
+                if utils.is_even_for_rounding(c, exp):
+                    direction = RoundingDirection.TRUNCATE
                 else:
-                    return Digital._TRUNCATE
-
-            elif mode == Digital._AWAY_ZERO:
-                if lost_bits == 0:
-                    # if the number is exact, then rc must be 0, blah blah blah
-                    if rc < 0:
-                        # we rounded away to get here; keep it
-                        return Digital._TRUNCATE
-                    elif rc > 0:
-                        return Digital._ROUND_AWAY
-                    else: # rc == 0
-                        if strict and self.inexact:
-                            raise ValueError('unable to determine which way to round at this precision')
-                        # assume exact case: just keep this number
-                        return Digital._TRUNCATE
-                else:
-                    return Digital._ROUND_AWAY
-
-            elif mode == Digital._TO_EVEN:
-                raise ValueError('unsupported: nearest={}, mode={}'.format(nearest, mode))
-
+                    direction = RoundingDirection.ROUND_AWAY
             else:
-                raise ValueError('Unknown rounding mode {}'.format(mode))
+                raise ValueError('unknown rounding mode: {}'.format(repr(mode)))
 
+        return direction, interval_size, interval_closed
 
-    def _round_apply(self, max_p, offset, left_bits, lost_bits, rc,
-                     direction):
-        """Apply a rounding direction, to produce a rounded result.
-        Will fail if an attempt is made to _ROUND_DOWN zero; this direction should
-        never be attempted in practice, as a zero cannot be computed with a
-        negative return code (i.e. we can't have an inexact zero such that the
-        true result was actually smaller than it).
-        """
-
-        c = left_bits
-        exp = self.exp + offset
-
-        if direction == Digital._ROUND_AWAY:
+    def round_apply(self, p, exp, c, half_bit, low_bit,
+                    direction, interval_size, interval_closed):
+        """Apply a rounding direction, to produce a rounded result."""
+        if direction is RoundingDirection.ROUND_AWAY:
+            # A considerable amount of though should be given to this behavior
+            # in the edge cases that c is 1 or zero, i.e. we are rounding to less
+            # than two bits of precision, which is not well defined for IEEE 754.
+            #
+            # If c is zero, we will round away to one. For fixed-point, this is the
+            # right behavior. If we requested zero precision explicitly, we will
+            # then notice that the precision has increased, chop it off back to zero,
+            # but widen the exponent, which is also what we want.
+            #
+            # TODO: for p=0, do we still want to subtract from interval_size???
+            #
+            # If c is one, we will round away to two. For fixed-point, this is
+            # right. If we requested one bit of precision explicitly, we will again
+            # notice that the precision has increased, chop it off back to 1,
+            # and increase the exponent instead, which is fine.
             c += 1
-            if c.bit_length() > max_p:
-                # we carried: shift over to preserve p
+            inexact = True
+            if p is not None and c.bit_length() > p:
                 c >>= 1
                 exp += 1
-            new_rc = -1
+                interval_size -= 1
+            interval_down = True
 
-        elif direction == Digital._TRUNCATE:
-            if lost_bits != 0:
-                new_rc = 1
-            else:
-                new_rc = rc
+        elif direction is RoundingDirection.TRUNCATE:
+            # Truncation doesn't have any special edge cases:
+            # zero and one just stay as zero or one,
+            # and the only interesting thing is that we have to check
+            # the low_bit and half_bit to see if anything got rounded off
+            # to make the operation inexact.
+            inexact = (low_bit != 0) or (half_bit is not None and half_bit != 0)
+            interval_down = False
 
-
-        elif direction == Digital._ROUND_DOWN:
-            if c == 0:
-                raise ValueError('cannot round zero down')
-
-            c -= 1
-            if c.bit_length() < max_p:
-                # we borrowed: shift back to preserve p
-                c <<= 1
-                exp -= 1
-            new_rc = 1
+        elif direction is RoundingDirection.ROUND_DOWN:
+            raise RoundingError('rounding to the previous value is not supported')
 
         else:
-            raise ValueError('Unknown direction {}'.format(direction))
+            raise ValueError('unknown rounding direction: {}'.format(repr(direction)))
 
-        inexact = self.inexact or (rc != 0)
+        return type(self)(self, c=c, exp=exp, inexact=inexact,
+                          interval_size=interval_size, interval_down=interval_down, interval_closed=interval_closed)
 
-        return type(self)(self, c=c, exp=exp, inexact=inexact, rc=new_rc)
+    # negative, RM -> nearest, mode
+    _rounding_modes = {
+        (True, RM.RNE): (True, RoundingMode.TO_EVEN),
+        (False, RM.RNE): (True, RoundingMode.TO_EVEN),
+        (True, RM.RNA): (True, RoundingMode.AWAY_ZERO),
+        (False, RM.RNA): (True, RoundingMode.AWAY_ZERO),
+        (True, RM.RTP): (False, RoundingMode.TOWARD_ZERO),
+        (False, RM.RTP): (False, RoundingMode.AWAY_ZERO),
+        (True, RM.RTN): (False, RoundingMode.AWAY_ZERO),
+        (False, RM.RTN): (False, RoundingMode.TOWARD_ZERO),
+        (True, RM.RTZ): (False, RoundingMode.TOWARD_ZERO),
+        (False, RM.RTZ): (False, RoundingMode.TOWARD_ZERO),
+        (True, RM.RAZ): (False, RoundingMode.AWAY_ZERO),
+        (False, RM.RAZ): (False, RoundingMode.AWAY_ZERO),
+    }
+
+    def round(self, max_p=None, min_n=None, rm=RM.RNE, strict=True):
+        """Round the mantissa to at most max_p precision, or a least absolute digit
+        in position min_n, whichever is less precise. Rounding is implemented generally
+        for all real values; the requested precision may be one or even zero bits,
+        but there is no limit on the resulting exponent, and infinite and NaN
+        cannot be rounded in this way.
+
+        If only min_n is given, then rounding is performed as for fixed-point,
+        and the resulting significand may have more than max_p bits.
+        If max_p is given, then rounding is performed as for floating-point,
+        and the exponent will be adjusted to ensure the result has at most max_p bits.
+        If both max_p and min_n are specified, then min_n takes precedence,
+        so the result may have significantly less than max_p precision.
+        This behavior can be used to emulate IEEE 754 subnormals.
+        At least one of max_p or min_n must be given; otherwise, we would not know
+        if the rounding behavior should use fixed-point or floating-point rules.
+
+        The rounding mode rm is one of the usual IEEE 754 rounding modes.
+        If strict is True, then rounding will raise a PrecisionError
+        if there isn't enough precision to know the bits in the result.
+        If strict is False, then the value will be converted to an exact
+        value before rounding occurs; this ensures that there will not be a
+        precision error, but may also change the result in some cases.
+
+        Rounding may also raise a RoundingError if something else goes wrong;
+        this is usually due to a nonsensical input, and turning strict off
+        won't prevent it.
+        """
+
+        # round_setup will raise exceptions for bad max_p/min_n,
+        # as well as for unroundable values like NaN.
+        p, exp, c, half_bit, low_bit = self.round_setup(max_p=max_p, min_n=min_n)
+
+        try:
+            
