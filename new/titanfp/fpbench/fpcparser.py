@@ -1,4 +1,5 @@
 import typing
+import re
 
 import antlr4
 from .FPCoreLexer import FPCoreLexer
@@ -6,6 +7,19 @@ from .FPCoreParser import FPCoreParser
 from .FPCoreVisitor import FPCoreVisitor
 
 from . import fpcast as ast
+
+
+_int_re = re.compile(r'(?P<sgn>[-+]?)(?:(?P<dec>[0-9]+)|(?P<hex>0[xX][0-9A-Fa-f]+))')
+
+def read_int(s):
+    m = _int_re.fullmatch(s)
+    if m:
+        if m.group('dec'):
+            return int(s, 10)
+        else: # m.group('hex')
+            return int(s, 16)
+    else:
+        return None
 
 
 def _neg_or_sub(a, b=None):
@@ -190,7 +204,11 @@ class Visitor(FPCoreVisitor):
         if k in self._val_literals:
             return self._val_literals[k]
         else:
-            v = ast.Decnum(k)
+            i = read_int(k)
+            if i is not None:
+                v = ast.Integer(i)
+            else:
+                v = ast.Decnum(k)
             self._val_literals[k] = v
             return v
 
@@ -199,7 +217,11 @@ class Visitor(FPCoreVisitor):
         if k in self._val_literals:
             return self._val_literals[k]
         else:
-            v = ast.Hexnum(k)
+            i = read_int(k)
+            if i is not None:
+                v = ast.Integer(i)
+            else:
+                v = ast.Hexnum(k)
             self._val_literals[k] = v
             return v
 

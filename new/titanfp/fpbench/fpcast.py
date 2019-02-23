@@ -127,7 +127,8 @@ class TernaryExpr(NaryExpr):
 class ValueExpr(Expr):
     name: str = 'ValueExpr'
 
-    # All values (variables, constants, or numbers) are represented as strings in the AST.
+    # Except for integers, all values (variables, constants, or numbers)
+    # are represented as strings in the AST.
     def __init__(self, value: str) -> None:
         self.value: str = value
 
@@ -156,6 +157,21 @@ class Decnum(Val):
 
 class Hexnum(Val):
     name: str = 'Hexnum'
+
+class Integer(Val):
+    name: str = 'Integer'
+
+    def __init__(self, i: int) -> None:
+        super().__init__(str(i))
+        self.i = i
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.i) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, Integer):
+            return False
+        return self.i == other.i
 
 class Rational(Val):
     name: str = 'Rational'
