@@ -50,8 +50,8 @@ class Interpreter(interpreter.SimpleInterpreter):
         try:
             floatcls = softfloat_precs[(ctx.w, ctx.p)]
         except KeyError as exn:
-            raise ValueError('unsupported float format: w={:d}, p={:d}'
-                             .format(ctx.es, ctx.nbits))
+            raise interpreter.EvaluatorError('unsupported float format: w={:d}, p={:d}'
+                             .format(ctx.w, ctx.p))
         # this may double round for types other than float64 (just like numpy...)
         return floatcls(float(x))
 
@@ -60,7 +60,7 @@ class Interpreter(interpreter.SimpleInterpreter):
         try:
             floatcls = softfloat_precs[(ctx.w, ctx.p)]
         except KeyError as exn:
-            raise ValueError('unsupported float format: w={:d}, p={:d}'
+            raise interpreter.EvaluatorError('unsupported float format: w={:d}, p={:d}'
                              .format(ctx.w, ctx.p))
 
         inputcls = type(x)
@@ -83,6 +83,10 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def _eval_hexnum(cls, e, ctx):
         return cls.arg_to_digital(float.fromhex(e.value), ctx)
+
+    @classmethod
+    def _eval_integer(cls, e, ctx):
+        return cls.arg_to_digital(e.i, ctx)
 
     @classmethod
     def _eval_rational(cls, e, ctx):

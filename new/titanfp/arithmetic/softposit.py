@@ -39,7 +39,7 @@ class Interpreter(interpreter.SimpleInterpreter):
         try:
             positcls = softposit_precs[(ctx.es, ctx.nbits)]
         except KeyError as exn:
-            raise ValueError('unsupported posit format: es={:d}, nbits={:d}'
+            raise interpreter.EvaluatorError('unsupported posit format: es={:d}, nbits={:d}'
                              .format(ctx.es, ctx.nbits))
         # this may double round, sort of by design of the softposit library...
         return positcls(float(x))
@@ -49,7 +49,7 @@ class Interpreter(interpreter.SimpleInterpreter):
         try:
             positcls = softposit_precs[(ctx.es, ctx.nbits)]
         except KeyError as exn:
-            raise ValueError('unsupported posit format: es={:d}, nbits={:d}'
+            raise interpreter.EvaluatorError('unsupported posit format: es={:d}, nbits={:d}'
                              .format(ctx.es, ctx.nbits))
 
         inputcls = type(x)
@@ -72,6 +72,10 @@ class Interpreter(interpreter.SimpleInterpreter):
     @classmethod
     def _eval_hexnum(cls, e, ctx):
         return cls.arg_to_digital(float.fromhex(e.value), ctx)
+
+    @classmethod
+    def _eval_integer(cls, e, ctx):
+        return cls.arg_to_digital(e.i, ctx)
 
     @classmethod
     def _eval_rational(cls, e, ctx):
