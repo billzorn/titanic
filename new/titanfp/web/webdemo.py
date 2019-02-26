@@ -172,12 +172,11 @@ def run_eval(data):
         precision = state.precision
         if precision is not None:
             props['precision'] = precision
-
         ctx = backend.ctype(props=props)
-        arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)
 
-        named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props in core.inputs]
         try:
+            arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)
+            named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props in core.inputs]
             e_val = backend.interpret(core, state.args, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
