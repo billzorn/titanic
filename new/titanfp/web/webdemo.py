@@ -11,6 +11,7 @@ import multiprocessing
 from . import fserver
 
 from ..fpbench import fpcparser, fpcast as ast
+from ..arithmetic import interpreter
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
 
@@ -163,7 +164,7 @@ def run_eval(data):
                                        .format(len(core.inputs), len(state.args), ', '.join(map(str, state.args))))
 
         if state.backend in webdemo_eval_backends:
-            interpreter = webdemo_eval_backends[state.backend]
+            backend = webdemo_eval_backends[state.backend]
         else:
             raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
 
@@ -172,12 +173,21 @@ def run_eval(data):
         if precision is not None:
             props['precision'] = precision
 
-        ctx = interpreter.ctype(props=props)
-        arg_ctx = interpreter.arg_ctx(core, state.args, ctx=ctx, override=state.override)
+        ctx = backend.ctype(props=props)
+        arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)
 
         named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props in core.inputs]
-        e_val = interpreter.interpret(core, state.args, ctx=ctx, override=state.override)
-        pre_val = interpreter.interpret_pre(core, state.args, ctx=ctx, override=state.override)
+        try:
+            e_val = backend.interpret(core, state.args, ctx=ctx, override=state.override)
+        except interpreter.EvaluatorUnboundError as e:
+            raise WebtoolError('unbound variable {}'.format(str(e)))
+        except interpreter.EvaluatorError as e:
+            raise WebtoolError(str(e))
+
+        try:
+            pre_val = backend.interpret_pre(core, state.args, ctx=ctx, override=state.override)
+        except interpreter.EvaluatorError as e:
+            pre_val = str(e)
 
         result = {
             'success': 1,
