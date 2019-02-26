@@ -136,7 +136,7 @@ class Posit(mpnum.MPNum):
                     exp_inexact = unrounded.inexact
 
                 print('->\t', new_exp, rc, exp_inexact)
-                    
+
                 # We want to round on the geometric mean of the two numbers,
                 # but this is the same as rounding on the arithmetic mean of
                 # the exponents.
@@ -197,6 +197,26 @@ class Interpreter(interpreter.StandardInterpreter):
     @classmethod
     def _eval_constant(cls, e, ctx):
         return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.nbits), ctx=ctx)
+
+    # unfortunately, interpreting these values efficiently requries info from the context,
+    # so it has to be implemented per interpreter...
+
+    @classmethod
+    def _eval_integer(cls, e, ctx):
+        x = digital.Digital(m=e.i, exp=0, inexact=False)
+        return cls.round_to_context(x, ctx=ctx)
+
+    @classmethod
+    def _eval_rational(cls, e, ctx):
+        p = digital.Digital(m=e.p, exp=0, inexact=False)
+        q = digital.Digital(m=e.p, exp=0, inexact=False)
+        x = gmpmath.compute(OP.div, p, q, prec=ctx.nbits)
+        return cls.round_to_context(x, ctx=ctx)
+
+    @classmethod
+    def _eval_digits(cls, e, ctx):
+        x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.nbits)
+        return cls.round_to_context(x, ctx=ctx)
 
     @classmethod
     def round_to_context(cls, x, ctx):

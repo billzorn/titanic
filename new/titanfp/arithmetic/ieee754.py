@@ -120,6 +120,26 @@ class Interpreter(interpreter.StandardInterpreter):
     def _eval_constant(cls, e, ctx):
         return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
 
+    # unfortunately, interpreting these values efficiently requries info from the context,
+    # so it has to be implemented per interpreter...
+
+    @classmethod
+    def _eval_integer(cls, e, ctx):
+        x = digital.Digital(m=e.i, exp=0, inexact=False)
+        return cls.round_to_context(x, ctx=ctx)
+
+    @classmethod
+    def _eval_rational(cls, e, ctx):
+        p = digital.Digital(m=e.p, exp=0, inexact=False)
+        q = digital.Digital(m=e.p, exp=0, inexact=False)
+        x = gmpmath.compute(OP.div, p, q, prec=ctx.p)
+        return cls.round_to_context(x, ctx=ctx)
+
+    @classmethod
+    def _eval_digits(cls, e, ctx):
+        x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
+        return cls.round_to_context(x, ctx=ctx)
+
     @classmethod
     def round_to_context(cls, x, ctx):
         """Not actually used?"""

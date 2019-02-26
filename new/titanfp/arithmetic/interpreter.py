@@ -7,6 +7,16 @@ from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
 
 
+class EvaluatorError(Exception):
+    """Base Titanic evaluator error."""
+
+class EvaluatorUnimplementedError(EvaluatorError):
+    """Unimplemented feature in Titanic evaluator."""
+
+class EvaluatorUnboundError(EvaluatorError, LookupError):
+    """Unbound variable encountered during evaluation."""
+
+
 class _CacheSentinel(object):
     def __getitem__(self, key):
         raise KeyError(repr(key))
@@ -25,15 +35,15 @@ class Evaluator(object):
 
     @classmethod
     def _eval_expr(cls, e, ctx):
-        raise ValueError('Evaluator: expr {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('expr {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_var(cls, e, ctx):
-        raise ValueError('Evaluator: var {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('var {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_val(cls, e, ctx):
-        raise ValueError('Evaluator: val {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('val {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_ctx(cls, e, ctx):
@@ -43,23 +53,29 @@ class Evaluator(object):
 
     @classmethod
     def _eval_if(cls, e, ctx):
-        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_let(cls, e, ctx):
-        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_while(cls, e, ctx):
-        raise ValueError('Evaluator: control {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_op(cls, e, ctx):
-        raise ValueError('Evaluator: op {}: unimplemented'.format(repr(e)))
+        raise EvaluatorUnimplementedError('op {}: unimplemented'.format(str(e)))
+
+    @classmethod
+    def _eval_unknown(cls, e, ctx):
+        raise EvaluatorError('unknown operation {}'.format(e.name))
 
     _evaluator_dispatch = {
         # catch-all for otherwise unimplemented AST nodes
         ast.Expr: '_eval_expr',
+        # unstructured data, which normally isn't evaluated
+        ast.Data: '_eval_data',
         # variables are their own thing
         ast.Var: '_eval_var',
         # catch-all for all constant-valued expressions
@@ -68,8 +84,11 @@ class Evaluator(object):
         ast.Constant: '_eval_constant',
         ast.Decnum: '_eval_decnum',
         ast.Hexnum: '_eval_hexnum',
+        ast.Integer: '_eval_integer',
         ast.Rational: '_eval_rational',
         ast.Digits: '_eval_digits',
+        # strings are special ValueExprs (not Vals) that won't normally be evaluated
+        ast.String: '_eval_string',
         # rounding contexts
         ast.Ctx: '_eval_ctx',
         # control flow
@@ -78,6 +97,8 @@ class Evaluator(object):
         ast.While: '_eval_while',
         # catch-all for operations with some number of arguments
         ast.NaryExpr: '_eval_op',
+        # catch-all for operations not recognized by the compiler
+        ast.UnknownOperator: '_eval_unknown',
         # specific operations
         ast.Cast: '_eval_cast',
         ast.Add: '_eval_add',
@@ -144,6 +165,8 @@ class Evaluator(object):
 
     _evaluator_cache = _CacheSentinel()
 
+    # this is the sort of things that should be tracked in an instance
+    # rather than implemented directly in the class...
     # evals = 0
 
     @classmethod
@@ -164,8 +187,8 @@ class Evaluator(object):
                     cls._evaluator_cache[ecls] = method
                     break
             if method is None:
-                raise ValueError('Evaluator: unable to dispatch for expression {} with mro {}'
-                                 .format(repr(e), repr(ecls.__mro__)))
+                raise EvaluatorError('Evaluator: unable to dispatch for expression {} with mro {}'
+                                     .format(repr(e), repr(ecls.__mro__)))
 
         # cls.evals += 1
         # if cls.evals & 0xfffff == 0xfffff:
@@ -181,9 +204,7 @@ class Evaluator(object):
 
         # return result
 
-
         return method(e, ctx)
-
 
 
 class BaseInterpreter(Evaluator):
@@ -201,13 +222,11 @@ class BaseInterpreter(Evaluator):
 
     @staticmethod
     def arg_to_digital(x, ctx):
-        raise ValueError('BaseInterpreter: arg_to_digital({}): unimplemented'
-                         .format(repr(x)))
+        raise EvaluatorUnimplementedError('arg_to_digital({}): unimplemented'.format(repr(x)))
 
     @staticmethod
     def round_to_context(x, ctx):
-        raise ValueError('BaseInterpreter: round_to_context({}): unimplemented'
-                         .format(repr(x)))
+        raise EvaluatorUnimplementedError('round_to_context({}): unimplemented'.format(repr(x)))
 
 
     # values
@@ -217,7 +236,7 @@ class BaseInterpreter(Evaluator):
         try:
             return ctx.bindings[e.value]
         except KeyError as exn:
-            raise ValueError('unbound variable {}'.format(repr(exn.args[0])))
+            raise EvaluatorUnboundError(exn.args[0])
 
     @classmethod
     def _eval_val(cls, e, ctx):
@@ -228,7 +247,7 @@ class BaseInterpreter(Evaluator):
         try:
             return cls.constants[e.value]
         except KeyError as exn:
-            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
+            raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
 
     # control flow
@@ -481,8 +500,9 @@ class SimpleInterpreter(BaseInterpreter):
 
 class StandardInterpreter(SimpleInterpreter):
     """Standard FPCore interpreter.
-    Override Interpreter.dtype with a class that supports
-    all arithmetic operations: a ** b, a.fma(b, c), a.sin(), a.isinf().
+    Override Interpreter.dtype with a class derived from Digital
+    all standard FPCore operations as methods: x.add(y), a.fma(y, z), etc.
+    i.e. MPNum.
     """
 
     @classmethod
