@@ -209,7 +209,7 @@ class Interpreter(interpreter.StandardInterpreter):
     @classmethod
     def _eval_rational(cls, e, ctx):
         p = digital.Digital(m=e.p, exp=0, inexact=False)
-        q = digital.Digital(m=e.p, exp=0, inexact=False)
+        q = digital.Digital(m=e.q, exp=0, inexact=False)
         x = gmpmath.compute(OP.div, p, q, prec=ctx.nbits)
         return cls.round_to_context(x, ctx=ctx)
 
