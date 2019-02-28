@@ -4,6 +4,7 @@ implemented with GMP as a backend, but conveniently extended to Sinking Point.
 
 
 import gmpy2 as gmp
+import re
 
 from .integral import bitmask
 from . import conversion
@@ -265,10 +266,28 @@ def compute(opcode, *args, prec=53):
     return mpfr_to_digital(result)
 
 
+constant_exprs = {
+    'E' : lambda : gmp.exp(1),
+    'LOG2E' : lambda: gmp.log2(gmp.exp(1)), # TODO: may be inaccurate
+    'LOG10E' : lambda: gmp.log10(gmp.exp(1)), # TODO: may be inaccurate
+    'LN2' : gmp.const_log2,
+    'LN10' : lambda: gmp.log(10),
+    'PI' : gmp.const_pi,
+    'PI_2' : lambda: gmp.const_pi() / 2, # division by 2 is exact
+    'PI_4' : lambda: gmp.const_pi() / 4, # division by 4 is exact
+    'M_1_PI' : lambda: 1 / gmp.const_pi(), # TODO: may be inaccurate
+    'M_2_PI' : lambda: 2 / gmp.const_pi(), # TODO: may be inaccurate
+    'M_2_SQRTPI' : lambda: 2 / gmp.sqrt(gmp.const_pi()), # TODO: may be inaccurate
+    'SQRT2': lambda: gmp.sqrt(2),
+    'SQRT1_2': lambda: gmp.sqrt(gmp.div(gmp.mpfr(1), gmp.mpfr(2))),
+    'INFINITY': gmp.inf,
+    'NAN': gmp.nan,
+}
+
 def compute_constant(name, prec=53):
     with gmp.context(
-            # one extra bit, so that we can round from RTZ to RNE
-            precision=prec + 1,
+            # TODO: a few extra bits, so that it hopefully works out
+            precision=prec + 5,
             emin=gmp.get_emin_min(),
             emax=gmp.get_emax_max(),
             subnormalize=False,
@@ -287,12 +306,10 @@ def compute_constant(name, prec=53):
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
-        if name == 'E':
-            result = gmp.exp(1)
-        elif name == 'PI':
-            result = gmp.const_pi()
-        else:
-            raise ValueError('unsupported constant {}'.format(repr(exn.args[0])))
+        try:
+            result = constant_exprs[name]()
+        except KeyError as e:
+            raise ValueError('unknown constant {}'.format(repr(e.args[0])))
 
     return mpfr_to_digital(result)
 
@@ -367,6 +384,77 @@ def ieee_fbound(w, p):
     return mpfr_to_digital(fbound)
 
 
+_mpfr_repr_re = re.compile(r"mpfr\('([+-]?)([.0-9]+)((?:e[-+]?[0-9]+)?)',?[ 0-9]*\)")
+_mpfr_e_re = re.compile(r'([+-]?)([0-9](?:\.[0-9]*))(e[+-]?[0-9]+)')
+def digital_to_uncertain_string(x):
+    if x.is_zero():
+        return '[0]'
+    else:
+        next_digital = digital.Digital(negative=x.negative, c=(x.c << 1) + 1, exp=x.exp - 1)
+        prev_digital = digital.Digital(negative=x.negative, c=(x.c << 1) - 1, exp=x.exp - 1)
+        next_mpfr = digital_to_mpfr(next_digital)
+        prev_mpfr = digital_to_mpfr(prev_digital)
+
+        next_m = _mpfr_repr_re.fullmatch(repr(next_mpfr))
+        prev_m = _mpfr_repr_re.fullmatch(repr(prev_mpfr))
+
+        if next_m.group(1) == '-':
+            if prev_m.group(1) == '-':
+                prefix = '-'
+            else:
+                assert False, 'signs disagree! {} vs. {}'.format(repr(next_mpfr), repr(prev_mpfr))
+        else:
+            if prev_m.group(1) == '-':
+                assert False, 'signs disagree! {} vs. {}'.format(repr(next_mpfr), repr(prev_mpfr))
+            else:
+                prefix = ''
+
+        next_str = next_m.group(2)
+        next_digits = len(next_str)
+        if next_str.startswith('0'):
+            next_digits -= 1
+        if '.' in next_str:
+            next_digits -= 1
+
+        prev_str = prev_m.group(2)
+        prev_digits = len(prev_str)
+        if prev_str.startswith('0'):
+            prev_digits -= 1
+        if '.' in prev_str:
+            prev_digits -= 1
+
+        if next_m.group(3) == prev_m.group(3):
+            suffix = next_m.group(3)
+        else:
+            suffix = None
+
+        # fall back to scientific notation, if something weird is going on
+        if next_digits != prev_digits or suffix is None:
+            most_digits = max(next_digits, prev_digits)
+            next_m = _mpfr_e_re.fullmatch(('{:.' + str(most_digits - 1) + 'e}').format(next_mpfr))
+            prev_m = _mpfr_e_re.fullmatch(('{:.' + str(most_digits - 1) + 'e}').format(prev_mpfr))
+
+            assert next_m.group(3) == prev_m.group(3), 'unable to reconcile exponent: {} vs. {}'.format(next_m.group(0), prev_m.group(0))
+
+            suffix = next_m.group(3)
+            next_str = next_m.group(2)
+            prev_str = prev_m.group(2)
+
+
+        assert next_str != prev_str, 'empty uncertainty brackets?'.format(next_str, prev_str)
+            
+        # find matching prefix
+        i = 0
+        for next_c, prev_c in zip(next_str, prev_str):
+            if next_c == prev_c:
+                i += 1
+            else:
+                break
+
+        return prefix + next_str[:i] + '[' + prev_str[i:] + '-' + next_str[i:] + ']' + suffix
+                
+
+
 def arith_sim(a, b):
     """Compute the 'arithmetic bit similarity' between a and b, defined as:
                   | a - b |
@@ -390,7 +478,7 @@ def arith_sim(a, b):
 
     if mpfr_a == mpfr_b:
         return float('inf')
-    
+
     with gmp.context(
             precision=prec,
             emin=gmp.get_emin_min(),
