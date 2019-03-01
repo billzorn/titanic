@@ -384,6 +384,42 @@ def ieee_fbound(w, p):
     return mpfr_to_digital(fbound)
 
 
+_mpz_2 = gmp.mpz(2)
+_mpz_5 = gmp.mpz(5)
+def decimal_expansion(x):
+    if x.is_zero():
+        return 0
+    else:
+        c = x.c
+        c2, twos = gmp.remove(c, 2)
+        exp2 = x.exp + twos
+        # at this point, x == c2 * (2**exp2)
+
+        c5, fives = gmp.remove(c2, 5)
+        # x == c5 * (2**exp2) * (5**fives)
+        # fives is positive, but exp2 might be negative
+
+        if exp2 >= 0:
+            tens = min(exp2, fives)
+            exp2 -= tens
+            fives -= tens
+            # x == c5 * (2**exp2) * (5**fives) * (10**tens)
+            return int(c5 * (_mpz_2 ** exp2) * (_mpz_5 ** fives)), tens
+
+        else:
+            # x == (c5 * (5**fives) * (5**-exp2)) / ((2**-exp2) * (5**-exp2))
+            return int(c5 * (_mpz_5 ** (fives - exp2))), exp2
+
+def fmt_decimal(c_tens):
+    c, tens = c_tens
+    if tens >= 0:
+        return str(c) + ('0' * tens) + '.'
+    else:
+        s = str(c)
+        return s[:tens] + '.' + s[tens:]
+
+
+
 _mpfr_repr_re = re.compile(r"mpfr\('([+-]?)([.0-9]+)((?:e[-+]?[0-9]+)?)',?[ 0-9]*\)")
 _mpfr_e_re = re.compile(r'([+-]?)([0-9](?:\.[0-9]*))(e[+-]?[0-9]+)')
 def digital_to_uncertain_string(x):
@@ -442,7 +478,7 @@ def digital_to_uncertain_string(x):
 
 
         assert next_str != prev_str, 'empty uncertainty brackets?'.format(next_str, prev_str)
-            
+
         # find matching prefix
         i = 0
         for next_c, prev_c in zip(next_str, prev_str):
@@ -452,7 +488,7 @@ def digital_to_uncertain_string(x):
                 break
 
         return prefix + next_str[:i] + '[' + prev_str[i:] + '-' + next_str[i:] + ']' + suffix
-                
+
 
 
 def arith_sim(a, b):
