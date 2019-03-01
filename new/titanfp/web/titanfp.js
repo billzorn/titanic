@@ -148,7 +148,7 @@ function register_result() {
     const result_id_name = 'result-' + result_id;
     result_id += 1;
 
-    $('#output').append(
+    $('#output').prepend(
         '<div id="' + result_id_name + '" class="output-item"></div>'
     );
 
