@@ -410,13 +410,92 @@ def decimal_expansion(x):
             # x == (c5 * (5**fives) * (5**-exp2)) / ((2**-exp2) * (5**-exp2))
             return int(c5 * (_mpz_5 ** (fives - exp2))), exp2
 
-def fmt_decimal(c_tens):
+
+def dec_to_str(c_tens):
     c, tens = c_tens
     if tens >= 0:
         return str(c) + ('0' * tens) + '.'
     else:
         s = str(c)
-        return s[:tens] + '.' + s[tens:]
+        if len(s) <= -tens:
+            return '.' + ('0' * -(len(s) + tens)) + s
+        else:
+            return s[:tens] + '.' + s[tens:]
+
+def str_to_dec(s):
+    point = s.find('.')
+    if point == -1: # no decimal point found
+        si = s
+        tens = 0
+    else:
+        si = s[:point] + s[point+1:]
+        tens = point - len(si)
+
+    if si.endswith('0'):
+        s10 = si.rstrip('0')
+        tens += (len(si) - len(s10))
+        return int(s10), tens
+    else:
+        return int(si), tens
+
+
+def nearest_uncertain_to_digital(negative, d1, d2):
+    c1, tens1 = d1
+    c2, tens2 = d2
+
+    # normalize exponent
+    tens = min(tens1, tens2)
+    if tens1 > tens:
+        c1 *= 10 ** (tens1 - tens)
+    if tens2 > tens:
+        c2 *= 10 ** (tens2 - tens)
+
+
+
+    interval_size = abs(c1 - c2)
+
+
+
+def digital_to_nearest_uncertain_string(x):
+    if x.is_zero():
+        return '[0]'
+    else:
+        next_digital = digital.Digital(negative=x.negative, c=(x.c << 1) + 1, exp=x.exp - 1)
+        prev_digital = digital.Digital(negative=x.negative, c=(x.c << 1) - 1, exp=x.exp - 1)
+
+        next_c10, next_e10 = decimal_expansion(next_digital)
+        prev_c10, prev_e10 = decimal_expansion(prev_digital)
+
+
+# TODO: doesn't work for zero yet!
+_nearest_uncertain_re = re.compile(r'([-+]?)([.0-9]*)\[(.0-9]+)-([.0-9]+)\](?:[eE]([-+]?[0-9]+))?')
+def nearest_uncertain_string_to_digital(s):
+    m = _nearest_uncertain_re.fullmatch(s)
+    if m is None:
+        raise ValueError('invalid literal for uncertain digital: {}'.format(s))
+
+    if m.group(1) == '-':
+        negative = True
+    else:
+        negative = False
+
+    s1 = m.group(2) + m.group(3)
+    s2 = m.group(2) + m.group(4)
+    if s1.count('.') > 1 or s2.count('.') > 1:
+        raise ValueError('invalid literal for uncertain digital: {}'.format(s))
+
+    if m.group(5) is None:
+        etens = 0
+    else:
+        etens = int(m.group(4))
+
+    c1, tens1 = str_to_dec(s1)
+    tens1 += etens
+    c2, tens2 = str_to_dec(s2)
+    tens2 += etens
+
+    return nearest_uncertain_to_digital(negative, (c1, tens1), (c2, tens2))
+
 
 
 
