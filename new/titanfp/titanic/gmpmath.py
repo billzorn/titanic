@@ -386,6 +386,7 @@ def ieee_fbound(w, p):
 
 _mpz_2 = gmp.mpz(2)
 _mpz_5 = gmp.mpz(5)
+_mpz_10 = gmp.mpz(10)
 def decimal_expansion(x):
     if x.is_zero():
         return 0
@@ -438,8 +439,50 @@ def str_to_dec(s):
     else:
         return int(si), tens
 
+def round_dec(d, p):
+    """correctly round a decimal expansion d = c, tens to p digits"""
+    c, tens = d
+    ndig = len(str(c))
+
+    if ndig <= p:
+        offset = p - ndig
+        return [(c * (10 ** offset), tens - offset)]
+    else:
+        offset = ndig - p
+        scale = _mpz_10 ** offset
+        tens_offset = tens + offset
+
+        floor, rem = gmp.f_divmod(c, scale)
+        halfrem = rem - gmp.f_div(scale, 2)
+
+        if halfrem < 0:
+            return [(int(floor), tens_offset)]
+        elif halfrem == 0:
+            # half way - try both
+            return [(int(floor), tens_offset), (int(floor+1), tens_offset)]
+        else:
+            return [(int(floor+1), tens_offset)]
+
+def round_dec_liberally(d, p):
+    c, tens = d
+    ndig = len(str(c))
+
+    if ndig <= p:
+        offset = p - ndig
+        tens_offset = tens - offset
+        new_c = int(gmp.mpz(c) * (_mpz_10 ** offset))
+    else:
+        offset = ndig - p
+        scale = _mpz_10 ** offset
+        tens_offset = tens + offset
+        floor, rem = gmp.f_divmod(c, scale)
+        new_c = int(floor)
+    return [(new_c - 1, tens_offset), (new_c, tens_offset), (new_c + 1, tens_offset)]
+
 
 def nearest_uncertain_to_digital(negative, d1, d2):
+    #print(d1, d2)
+
     c1, tens1 = d1
     c2, tens2 = d2
 
@@ -450,10 +493,159 @@ def nearest_uncertain_to_digital(negative, d1, d2):
     if tens2 > tens:
         c2 *= 10 ** (tens2 - tens)
 
+    if c1 == c2:
+        # they're the same, nothing to see here...
+        return None
 
+    if tens >= 0:
+        p1 = digital.Digital(c=c1 * (10**tens))
+        p2 = digital.Digital(c=c2 * (10**tens))
+        q = digital.Digital(c=1)
+    else:
+        p1 = digital.Digital(c=c1)
+        p2 = digital.Digital(c=c2)
+        q = digital.Digital(c=10**-tens)
 
-    interval_size = abs(c1 - c2)
+    mp1 = digital_to_mpfr(p1)
+    mp2 = digital_to_mpfr(p2)
+    mq = digital_to_mpfr(q)
 
+    # TODO: this is super slow!!! (like linear in p)
+    prec = 2
+    uncertain = True
+    while uncertain:
+        with gmp.context(
+                # mostly stolen from compute, except:
+                # don't use any extra precision
+                precision=prec,
+                emin=gmp.get_emin_min(),
+                emax=gmp.get_emax_max(),
+                subnormalize=False,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=False,
+                trap_invalid=False,
+                trap_erange=False,
+                trap_divzero=False,
+                trap_expbound=False,
+                # round nearest; we're using MPRF's rounding directly
+                # without fixing it up, and I think this makes
+                # the most sense when studying the envelopes
+                round=gmp.RoundToNearest,
+        ) as gmpctx:
+            f1 = mp1 / mq
+            f2 = mp2 / mq
+
+        r1 = mpfr_to_digital(f1)
+        r2 = mpfr_to_digital(f2)
+
+        r1c = r1.c
+        r2c = r2.c
+        # normalize exponent again
+        rexp = min(r1.exp, r2.exp)
+        if r1.exp > rexp:
+            r1c <<= (r1.exp - rexp)
+        if r2.exp > rexp:
+            r2c <<= (r2.exp - rexp)
+
+        rdiff = abs(r1c - r2c)
+        #print(prec, f1, f2, rdiff, r1c, r2c)
+        if rdiff == 2 and (r1c & 1 == 1) and (r2c & 1 == 1):
+            if r1c > r2c:
+                rc = r1c >> 1
+            else:
+                rc = r2c >> 1
+
+            return digital.Digital(negative=negative, c=rc, exp=rexp+1)
+        # TODO not actually sure if this always works yolo
+        elif rdiff > 25:
+            uncertain = False
+        else:
+            prec += 1
+
+    # try again, assuming a power of two?
+    # In that case, we need to parse the smaller magnitude side with 1 bit less precision
+    prec = 3
+    uncertain = True
+    while uncertain:
+        # larger
+        with gmp.context(
+                # mostly stolen from compute, except:
+                # don't use any extra precision
+                precision=prec,
+                emin=gmp.get_emin_min(),
+                emax=gmp.get_emax_max(),
+                subnormalize=False,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=False,
+                trap_invalid=False,
+                trap_erange=False,
+                trap_divzero=False,
+                trap_expbound=False,
+                # round nearest; we're using MPRF's rounding directly
+                # without fixing it up, and I think this makes
+                # the most sense when studying the envelopes
+                round=gmp.RoundToNearest,
+        ) as gmpctx:
+            if c1 > c2:
+                f1 = mp1 / mq
+            else:
+                f2 = mp2 / mq
+        # smaller
+        with gmp.context(
+                # mostly stolen from compute, except:
+                # don't use any extra precision
+                precision=prec - 1,
+                emin=gmp.get_emin_min(),
+                emax=gmp.get_emax_max(),
+                subnormalize=False,
+                trap_underflow=True,
+                trap_overflow=True,
+                trap_inexact=False,
+                trap_invalid=False,
+                trap_erange=False,
+                trap_divzero=False,
+                trap_expbound=False,
+                # round nearest; we're using MPRF's rounding directly
+                # without fixing it up, and I think this makes
+                # the most sense when studying the envelopes
+                round=gmp.RoundToNearest,
+        ) as gmpctx:
+            if c1 > c2:
+                f2 = mp2 / mq
+            else:
+                f1 = mp1 / mq
+
+        r1 = mpfr_to_digital(f1)
+        r2 = mpfr_to_digital(f2)
+
+        r1c = r1.c
+        r2c = r2.c
+        # normalize exponent again
+        rexp = min(r1.exp, r2.exp)
+        if r1.exp > rexp:
+            r1c <<= (r1.exp - rexp)
+        if r2.exp > rexp:
+            r2c <<= (r2.exp - rexp)
+
+        rdiff = abs(r1c - r2c)
+        #print(prec, f1, f2, rdiff, r1c, r2c)
+        if rdiff == 2 and (r1c & 1 == 1) and (r2c & 1 == 1):
+            if r1c > r2c:
+                rc = r1c >> 1
+            else:
+                rc = r2c >> 1
+
+            return digital.Digital(negative=negative, c=rc, exp=rexp+1)
+        # TODO not actually sure if this always works yolo
+        elif rdiff > 25:
+            uncertain = False
+        else:
+            prec += 1
+
+    # these values don't seem to correspond to an nearest uncertain string: bail out
+    return None
 
 
 def digital_to_nearest_uncertain_string(x):
@@ -466,10 +658,59 @@ def digital_to_nearest_uncertain_string(x):
         next_c10, next_e10 = decimal_expansion(next_digital)
         prev_c10, prev_e10 = decimal_expansion(prev_digital)
 
+        maxd = max(len(str(next_c10)), len(str(prev_c10)))
+
+        # TODO this is also super slow!!! (like linear in number of digits...)
+        for prec in range(1, maxd + 2): # TODO + 2 yolo
+            for d2 in round_dec((next_c10, next_e10), prec):
+                for d1 in round_dec((prev_c10, prev_e10), prec):
+                    if (d1 != d2):
+                        attempt = nearest_uncertain_to_digital(x.negative, d1, d2)
+                        if attempt is not None and attempt.p == x.p and attempt == x:
+                            # we found one that works
+                            c1, tens1 = d1
+                            c2, tens2 = d2
+                            # normalize
+                            tens = min(tens1, tens2)
+                            if tens1 > tens:
+                                c1 *= 10 ** (tens1 - tens)
+                            if tens2 > tens:
+                                c2 *= 10 ** (tens2 - tens)
+                            # stringulate
+                            s1 = dec_to_str((c1, tens))
+                            s2 = dec_to_str((c2, tens))
+                            if x.negative:
+                                prefix = '-'
+                            else:
+                                prefix = ''
+                            return prefix + combine_dec_strings(s1, s2)
+
+        print('failed for ' + str(x))
+        print(repr(digital_to_mpfr(prev_digital)))
+        print(prev_c10, prev_e10)
+        print(repr(prev_digital))
+        print(repr(digital_to_mpfr(next_digital)))
+        print(next_c10, next_e10)
+        print(repr(next_digital))
+        return None
+
+
+def combine_dec_strings(s1, s2):
+    i = 0
+    for c1, c2 in zip(s1, s2):
+        if c1 == c2:
+            i += 1
+        else:
+            break
+    return s1[:i] + '[' + s1[i:] + '-' + s2[i:] + ']'
+
 
 # TODO: doesn't work for zero yet!
-_nearest_uncertain_re = re.compile(r'([-+]?)([.0-9]*)\[(.0-9]+)-([.0-9]+)\](?:[eE]([-+]?[0-9]+))?')
+_nearest_uncertain_re = re.compile(r'([-+]?)([.0-9]*)\[([.0-9]+)-([.0-9]+)\](?:[eE]([-+]?[0-9]+))?')
 def nearest_uncertain_string_to_digital(s):
+    if s == '[0]':
+        return digital.Digital(m=0)
+
     m = _nearest_uncertain_re.fullmatch(s)
     if m is None:
         raise ValueError('invalid literal for uncertain digital: {}'.format(s))
@@ -495,79 +736,6 @@ def nearest_uncertain_string_to_digital(s):
     tens2 += etens
 
     return nearest_uncertain_to_digital(negative, (c1, tens1), (c2, tens2))
-
-
-
-
-_mpfr_repr_re = re.compile(r"mpfr\('([+-]?)([.0-9]+)((?:e[-+]?[0-9]+)?)',?[ 0-9]*\)")
-_mpfr_e_re = re.compile(r'([+-]?)([0-9](?:\.[0-9]*))(e[+-]?[0-9]+)')
-def digital_to_uncertain_string(x):
-    if x.is_zero():
-        return '[0]'
-    else:
-        next_digital = digital.Digital(negative=x.negative, c=(x.c << 1) + 1, exp=x.exp - 1)
-        prev_digital = digital.Digital(negative=x.negative, c=(x.c << 1) - 1, exp=x.exp - 1)
-        next_mpfr = digital_to_mpfr(next_digital)
-        prev_mpfr = digital_to_mpfr(prev_digital)
-
-        next_m = _mpfr_repr_re.fullmatch(repr(next_mpfr))
-        prev_m = _mpfr_repr_re.fullmatch(repr(prev_mpfr))
-
-        if next_m.group(1) == '-':
-            if prev_m.group(1) == '-':
-                prefix = '-'
-            else:
-                assert False, 'signs disagree! {} vs. {}'.format(repr(next_mpfr), repr(prev_mpfr))
-        else:
-            if prev_m.group(1) == '-':
-                assert False, 'signs disagree! {} vs. {}'.format(repr(next_mpfr), repr(prev_mpfr))
-            else:
-                prefix = ''
-
-        next_str = next_m.group(2)
-        next_digits = len(next_str)
-        if next_str.startswith('0'):
-            next_digits -= 1
-        if '.' in next_str:
-            next_digits -= 1
-
-        prev_str = prev_m.group(2)
-        prev_digits = len(prev_str)
-        if prev_str.startswith('0'):
-            prev_digits -= 1
-        if '.' in prev_str:
-            prev_digits -= 1
-
-        if next_m.group(3) == prev_m.group(3):
-            suffix = next_m.group(3)
-        else:
-            suffix = None
-
-        # fall back to scientific notation, if something weird is going on
-        if next_digits != prev_digits or suffix is None:
-            most_digits = max(next_digits, prev_digits)
-            next_m = _mpfr_e_re.fullmatch(('{:.' + str(most_digits - 1) + 'e}').format(next_mpfr))
-            prev_m = _mpfr_e_re.fullmatch(('{:.' + str(most_digits - 1) + 'e}').format(prev_mpfr))
-
-            assert next_m.group(3) == prev_m.group(3), 'unable to reconcile exponent: {} vs. {}'.format(next_m.group(0), prev_m.group(0))
-
-            suffix = next_m.group(3)
-            next_str = next_m.group(2)
-            prev_str = prev_m.group(2)
-
-
-        assert next_str != prev_str, 'empty uncertainty brackets?'.format(next_str, prev_str)
-
-        # find matching prefix
-        i = 0
-        for next_c, prev_c in zip(next_str, prev_str):
-            if next_c == prev_c:
-                i += 1
-            else:
-                break
-
-        return prefix + next_str[:i] + '[' + prev_str[i:] + '-' + next_str[i:] + ']' + suffix
-
 
 
 def arith_sim(a, b):
