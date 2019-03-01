@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="titanfp.css" type="text/css">
+    <title>Titanic</title>
+    <link rel="shortcut icon" href="favicon.ico">
+  </head>
+
+  <body>
+
+    <div class='about'>
+      <h1 class="text">Titanic</h1>
+      <img width="256px" height="256px" src="piceberg_round.png"/>
+      <p class="text">
+        Titanic is a tool for designing and experimenting
+        with novel computer arithmetic formats.
+        It builds on the GNU MPFR library for arbitrary-precision arithmetic,
+        providing additional support for low-level floating-point behaviors
+        such as precise control of rounding and precision tracking.
+      </p>
+      <p class="text">
+        Titanic uses the <a href="http://fpbench.org/spec/">FPCore</a>
+        benchmark format for floating-point computations.
+        Reference interpereters are provided for the FPCore language
+        using both <a href="https://en.wikipedia.org/wiki/IEEE_754">IEEE 754</a>
+        and <a href="https://posithub.org/index">posit</a> arithmetics.
+        These interpreters can also interface with each other
+        (and with custom user-defined arithmetics)
+        to perform true multiple precision, multiple format computations.
+      </p>
+      <p class="text">
+        <a href="/evaluate?core=%28FPCore+%28x%29%0A++x%29">Check out the Titanic Evaluator webtool</a>
+      </p>
+    </div>
+
+  </body>
+
+</html>

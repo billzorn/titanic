@@ -31,6 +31,13 @@ module.exports = {
         new MonacoWebpackPlugin(),
         new HtmlWebpackPlugin({
             template: 'index.html',
+            filename: 'index.html',
+            inject: false,
+        }),
+        new HtmlWebpackPlugin({
+            template: 'evaluate.html',
+            filename: 'evaluate.html',
+            inject: 'body',
             favicon: 'favicon.ico',
         }),
         new CopyWebpackPlugin([
