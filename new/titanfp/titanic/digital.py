@@ -106,9 +106,12 @@ class Digital(object):
 
     # exactness
     _inexact: bool = False
+    _rounded: bool = False
 
     # MPRF-like result code.
     # 0 if value is exact, -1 if it was rounded away, 1 if was rounded toward zero.
+    # TODO: this field has been replaced with the rounding envelope info,
+    # and is no longer supported.
     _rc: int = 0
 
     # rounding envelope
@@ -132,6 +135,19 @@ class Digital(object):
         This is now being replaced with the 3 interval flags.
         """
         return self._rc
+
+    @property
+    def rounded(self):
+        """Was this value rounded?
+        Note that this is different from being inexact:
+        A number is considered rounded if it was produced by some operation
+        that could have produced more precision, and some of that extra precision
+        was then rounded away.
+        Thus, a rounded number is always inexact, but an inexact number
+        may not actually be rounded (for example, if it was produced by
+        subtraction of two inexact numbers of similar magnitude).
+        """
+        return self._rounded
 
     @property
     def interval_size(self):
@@ -213,7 +229,8 @@ class Digital(object):
             and self._isinf == other._isinf
             and self._isnan == other._isnan
             and self._inexact == other._inexact
-            and self._rc == other._rc
+            and self._rounded == other._rounded
+            and self._rc == other._rc # TODO remove me
             and self._interval_size == other._interval_size
             and self._interval_down == other._interval_down
             and self._interval_closed == other._interval_closed
@@ -229,7 +246,8 @@ class Digital(object):
                  isinf=None,
                  isnan=None,
                  inexact=None,
-                 rc=None,
+                 rounded=None,
+                 rc=None, # TODO remove me
                  interval_size=None,
                  interval_down=None,
                  interval_closed=None,
@@ -307,7 +325,15 @@ class Digital(object):
         else:
             self._inexact = type(self)._inexact
 
-        # _rc
+        # _rounded
+        if rounded is not None:
+            self._rounded = rounded
+        elif x is not None:
+            self._rounded = x._rounded
+        else:
+            self._rounded = type(self)._rounded
+
+        # _rc TODO remove me
         if rc is not None:
             self._rc = rc
         elif x is not None:
@@ -338,19 +364,18 @@ class Digital(object):
             self._interval_closed = type(self)._interval_closed
 
     def __repr__(self):
-        return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, interval_size={}, interval_down={}, interval_closed={})'.format(
+        return '{}(negative={}, c={}, exp={}, inexact={}, rounded={}, rc={}, isinf={}, isnan={}, interval_size={}, interval_down={}, interval_closed={})'.format(
             type(self).__name__, repr(self._negative), repr(self._c), repr(self._exp),
-            repr(self._inexact), repr(self._rc), repr(self._isinf), repr(self._isnan),
+            repr(self._inexact), repr(self._rounded), repr(self._rc), repr(self._isinf), repr(self._isnan),
             repr(self._interval_size), repr(self._interval_down), repr(self._interval_closed),
         )
 
     def __str__(self):
-        return '{:s} {:d} * {:d}**{:d}{:s}{:s}{:s}'.format(
+        return '{:s} {:d} * {:d}**{:d}{:s}{:s}'.format(
             '-' if self.negative else '+',
             self.c,
             self.base,
             self.exp,
-            ' ~' + str(self.rc) if self.inexact else (' ' + str(self.rc) if self.rc else ''),
             ' inf' if self.isinf else '',
             ' nan' if self.isnan else '',
         )
@@ -439,6 +464,8 @@ class Digital(object):
         and sets it accordingly for the rounded result, so multiple rounding will never
         result in a loss of information. Rounding defaults to IEEE 754-style nearest even,
         with other modes not yet supported.
+        TODO: This rounding method has been replaced by the new multi-method rounding
+        code, and is no longer supported.
         """
 
         # some values cannot be rounded; clone but return unchanged
@@ -572,7 +599,7 @@ class Digital(object):
         if self.is_nar():
             raise utils.RoundingError('cannot recover rounding information from infinite or non-real values')
 
-        if self.inexact:
+        if self.rounded:
             # Interval points towards zero, so we must have rounded UP.
             # The true significand is smaller.
             if self.interval_down:
@@ -625,7 +652,9 @@ class Digital(object):
                 else:
                     low_bit = 1
 
-        else: # not self.inexact
+        else: # not self.rounded
+            # This result wasn't rounded, so return exactly the information we have.
+            # Even if the value is inexact, this is the best we can do.
             c = self.c
             exp = self.exp
             low_bit = 0
@@ -752,12 +781,18 @@ class Digital(object):
             if mode is RoundingMode.TOWARD_ZERO:
                 direction = RoundingDirection.TRUNCATE
             elif mode is RoundingMode.AWAY_ZERO:
-                direction = RoundingDirection.ROUND_AWAY
-            elif mode is RoundingMode.TO_EVEN:
-                if utils.is_even_for_rounding(c, exp):
-                    direction = RoundingDirection.TRUNCATE
-                else:
+                if (low_bit != 0) or ((half_bit is not None) and (half_bit != 0)):
                     direction = RoundingDirection.ROUND_AWAY
+                else: # don't round away if we already have the value represented exactly!
+                    direction = RoundingDirection.TRUNCATE
+            elif mode is RoundingMode.TO_EVEN:
+                if (low_bit != 0) or ((half_bit is not None) and (half_bit != 0)):
+                    if utils.is_even_for_rounding(c, exp):
+                        direction = RoundingDirection.TRUNCATE
+                    else:
+                        direction = RoundingDirection.ROUND_AWAY
+                else:
+                    direction = RoundingDirection.TRUNCATE
             else:
                 raise ValueError('unknown rounding mode: {}'.format(repr(mode)))
 
@@ -783,7 +818,7 @@ class Digital(object):
             # notice that the precision has increased, chop it off back to 1,
             # and increase the exponent instead, which is fine.
             c += 1
-            inexact = True
+            rounded = True
             if p is not None and c.bit_length() > p:
                 c >>= 1
                 exp += 1
@@ -796,7 +831,7 @@ class Digital(object):
             # and the only interesting thing is that we have to check
             # the low_bit and half_bit to see if anything got rounded off
             # to make the operation inexact.
-            inexact = (low_bit != 0) or (half_bit is not None and half_bit != 0)
+            rounded = (low_bit != 0) or (half_bit is not None and half_bit != 0)
             interval_down = False
 
         elif direction is RoundingDirection.ROUND_DOWN:
@@ -805,7 +840,8 @@ class Digital(object):
         else:
             raise ValueError('unknown rounding direction: {}'.format(repr(direction)))
 
-        return type(self)(self, c=c, exp=exp, inexact=inexact,
+        # inexactness is only modified inderectly, if we seem to have rounded this number
+        return type(self)(self, c=c, exp=exp, inexact=(self.inexact or rounded), rounded=rounded,
                           interval_size=interval_size, interval_down=interval_down, interval_closed=interval_closed)
 
     # negative, RM -> nearest, mode

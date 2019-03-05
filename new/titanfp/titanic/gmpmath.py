@@ -6,6 +6,8 @@ implemented with GMP as a backend, but conveniently extended to Sinking Point.
 import gmpy2 as gmp
 import re
 
+from . import utils
+
 from .integral import bitmask
 from . import conversion
 from . import ops
@@ -122,10 +124,14 @@ def digital_to_mpfr(x):
 
 
 def mpfr_to_digital(x):
+    rounded = x.rc != 0
+
     if gmp.is_nan(x):
         return digital.Digital(
             isnan=True,
-            rc=0, # not clear what the return code should mean
+            inexact=rounded,
+            rounded=rounded,
+            rc=0, # TODO remove me
         )
 
     negative = gmp.is_signed(x)
@@ -147,23 +153,50 @@ def mpfr_to_digital(x):
         return digital.Digital(
             negative=negative,
             isinf=True,
-            rc=rc,
+            inexact=rounded,
+            rounded=rounded,
+            rc=rc, # TODO remove me
         )
 
     m, exp = x.as_mantissa_exp()
     c = int(abs(m))
     exp = int(exp)
 
-    if c == 0 and rc == -1:
-        raise ValueError('unreachable: MPFR rounded the wrong way toward zero? got {}, rc={}'
+    if c == 0:
+        assert rc != -1, ('unreachable: MPFR rounded the wrong way toward zero? got {}, rc={}'
                          .format(repr(x), repr(x.rc)))
+
+    # work out the new envelope parameters
+    if rounded:
+        # There's no way to figure out what rounding mode was used to produce this MPFR,
+        # so we assume it was rounded towards zero.
+        # Titanic always rounds its MPFR calculations in this way, and uses one extra
+        # bit of precision so it reproduce rounding to nearest, and also detect
+        # results that are exactly halfway between representable numbers.
+        # TODO: is there a weird case here for c == 1???
+        if rc > 0 and (c & 1 == 0) and (c.bit_length() > (c-1).bit_length()):
+            # rounded up to a power of two; shrink envelope
+            interval_size = -1
+        else:
+            # assume rounding to zero, not to nearest; envelope size is a whole ulp
+            interval_size = 0
+        interval_down = (rc < 0)
+        interval_closed = False
+    else:
+        interval_size = 0
+        interval_down = False
+        interval_closed = False
 
     return digital.Digital(
         negative=negative,
         c=c,
         exp=exp,
-        inexact=(rc != 0),
-        rc=rc,
+        inexact=rounded,
+        rounded=rounded,
+        rc=rc, # TODO remove me
+        interval_size=interval_size,
+        interval_down=interval_down,
+        interval_closed=interval_closed,
     )
 
 
@@ -239,7 +272,7 @@ def compute(opcode, *args, prec=53):
     # gmpy2 really doesn't like it when you pass nan as an argument
     for f in inputs:
         if gmp.is_nan(f):
-            return digital.Digital(isnan=True, rc=0)
+            return mpfr_to_digital(f)
     with gmp.context(
             # one extra bit, so that we can round from RTZ to RNE
             precision=prec + 1,
