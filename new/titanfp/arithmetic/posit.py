@@ -135,7 +135,7 @@ class Posit(mpnum.MPNum):
                     rc = unrounded.rc
                     exp_inexact = unrounded.inexact
 
-                print('->\t', new_exp, rc, exp_inexact)
+                #print('->\t', new_exp, rc, exp_inexact)
 
                 # We want to round on the geometric mean of the two numbers,
                 # but this is the same as rounding on the arithmetic mean of
@@ -144,17 +144,17 @@ class Posit(mpnum.MPNum):
                 if half_bit > 0:
                     if low_bits > 0 or lost_sig_bits > 0 or unrounded.rc > 0:
                         # round the exponent up; remember it might be negative, but that's ok
-                        print('UP')
+                        #print('UP')
                         new_exp += 1
                         rc = -1
                     elif unrounded.rc < 1:
                         # tie broken the other way
-                        print('TIE BROKEN DOWN')
+                        #print('TIE BROKEN DOWN')
                         pass
                     elif new_exp & 1:
                         # hard coded rne
                         # TODO: not clear if this is actually what should happen
-                        print('TIE UP')
+                        #print('TIE UP')
                         new_exp += 1
                         rc = -1
 

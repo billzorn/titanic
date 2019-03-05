@@ -407,27 +407,139 @@ def test_posit_conversion(es, nbits):
             print('case {}: {} != {}'.format(repr(f), str(softposit_answer), str(posit_answer)))
 
 
-if __name__ == '__main__':
-    smalltext = filter_cores('operators', '+', '-', '*', '/', 'sqrt', 'nearbyint',
-                             '<', '<=', '>', '>=', '==', '!=', 'fmin', 'fmax',
-                             'isfinite', 'isinf', 'isnan', 'isnormal', 'signbit')
-    smallcores = fpcparser.compile(smalltext)
-    type_to_precision(smallcores)
 
-    alltext = filter_cores('name')
-    allcores = fpcparser.compile(alltext)
-    type_to_precision(allcores)
+def rounding_cases(dtype, nbits, maxcases=None):
+    if maxcases is None:
+        values = [float(dtype(i)) for i in range(1 << nbits)]
+    else:
+        imax = (1 << nbits) - 1
+        values = set()
+        for case in range(maxcases):
+            i = random.randint(0, imax)
+            if i > 0:
+                values.add(float(dtype(i-1)))
+            values.add(float(dtype(i)))
+            if i < imax:
+                values.add(float(dtype(i+1)))
 
-    print(len(smallcores), len(allcores))
+    values = sorted(values)
 
-    barecores = fpcparser.compile(smalltext)
-    strip_precision(barecores)
+    nearby_values = set()
+    for a in values:
+        nearby_values.add(float(numpy.nextafter(a, -numpy.inf)))
+        nearby_values.add(float(numpy.nextafter(a, numpy.inf)))
 
-    def go():
-        #run_test(test_canon, allcores, reps=1)
-        #run_test(test_native_np, allcores, reps=10)
+    arithmetic_means = set()
+    geometric_means = set()
+    for a, b in zip(values, values[1:]):
+        mean = (a + b) / 2
+        arithmetic_means.add(float(mean))
+        nearby_values.add(float(numpy.nextafter(mean, -numpy.inf)))
+        nearby_values.add(float(numpy.nextafter(mean, numpy.inf)))
 
-        for ctx in fctxs:
-            run_test(test_float, barecores, reps=50, ctx=ctx)
-        for ctx in pctxs:
-            run_test(test_posit, barecores, reps=50, ctx=ctx)
+        try:
+            geomean = math.sqrt(a * b)
+            geometric_means.add(float(geomean))
+            nearby_values.add(float(numpy.nextafter(geomean, -numpy.inf)))
+            nearby_values.add(float(numpy.nextafter(geomean, numpy.inf)))
+        except Exception:
+            pass
+
+    cases = set().union(values, arithmetic_means, geometric_means, nearby_values)
+    more_cases = set()
+
+    for case in cases:
+        if not math.isnan(case):
+            more_cases.add(case)
+            more_cases.add(-case)
+            if case == 0.0:
+                more_cases.add(float('inf'))
+                more_cases.add(float('-inf'))
+            else:
+                more_cases.add(1/case)
+                more_cases.add(-1/case)
+
+    return sorted(more_cases)
+
+def test_posit_rounding(es, nbits, maxcases=None):
+    dtype = softposit.softposit_precs[(es, nbits)]
+    ctx = posit.posit_ctx(es, nbits)
+    cases = rounding_cases(dtype, nbits, maxcases=maxcases)
+
+    print('Testing posit rounding on {:d} cases...'.format(len(cases)), flush=True)
+    for f in cases:
+        softposit_answer = dtype(f)
+        posit_answer = posit.Posit(f, ctx=ctx)
+        if not (float(softposit_answer) == float(posit_answer)):
+            print('  case {}: {} != {}'.format(repr(f), str(softposit_answer), str(posit_answer)))
+    print('... Done.', flush=True)
+
+def test_float_rounding(w, p, maxcases=None):
+    dtype = softfloat.softfloat_precs[(w, p)]
+    ctx = ieee754.ieee_ctx(w, p)
+    cases = rounding_cases(dtype, w+p, maxcases=maxcases)
+
+    print('Testing float rounding on {:d} cases...'.format(len(cases)), flush=True)
+    for f in cases:
+        softfloat_answer = dtype(f)
+        ieee754_answer = ieee754.Float(f, ctx=ctx)
+        if not (float(softfloat_answer) == float(ieee754_answer)):
+            print('  case {}: {} != {}'.format(repr(f), str(softfloat_answer), str(ieee754_answer)))
+    print('... Done.', flush=True)
+
+
+
+test_posit_rounding(1, 16)
+test_float_rounding(5, 11)
+
+## KNOWN ISSUES WITH OLD ROUNDING METHOD ############################
+
+# Testing posit rounding on 1112637 cases...
+#   case -inf: inf != nan
+#   case -25165824.0: -16777216.0 != -3.4e+07
+#   case -2.2351741790771484e-08: -1.4901161193847656e-08 != -3e-08
+#   case -7.450580596923828e-09: -1.4901161193847656e-08 != -3.7e-09
+#   case 7.450580596923828e-09: 1.4901161193847656e-08 != 3.7e-09
+#   case 2.2351741790771484e-08: 1.4901161193847656e-08 != 3e-08
+#   case 25165824.0: 16777216.0 != 3.4e+07
+#   case inf: inf != nan
+# ... Done.
+# Testing float rounding on 1077869 cases...
+#   case -65535.999999999985: -inf != -65536.0
+#   case 65535.999999999985: inf != 65536.0
+# ... Done.
+
+# real    0m46.792s
+# user    0m46.880s
+# sys     0m0.428s
+
+#####################################################################
+
+
+
+
+
+# if __name__ == '__main__':
+#     smalltext = filter_cores('operators', '+', '-', '*', '/', 'sqrt', 'nearbyint',
+#                              '<', '<=', '>', '>=', '==', '!=', 'fmin', 'fmax',
+#                              'isfinite', 'isinf', 'isnan', 'isnormal', 'signbit')
+#     smallcores = fpcparser.compile(smalltext)
+#     type_to_precision(smallcores)
+
+#     alltext = filter_cores('name')
+#     allcores = fpcparser.compile(alltext)
+#     type_to_precision(allcores)
+
+#     print(len(smallcores), len(allcores))
+
+#     barecores = fpcparser.compile(smalltext)
+#     strip_precision(barecores)
+
+#     def go():
+#         #run_test(test_canon, allcores, reps=1)
+#         #run_test(test_native_np, allcores, reps=10)
+
+#         for ctx in fctxs:
+#             run_test(test_float, barecores, reps=50, ctx=ctx)
+#         for ctx in pctxs:
+#             run_test(test_posit, barecores, reps=50, ctx=ctx)
