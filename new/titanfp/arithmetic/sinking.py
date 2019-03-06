@@ -85,7 +85,7 @@ class Sink(digital.Digital):
             return cls(unrounded, ctx=ctx)
 
         magnitude = cls(unrounded, negative=False)
-        if magnitude > ctx.fbound:
+        if magnitude > ctx.fbound or (magnitude == ctx.fbound and magnitude.rc >= 0):
             return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
         else:
             # get p and n used for rounding, limited by the context

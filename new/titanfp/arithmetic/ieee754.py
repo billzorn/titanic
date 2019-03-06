@@ -92,10 +92,13 @@ class Float(mpnum.MPNum):
             return cls(unrounded, ctx=ctx)
 
         magnitude = cls(unrounded, negative=False)
-        if magnitude > ctx.fbound:
-            return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
-        else:
+        if magnitude < ctx.fbound:
             return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
+        else:
+            if magnitude > ctx.fbound or magnitude.rc >= 0:
+                return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+            else:
+                return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
 
     # most operations come from mpnum
 

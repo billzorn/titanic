@@ -505,13 +505,11 @@ test_float_rounding(5, 11)
 #   case inf: inf != nan
 # ... Done.
 # Testing float rounding on 1077869 cases...
-#   case -65535.999999999985: -inf != -65536.0
-#   case 65535.999999999985: inf != 65536.0
 # ... Done.
 
-# real    0m46.792s
-# user    0m46.880s
-# sys     0m0.428s
+# real    0m46.941s
+# user    0m47.057s
+# sys     0m0.400s
 
 #####################################################################
 
