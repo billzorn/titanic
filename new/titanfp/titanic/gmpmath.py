@@ -940,10 +940,10 @@ def envelope_encloses(x, d1, d2):
 
     if d1.negative != d2.negative:
         assert d1.negative and env_d1.negative and (not d2.negative) and (not env_d2.negative)
-        return env_d1.c <= d1.c and env_d2.c <= d2.c
+        return d1.c <= env_d1.c and d2.c <= env_d2.c
     else:
         assert d1.negative == d2.negative == env_d1.negative == env_d2.negative and d1.c < d2.c
-        return d1.c <= env_d1.c and env_d2.c <= d2.c
+        return env_d1.c <= d1.c and d2.c <= env_d2.c
 
 def digital_to_dec_range(x):
     env1, env2 = digital_to_envelope(x)
@@ -1003,6 +1003,8 @@ def dec_range_to_digital(d1, d2):
         # nonzero case
         prec = 1
         uncertain = True
+        candidate = None
+        failures = 0
 
         while uncertain:
             with gmp.context(
@@ -1030,13 +1032,31 @@ def dec_range_to_digital(d1, d2):
             r1 = mpfr_to_digital(f1).round_m(max_p=prec)
             r2 = mpfr_to_digital(f2).round_m(max_p=prec)
 
-            # TODO slow: try everything
+            found_candidate = False
+
+            # is it necessary to try everything?
             for r in [r2, r2.prev_float(), r2.next_float(), r1, r1.next_float(), r1.prev_float()]:
                 if envelope_encloses(r, d1, d2):
-                    return digital.Digital(r)
+                    candidate = r
+                    found_candidate = True
+                    break
 
-            prec += 1
+            if not found_candidate:
+                failures += 1
 
+            # It's possible that at some precision with no candidates, the next (finer)
+            # precision has a candidate, due to the way the envelope boundaries line up.
+            # So, continue checking finer precisions until we have more than two in a row
+            # with no candidates.
+            if failures > 2:
+                uncertain = False
+            else:
+                prec += 1
+
+        if candidate is None:
+            raise ValueError('failed to find an enclosing candidate for {}, {}'.format(repr(d1), repr(d2)))
+        else:
+            return candidate
 
 
 
