@@ -907,3 +907,32 @@ class Digital(object):
         # all done
         return self.round_apply(p, exp, c, half_bit, low_bit,
                                 direction, interval_size, interval_closed)
+
+    def next_float(self):
+        """The next number with this precision, away from zero."""
+        if self.is_nar():
+            raise ValueError('there is no next float after {}'.format(repr(self)))
+
+        next_c = self.c + 1
+        next_exp = self.exp
+        if next_c.bit_length() > self.p:
+            next_c >>= 1
+            next_exp += 1
+
+        return type(self)(self, c=next_c, exp=next_exp, rounded=False)
+
+    def prev_float(self):
+        """The previous number with this precision, toward zero."""
+        if self.is_nar():
+            raise ValueError('there is no previous float before {}'.format(repr(self)))
+
+        if self.c == 0:
+            return type(self)(self, exp=self.exp-1, rounded=False)
+
+        prev_c = self.c - 1
+        prev_exp = self.exp
+        if prev_c.bit_length() < self.p:
+            prev_c = (prev_c << 1) | 1
+            prev_exp -= 1
+
+        return type(self)(self, c=prev_c, exp=prev_exp, rounded=False)
