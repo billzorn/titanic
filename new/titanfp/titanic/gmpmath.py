@@ -919,6 +919,125 @@ def dec_range_to_str(d1, d2, scientific=False):
             return body + 'e' + str(e)
 
 
+def digital_to_envelope(x):
+    if x.is_zero():
+        return (digital.Digital(x, c=1, exp=x.exp-1, negative=True, rounded=False),
+                digital.Digital(x, c=1, exp=x.exp-1, negative=False, rounded=False))
+    else:
+        tmp = digital.Digital(x, c=x.c<<1, exp=x.exp-1, rounded=False)
+        return tmp.prev_float(), tmp.next_float()
+
+def envelope_encloses(x, d1, d2):
+    env_lo, env_hi = digital_to_envelope(x)
+    env_d1 = Dec(env_lo)
+    env_d2 = Dec(env_hi)
+
+    exp = min(d1.exp, d2.exp, env_d1.exp, env_d2.exp)
+    d1 = d1.scale(exp)
+    d2 = d2.scale(exp)
+    env_d1 = env_d1.scale(exp)
+    env_d2 = env_d2.scale(exp)
+
+    if d1.negative != d2.negative:
+        assert d1.negative and env_d1.negative and (not d2.negative) and (not env_d2.negative)
+        return env_d1.c <= d1.c and env_d2.c <= d2.c
+    else:
+        assert d1.negative == d2.negative == env_d1.negative == env_d2.negative and d1.c < d2.c
+        return d1.c <= env_d1.c and env_d2.c <= d2.c
+
+def digital_to_dec_range(x):
+    env1, env2 = digital_to_envelope(x)
+    d1 = Dec(env1)
+    d2 = Dec(env2)
+
+    for p in range(1, max(d1.p, d2.p) + 1):
+        if x.is_zero():
+            d1r = d1.round(p, direction=0)
+            d2r = d2.round(p, direction=0)
+        else:
+            d1r = d1.round(p, direction=1)
+            d2r = d2.round(p, direction=0)
+
+        attempt = dec_range_to_digital(d1r, d2r)
+        if attempt.c == x.c and attempt.exp == x.exp and (attempt.negative == x.negative or x.is_zero()):
+            return d1, d2
+
+    raise ValueError('failed to find a dec range for {}'.format(repr(x)))
+
+def dec_range_to_digital(d1, d2):
+    d1, d2 = d1.normalize_to(d2)
+    exp = d1.exp
+
+    if exp >= 0:
+        p1 = digital.Digital(c=int(d1.c * (_mpz_10 ** exp)))
+        p2 = digital.Digital(c=int(d2.c * (_mpz_10 ** exp)))
+        q = digital.Digital(c=1)
+    else:
+        p1 = digital.Digital(c=d1.c)
+        p2 = digital.Digital(c=d2.c)
+        q = digital.Digital(c=int(_mpz_10 ** -exp))
+
+    mp1 = digital_to_mpfr(p1)
+    mp2 = digital_to_mpfr(p2)
+    mq = digital_to_mpfr(q)
+
+    if d1.negative != d2.negative:
+        if p1.is_zero() and p2.is_zero():
+            raise ValueError('empty dec range {} - {}'.format(repr(d1), repr(d2)))
+        if d2.negative:
+            d1, d2 = d2, d1
+        # zero case
+
+        return False
+    else:
+        if d1.c == d2.c:
+            raise ValueError('empty dec range {} - {}'.format(repr(d1), repr(d2)))
+        if d2.c < d1.c:
+            d1, d2 = d2, d1
+
+        if d1.negative:
+            sign = -1
+        else:
+            sign = 1
+
+        # nonzero case
+        prec = 1
+        uncertain = True
+
+        while uncertain:
+            with gmp.context(
+                    # parameters stolen from compute
+                    precision=prec + 1,
+                    emin=gmp.get_emin_min(),
+                    emax=gmp.get_emax_max(),
+                    subnormalize=False,
+                    trap_underflow=True,
+                    trap_overflow=True,
+                    trap_inexact=False,
+                    trap_invalid=False,
+                    trap_erange=False,
+                    trap_divzero=False,
+                    trap_expbound=False,
+                    round=gmp.RoundToZero,
+            ) as gmpctx:
+                f1 = (mp1 / mq) * sign
+                f2 = (mp2 / mq) * sign
+
+            if f1 == f2:
+                prec += 1
+                continue
+
+            r1 = mpfr_to_digital(f1).round_m(max_p=prec)
+            r2 = mpfr_to_digital(f2).round_m(max_p=prec)
+
+            # TODO slow: try everything
+            for r in [r2, r2.prev_float(), r2.next_float(), r1, r1.next_float(), r1.prev_float()]:
+                if envelope_encloses(r, d1, d2):
+                    return digital.Digital(r)
+
+            prec += 1
+
+
 
 
 def nearest_uncertain_to_digital(negative, d1, d2):
