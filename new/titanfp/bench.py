@@ -716,6 +716,10 @@ def quadratic(a, herbified=False):
     return result
 
 def congapaper():
+    print('pi')
+    print(str(sinking.Sink(math.pi).add(sinking.Sink('1e16')).sub(sinking.Sink('1e16'))))
+    print()
+
     print('sinksweep')
     sinksweep()
     print()

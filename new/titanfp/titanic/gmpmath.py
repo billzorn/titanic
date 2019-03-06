@@ -928,11 +928,13 @@ def digital_to_envelope(x):
         return tmp.prev_float(), tmp.next_float()
 
 def envelope_encloses(x, d1, d2):
+    d = Dec(x)
     env_lo, env_hi = digital_to_envelope(x)
     env_d1 = Dec(env_lo)
     env_d2 = Dec(env_hi)
 
-    exp = min(d1.exp, d2.exp, env_d1.exp, env_d2.exp)
+    exp = min(d.exp, d1.exp, d2.exp, env_d1.exp, env_d2.exp)
+    d = d.scale(exp)
     d1 = d1.scale(exp)
     d2 = d2.scale(exp)
     env_d1 = env_d1.scale(exp)
@@ -943,7 +945,7 @@ def envelope_encloses(x, d1, d2):
         return d1.c <= env_d1.c and d2.c <= env_d2.c
     else:
         assert d1.negative == d2.negative == env_d1.negative == env_d2.negative and d1.c < d2.c
-        return env_d1.c <= d1.c and d2.c <= env_d2.c
+        return env_d1.c <= d1.c and d1.c < d.c and d.c < d2.c and d2.c <= env_d2.c
 
 def digital_to_dec_range(x):
     env1, env2 = digital_to_envelope(x)
