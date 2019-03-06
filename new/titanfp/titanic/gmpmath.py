@@ -950,7 +950,7 @@ def digital_to_dec_range(x):
     d1 = Dec(env1)
     d2 = Dec(env2)
 
-    for p in range(1, max(d1.p, d2.p) + 1):
+    for p in range(1, max(d1.digits, d2.digits) + 1):
         if x.is_zero():
             d1r = d1.round(p, direction=0)
             d2r = d2.round(p, direction=0)
@@ -958,9 +958,11 @@ def digital_to_dec_range(x):
             d1r = d1.round(p, direction=1)
             d2r = d2.round(p, direction=0)
 
-        attempt = dec_range_to_digital(d1r, d2r)
-        if attempt.c == x.c and attempt.exp == x.exp and (attempt.negative == x.negative or x.is_zero()):
-            return d1, d2
+        d1r, d2r = d1r.normalize_to(d2r)
+        if d1r.negative != d2r.negative or d1r.c != d2r.c:
+            attempt = dec_range_to_digital(d1r, d2r)
+            if attempt is not None and attempt.c == x.c and attempt.exp == x.exp and (attempt.negative == x.negative or x.is_zero()):
+                return d1r, d2r
 
     raise ValueError('failed to find a dec range for {}'.format(repr(x)))
 
@@ -1061,15 +1063,18 @@ def dec_range_to_digital(d1, d2):
             # precision has a candidate, due to the way the envelope boundaries line up.
             # So, continue checking finer precisions until we have more than two in a row
             # with no candidates.
-            if failures > 2:
+            if failures > 3:
                 uncertain = False
             else:
                 prec += 1
 
-        if candidate is None:
-            raise ValueError('failed to find an enclosing candidate for {}, {}'.format(repr(d1), repr(d2)))
-        else:
-            return candidate
+        # some intervals don't actually have a (nonzero) candidate, if one side is too close to zero
+        return candidate
+
+        # if candidate is None:
+        #     raise ValueError('failed to find an enclosing candidate for {}, {}'.format(repr(d1), repr(d2)))
+        # else:
+        #     return candidate
 
 
 
