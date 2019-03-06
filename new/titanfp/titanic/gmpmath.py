@@ -529,6 +529,7 @@ class Dec(object):
     """
 
     # raw parameters
+    _negative = False
     _c = 0
     _exp = 0
 
@@ -541,8 +542,13 @@ class Dec(object):
     _estring = None
 
     @property
+    def negative(self):
+        """The sign: is this number decimal than zero?"""
+        return self._negative
+
+    @property
     def c(self):
-        """The significand (or numerator) of the decimal."""
+        """The unsigned significand (or numerator) of the decimal."""
         return self._c
 
     @property
@@ -617,6 +623,10 @@ class Dec(object):
                     self._string = '.' + ('0' * -(digits + self._exp)) + s
                 else:
                     self._string = s[:self._exp] + '.' + s[self._exp:]
+
+            if self._negative:
+                self._string = '-' + self._string
+
         return self._string
 
     @property
@@ -627,28 +637,35 @@ class Dec(object):
                 expstr = 'e+' + str(self.e)
             else:
                 expstr = 'e' + str(self.e)
+
             s = self.s
-            self._estring = s[:1] + '.' + s[1:] + expstr
+            if self._negative:
+                self._estring = '-' + s[:1] + '.' + s[1:] + expstr
+            else:
+                self._estring = s[:1] + '.' + s[1:] + expstr
+
         return self._estring
 
-    def __init__(self, x=None, tens=None):
+    def __init__(self, x=None, tens=None, negative=None):
         """Create a new decimal from a digital number or string (one argument)
         or from a particular significand and decimal exponent (two arguments, in that order).
         """
-        if tens is None:
+        if tens is None and negative is None:
             if isinstance(x, str):
                 m = _dec_re.fullmatch(x)
                 if m is None:
                     raise ValueError('invalid decimal literal {}'.format(repr(x)))
 
+                self._negative = (m.group(1) == '-')
+
                 if m.group(2) is not None:
-                    self._c = int(m.group(1) + m.group(2))
+                    self._c = int(m.group(2))
                     if self._c == 0:
                         exp = len(m.group(2)) - 1
                     else:
                         exp = 0
                 else:
-                    self._c = int(m.group(1) + m.group(3) + m.group(4))
+                    self._c = int(m.group(3) + m.group(4))
                     exp = -len(m.group(4))
 
                 if m.group(5) is not None:
@@ -656,42 +673,51 @@ class Dec(object):
                 else:
                     self._exp = exp
 
-            elif x is None or x.is_zero():
+            elif x is None:
+                self._negative = False
                 self._c = 0
                 self._exp = 0
 
             else:
-                # x is a nonzero digital
-                c = x.c
-                c2, twos = gmp.remove(c, 2)
-                exp2 = x.exp + twos
-                # at this point, x == c2 * (2**exp2)
+                self._negative = x.negative
+                # this code also simplifies
+                if x.is_zero():
+                    self._c = 0
+                    self._exp = 0
+                else: # x is a nonzero digital
+                    c = x.c
+                    c2, twos = gmp.remove(c, 2)
+                    exp2 = x.exp + twos
+                    # at this point, x == c2 * (2**exp2)
 
-                c5, fives = gmp.remove(c2, 5)
-                # x == c5 * (2**exp2) * (5**fives)
-                # fives is positive, but exp2 might be negative
+                    c5, fives = gmp.remove(c2, 5)
+                    # x == c5 * (2**exp2) * (5**fives)
+                    # fives is positive, but exp2 might be negative
 
-                if exp2 >= 0:
-                    tens = min(exp2, fives)
-                    exp2 -= tens
-                    fives -= tens
-                    # x == c5 * (2**exp2) * (5**fives) * (10**tens)
-                    self._c = int(c5 * (_mpz_2 ** exp2) * (_mpz_5 ** fives))
-                    self._exp = tens
-                else:
-                    # x == (c5 * (5**fives) * (5**-exp2)) / ((2**-exp2) * (5**-exp2))
-                    self._c = int(c5 * (_mpz_5 ** (fives - exp2)))
-                    self._exp = exp2
+                    if exp2 >= 0:
+                        tens = min(exp2, fives)
+                        exp2 -= tens
+                        fives -= tens
+                        # x == c5 * (2**exp2) * (5**fives) * (10**tens)
+                        self._c = int(c5 * (_mpz_2 ** exp2) * (_mpz_5 ** fives))
+                        self._exp = tens
+                    else:
+                        # x == (c5 * (5**fives) * (5**-exp2)) / ((2**-exp2) * (5**-exp2))
+                        self._c = int(c5 * (_mpz_5 ** (fives - exp2)))
+                        self._exp = exp2
+
+        elif x is not None and tens is not None:
+            # if negative is not given, then the decimal will be positive
+            self._negative = bool(negative)
+            self._c = int(x)
+            self._exp = int(tens)
 
         else:
-            if x is None:
-                raise ValueError('must specify an integer first argument for Dec')
-            else:
-                self._c = int(x)
-                self._exp = int(tens)
+            raise ValueError('invalid arguments for Dec: x={}, tens={}, negative={}'
+                             .format(repr(x), repr(tens), repr(negative)))
 
     def __repr__(self):
-        return type(self).__name__ + '(' + repr(self._c) + ', ' + repr(self._exp) + ')'
+        return type(self).__name__ + '(' + repr(self._c) + ', ' + repr(self._exp) + ', negative=' + repr(self._negative) + ')'
 
     def __str__(self):
         return self.string
@@ -708,7 +734,7 @@ class Dec(object):
         if tens == 0:
             return self
         else:
-            return Dec(c10, self.exp + tens)
+            return Dec(c10, self.exp + tens, negative=self.negative)
 
     def round(self, p, direction=None):
         """Round to exactly p digits, according to direction:
@@ -720,7 +746,7 @@ class Dec(object):
 
         if digits <= p:
             offset = p - digits
-            return Dec(self.c * (_mpz_10 ** offset), self.exp - offset)
+            return Dec(self.c * (_mpz_10 ** offset), self.exp - offset, negative=self.negative)
         else:
             offset = digits - p
             scale = _mpz_10 ** offset
@@ -730,33 +756,33 @@ class Dec(object):
             # halfrem = rem - gmp.f_div(scale, 2)
 
             if direction == 0 or rem == 0:
-                return Dec(floor, new_exp)
+                return Dec(floor, new_exp, negative=self.negative)
 
             elif direction == 1:
                 new_c = floor + 1
-                attempt = Dec(new_c, new_exp)
+                attempt = Dec(new_c, new_exp, negative=self.negative)
                 if attempt.digits > p:
-                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1)
+                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1, negative=self.negative)
                 return attempt
 
             elif direction == None:
                 halfrem = rem - gmp.f_div(scale, 2)
                 if halfrem < 0:
-                    return Dec(floor, new_exp)
+                    return Dec(floor, new_exp, negative=self.negative)
                 elif halfrem == 0:
                     # half way - round to even
                     if gmp.is_even(floor):
-                        return Dec(floor, new_exp)
+                        return Dec(floor, new_exp, negative=self.negative)
                     else:
                         new_c = floor + 1
-                        attempt = Dec(new_c, new_exp)
+                        attempt = Dec(new_c, new_exp, negative=self.negative)
                 else: # halfrem > 0
                     new_c = floor + 1
-                    attempt = Dec(new_c, new_exp)
+                    attempt = Dec(new_c, new_exp, negative=self.negative)
 
                 # at this point, we either returned or set new_c and attempt
                 if attempt.digits > p:
-                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1)
+                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1, negative=self.negative)
                 return attempt
 
             else:
@@ -768,7 +794,7 @@ class Dec(object):
         Will fail if the provided exponent is larger than the current one - always scale to the minimum!
         """
         if exp < self.exp:
-            return Dec(self.c * (_mpz_10 ** (self.exp - exp)), exp)
+            return Dec(self.c * (_mpz_10 ** (self.exp - exp)), exp, negative=self.negative)
         elif exp == self.exp:
             return self
         else:
@@ -835,20 +861,20 @@ def dec_range_to_str(d1, d2, scientific=False):
 
     if scientific:
         offset = len(common) + min(len(rest1), len(rest2)) - 1
-    else:
-        if exp >= 0:
-            suffix = ('0' * self._exp) + '.'
-            return common + '[' + rest1 + suffix + '-' + rest2 + suffix + ']'
-        elif common and -exp >= len(rest1):
-            exp += len(rest1)
-            if len(common) <= -exp:
-                return '.' + ('0' * -(len(common) + exp)) + common + '[' + rest1 + '-' + rest2 + ']'
-            else:
-                return common[:exp] + '.' + common[exp:] + '[' + rest1 + '-' + rest2 + ']'
+
+    if exp >= 0:
+        suffix = ('0' * self._exp) + '.'
+        return common + '[' + rest1 + suffix + '-' + rest2 + suffix + ']'
+    elif common and -exp >= len(rest1):
+        exp += len(rest1)
+        if len(common) <= -exp:
+            return '.' + ('0' * -(len(common) + exp)) + common + '[' + rest1 + '-' + rest2 + ']'
         else:
-            pass
-                
-    
+            return common[:exp] + '.' + common[exp:] + '[' + rest1 + '-' + rest2 + ']'
+    else:
+        pass
+
+
 
 
 
