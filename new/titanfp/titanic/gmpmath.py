@@ -843,7 +843,7 @@ def dec_range_to_str(d1, d2, scientific=False):
         else:
             return d1.string
 
-    if d1.digits == d2.digits:
+    if d1.negative == d2.negative and d1.digits == d2.digits:
         s1 = d1.s
         s2 = d2.s
         common_len = len(s1)
@@ -854,31 +854,69 @@ def dec_range_to_str(d1, d2, scientific=False):
         common = s1[:common_len]
         rest1 = s1[common_len:]
         rest2 = s2[common_len:]
+
+        if d1.negative:
+            prefix = '-'
+        else:
+            prefix = ''
+        prefix1 = ''
+        prefix2 = ''
+
     else:
         common = ''
         rest1 = d1.s
         rest2 = d2.s
 
+        prefix = ''
+        if d1.negative:
+            prefix1 = '-'
+        else:
+            prefix1 = ''
+        if d2.negative:
+            prefix2 = '-'
+        else:
+            prefix2 = ''
+
     if scientific:
         offset = len(common) + min(len(rest1), len(rest2)) - 1
+        e = exp + offset
+        exp = -offset
+    else:
+        e = None
 
     if exp >= 0:
-        suffix = ('0' * self._exp) + '.'
-        return common + '[' + rest1 + suffix + '-' + rest2 + suffix + ']'
+        suffix = ('0' * exp) + '.'
+        body = prefix + common + '[' + prefix1 + rest1 + suffix + '-' + prefix2 + rest2 + suffix + ']'
+
     elif common and -exp >= len(rest1):
-        exp += len(rest1)
-        if len(common) <= -exp:
-            return '.' + ('0' * -(len(common) + exp)) + common + '[' + rest1 + '-' + rest2 + ']'
+        exp = exp + len(rest1)
+        if exp == 0:
+            body = prefix + common + '.' + '[' + rest1 + '-' + rest2 + ']'
+        elif len(common) <= -exp:
+            body = prefix + '.' + ('0' * -(len(common) + exp)) + common + '[' + rest1 + '-' + rest2 + ']'
         else:
-            return common[:exp] + '.' + common[exp:] + '[' + rest1 + '-' + rest2 + ']'
+            body = prefix + common[:exp] + '.' + common[exp:] + '[' + rest1 + '-' + rest2 + ']'
+
     else:
-        pass
+        if len(rest1) <= -exp:
+            body1 = prefix1 + '.' + ('0' * -(len(rest1) + exp)) + rest1
+        else:
+            body1 = prefix1 + rest1[:exp] + '.' + rest1[exp:]
 
+        if len(rest2) <= -exp:
+            body2 = prefix2 + '.' + ('0' * -(len(rest2) + exp)) + rest2
+        else:
+            body2 = prefix2 + rest2[:exp] + '.' + rest2[exp:]
 
+        body = prefix + common + '[' + body1 + '-' + body2 + ']'
 
-
-
-    return common, rest1, rest2
+    if e is None:
+        return body
+    else:
+        if e >= 0:
+            return body + 'e+' + str(e)
+        else:
+            return body + 'e' + str(e)
 
 
 
