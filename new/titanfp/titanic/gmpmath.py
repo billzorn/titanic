@@ -513,6 +513,350 @@ def round_dec_liberally(d, p):
     return [(new_c - 1, tens_offset), (new_c, tens_offset), (new_c + 1, tens_offset)]
 
 
+
+
+
+# helpful constants we don't need to constantly redefine
+_mpz_2 = gmp.mpz(2)
+_mpz_5 = gmp.mpz(5)
+_mpz_10 = gmp.mpz(10)
+#                       1         2           3         4               5
+_dec_re = re.compile(r'([-+]?)(?:([0-9]+)\.?|([0-9]*)\.([0-9]+))(?:[eE]([+-]?[0-9]+))?')
+
+class Dec(object):
+    """Exact decimal representation of a number, with support for rounding.
+    Intended for reading or printing decimal strings.
+    """
+
+    # raw parameters
+    _c = 0
+    _exp = 0
+
+    # cached parameters: only access through properties
+    _q = None
+    _e = None
+    _s = None
+    _digits = None
+    _string = None
+    _estring = None
+
+    @property
+    def c(self):
+        """The significand (or numerator) of the decimal."""
+        return self._c
+
+    @property
+    def exp(self):
+        """The (decimal) exponent of the decimal."""
+        return self._exp
+
+    @property
+    def tens(self):
+        """Alias for the exponent of the decimal."""
+        return self._exp
+
+    @property
+    def p(self):
+        """The numerator of the decimal fraction."""
+        return self._c
+
+    @property
+    def q(self):
+        """The denominator of the decimal fraction."""
+        if self._q is None:
+            self._q = int(_mpz_10 ** self._exp)
+        return self._q
+
+    @property
+    def s(self):
+        """The string representation of the numerator of this decimal."""
+        if self._s is None:
+            self._s = str(gmp.mpz(self._c))
+            if self._c == 0:
+                self._digits = 0
+            else:
+                self._digits = len(self._s)
+        return self._s
+
+    @property
+    def digits(self):
+        """The number of digits (in the numerator) of this decimal."""
+        if self._digits is None:
+            self._s = str(gmp.mpz(self._c))
+            if self._c == 0:
+                self._digits = 0
+            else:
+                self._digits = len(self._s)
+        return self._digits
+
+    @property
+    def e(self):
+        """The scientific notation-style exponent of this decimal (as in 100 = 1.00e2)."""
+        if self._e is None:
+            if self.digits == 0:
+                self._e = self._exp
+            else:
+                self._e = self._exp + self.digits - 1
+        return self._e
+
+    @property
+    def string(self):
+        """The string representation of this decimal, in decimal (%f) notation."""
+        if self._string is None:
+            if self._c == 0:
+                if self._exp >= 0:
+                    self._string =  ('0' * (self._exp + 1)) + '.'
+                else:
+                    self._string = '.' + ('0' * -self._exp)
+            elif self._exp >= 0:
+                self._string = self.s + ('0' * self._exp) + '.'
+            else:
+                s = self.s
+                digits = self.digits
+                if digits <= -self._exp:
+                    self._string = '.' + ('0' * -(digits + self._exp)) + s
+                else:
+                    self._string = s[:self._exp] + '.' + s[self._exp:]
+        return self._string
+
+    @property
+    def estring(self):
+        """The string representation of this decimal, in scientific (%e) notation."""
+        if self._estring is None:
+            if self.e > 0:
+                expstr = 'e+' + str(self.e)
+            else:
+                expstr = 'e' + str(self.e)
+            s = self.s
+            self._estring = s[:1] + '.' + s[1:] + expstr
+        return self._estring
+
+    def __init__(self, x=None, tens=None):
+        """Create a new decimal from a digital number or string (one argument)
+        or from a particular significand and decimal exponent (two arguments, in that order).
+        """
+        if tens is None:
+            if isinstance(x, str):
+                m = _dec_re.fullmatch(x)
+                if m is None:
+                    raise ValueError('invalid decimal literal {}'.format(repr(x)))
+
+                if m.group(2) is not None:
+                    self._c = int(m.group(1) + m.group(2))
+                    if self._c == 0:
+                        exp = len(m.group(2)) - 1
+                    else:
+                        exp = 0
+                else:
+                    self._c = int(m.group(1) + m.group(3) + m.group(4))
+                    exp = -len(m.group(4))
+
+                if m.group(5) is not None:
+                    self._exp = exp + int(m.group(5))
+                else:
+                    self._exp = exp
+
+            elif x is None or x.is_zero():
+                self._c = 0
+                self._exp = 0
+
+            else:
+                # x is a nonzero digital
+                c = x.c
+                c2, twos = gmp.remove(c, 2)
+                exp2 = x.exp + twos
+                # at this point, x == c2 * (2**exp2)
+
+                c5, fives = gmp.remove(c2, 5)
+                # x == c5 * (2**exp2) * (5**fives)
+                # fives is positive, but exp2 might be negative
+
+                if exp2 >= 0:
+                    tens = min(exp2, fives)
+                    exp2 -= tens
+                    fives -= tens
+                    # x == c5 * (2**exp2) * (5**fives) * (10**tens)
+                    self._c = int(c5 * (_mpz_2 ** exp2) * (_mpz_5 ** fives))
+                    self._exp = tens
+                else:
+                    # x == (c5 * (5**fives) * (5**-exp2)) / ((2**-exp2) * (5**-exp2))
+                    self._c = int(c5 * (_mpz_5 ** (fives - exp2)))
+                    self._exp = exp2
+
+        else:
+            if x is None:
+                raise ValueError('must specify an integer first argument for Dec')
+            else:
+                self._c = int(x)
+                self._exp = int(tens)
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self._c) + ', ' + repr(self._exp) + ')'
+
+    def __str__(self):
+        return self.string
+
+    def simplify(self):
+        """Find the largest exponent that can represent this number exactly,
+        removing all trailing zeros.
+        """
+        if self.c == 0:
+            c10, tens = 0, -self.exp
+        else:
+            c10, tens = gmp.remove(self.c, 10)
+
+        if tens == 0:
+            return self
+        else:
+            return Dec(c10, self.exp + tens)
+
+    def round(self, p, direction=None):
+        """Round to exactly p digits, according to direction:
+           None: nearest
+             +1: round up
+              0: truncate
+        """
+        digits = self.digits
+
+        if digits <= p:
+            offset = p - digits
+            return Dec(self.c * (_mpz_10 ** offset), self.exp - offset)
+        else:
+            offset = digits - p
+            scale = _mpz_10 ** offset
+            new_exp = self.exp + offset
+
+            floor, rem = gmp.f_divmod(self.c, scale)
+            # halfrem = rem - gmp.f_div(scale, 2)
+
+            if direction == 0 or rem == 0:
+                return Dec(floor, new_exp)
+
+            elif direction == 1:
+                new_c = floor + 1
+                attempt = Dec(new_c, new_exp)
+                if attempt.digits > p:
+                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1)
+                return attempt
+
+            elif direction == None:
+                halfrem = rem - gmp.f_div(scale, 2)
+                if halfrem < 0:
+                    return Dec(floor, new_exp)
+                elif halfrem == 0:
+                    # half way - round to even
+                    if gmp.is_even(floor):
+                        return Dec(floor, new_exp)
+                    else:
+                        new_c = floor + 1
+                        attempt = Dec(new_c, new_exp)
+                else: # halfrem > 0
+                    new_c = floor + 1
+                    attempt = Dec(new_c, new_exp)
+
+                # at this point, we either returned or set new_c and attempt
+                if attempt.digits > p:
+                    attempt = Dec(gmp.f_div(new_c, 10), new_exp - 1)
+                return attempt
+
+            else:
+                raise ValueError('invalid rounding direction {} for {}'
+                                 .format(repr(direction), repr(self)))
+
+    def scale(self, exp):
+        """Scale so that the exponent is exactly exp.
+        Will fail if the provided exponent is larger than the current one - always scale to the minimum!
+        """
+        if exp < self.exp:
+            return Dec(self.c * (_mpz_10 ** (self.exp - exp)), exp)
+        elif exp == self.exp:
+            return self
+        else:
+            raise ValueError('cannot scale {} to exp {}: target exponent too large'
+                             .format(repr(self), repr(exp)))
+
+    def normalize_to(self, other):
+        """Find the largest common exponent that can be used to represent both self and other;
+        return two new decimals scaled to this exponent.
+        """
+        d1 = self.simplify()
+        d2 = other.simplify()
+        exp = min(d1.exp, d2.exp)
+        return d1.scale(exp), d2.scale(exp)
+
+
+#                             1      2          3      4         5      6          7
+_dec_range_re = re.compile(r'([-+]?)([.0-9]*)\[([+-]?)([.0-9]+)-([+-]?)([.0-9]+)\]((?:[eE][+-]?[0-9]+)?)')
+def str_to_dec_range(s):
+    m = _dec_range_re.fullmatch(s)
+    if m is None:
+        raise ValueError('invalid decimal range literal {}'.format(repr(s)))
+
+    if (m.group(1) or m.group(2)) and (m.group(3) or m.group(5)):
+        raise ValueError('too many signs in decimal range literal {}'.format(repr(s)))
+
+    if '.' in m.group(4) or '.' in m.group(6):
+        if '.' in m.group(2):
+            raise ValueError('too many dots in decimal range literal {}'.format(repr(s)))
+        if m.group(4) == '.' or m.group(6) == '.':
+            raise ValueError('empty range in decimal range literal {}'.format(repr(s)))
+
+    s1 = ''.join(m.group(1,2,3,4,7))
+    s2 = ''.join(m.group(1,2,5,6,7))
+
+    return Dec(s1), Dec(s2)
+
+def dec_range_to_str(d1, d2, scientific=False):
+    # normalizing cuts off any trailing zeros
+    d1, d2 = d1.normalize_to(d2)
+    exp = d1.exp
+
+    if d1.c == d2.c:
+        if scientific:
+            return d1.estring
+        else:
+            return d1.string
+
+    if d1.digits == d2.digits:
+        s1 = d1.s
+        s2 = d2.s
+        common_len = len(s1)
+        for i, c in enumerate(s1):
+            if c != s2[i]:
+                common_len = i
+                break
+        common = s1[:common_len]
+        rest1 = s1[common_len:]
+        rest2 = s2[common_len:]
+    else:
+        common = ''
+        rest1 = d1.s
+        rest2 = d2.s
+
+    if scientific:
+        offset = len(common) + min(len(rest1), len(rest2)) - 1
+    else:
+        if exp >= 0:
+            suffix = ('0' * self._exp) + '.'
+            return common + '[' + rest1 + suffix + '-' + rest2 + suffix + ']'
+        elif common and -exp >= len(rest1):
+            exp += len(rest1)
+            if len(common) <= -exp:
+                return '.' + ('0' * -(len(common) + exp)) + common + '[' + rest1 + '-' + rest2 + ']'
+            else:
+                return common[:exp] + '.' + common[exp:] + '[' + rest1 + '-' + rest2 + ']'
+        else:
+            pass
+                
+    
+
+
+
+    return common, rest1, rest2
+
+
+
+
 def nearest_uncertain_to_digital(negative, d1, d2):
     #print(d1, d2)
 
