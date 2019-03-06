@@ -837,7 +837,7 @@ def dec_range_to_str(d1, d2, scientific=False):
     d1, d2 = d1.normalize_to(d2)
     exp = d1.exp
 
-    if d1.c == d2.c:
+    if d1.c == d2.c and d1.negative == d2.negative:
         if scientific:
             return d1.estring
         else:
@@ -871,11 +871,11 @@ def dec_range_to_str(d1, d2, scientific=False):
         if d1.negative:
             prefix1 = '-'
         else:
-            prefix1 = ''
+            prefix1 = '+'
         if d2.negative:
             prefix2 = '-'
         else:
-            prefix2 = ''
+            prefix2 = '+'
 
     if scientific:
         offset = len(common) + min(len(rest1), len(rest2)) - 1

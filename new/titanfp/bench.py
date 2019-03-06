@@ -687,7 +687,7 @@ def sinkbench(w, p):
 
 def sinksweep():
     print('{},{}\t{}'.format('w', 'p', str(sinkref)))
-    
+
     for i in range(2, 31):
         w = i
         p = 32 - i
@@ -698,10 +698,14 @@ def sinksweep():
         #print('{:d},{:d}\t{:12s}\t{:d}, {:d}, {}'.format(w, p, str(sunk) + str(sunk.n + 1), sunk.p, sunk.n + 1, bits_acc))
         if bits_acc is None:
             bits_acc = -1
-        print('{:d} & {:s} & {:d} & {:0.1f}'.format(w, str(sunk) + str(sunk.n + 1), sunk.p, bits_acc))
+        print('{:d} & {:s} & {:d} & {:0.1f}'.format(w, str(sunk), sunk.p, bits_acc))
 
-def quadratic(a):
-    core = cores['herbified_quadratic']
+def quadratic(a, herbified=False):
+    if herbified:
+        core = cores['herbified_quadratic']
+    else:
+        core = cores['quadratic']
+
     ctx = evalctx.IEEECtx(w=11, p=53)
     inputs = [sinking.Sink(a, ctx), sinking.Sink(2.0, ctx), sinking.Sink(3.0, ctx)]
 
@@ -709,3 +713,22 @@ def quadratic(a):
     print(str(result))
     print(result.p)
     print(result.n + 1)
+    return result
+
+def congapaper():
+    print('sinksweep')
+    sinksweep()
+    print()
+
+    quadargs = ['0.1', '0.001', '1e-9', '1e-15', '1e-16', '1e-17']
+    print('quadratic')
+    for a in quadargs:
+        print('  ' + a)
+        quadratic(a, herbified=False)
+        print()
+
+    print('herbified quadratic')
+    for a in quadargs:
+        print('  ' + a)
+        quadratic(a, herbified=True)
+        print()

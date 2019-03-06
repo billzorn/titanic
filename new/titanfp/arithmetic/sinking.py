@@ -52,9 +52,22 @@ class Sink(digital.Digital):
         )
 
     def __str__(self):
-        d1, d2 = gmpmath.digital_to_dec_range(self)
-        fstr = gmpmath.dec_range_to_str(d1, d2, scientific=False)
-        estr = gmpmath.dec_range_to_str(d1, d2, scientific=True)
+        if self.isnan:
+            return 'nan'
+        elif self.isinf:
+            if self.negative:
+                return '-inf'
+            else:
+                return 'inf'
+
+        elif self.inexact:
+            d1, d2 = gmpmath.digital_to_dec_range(self)
+            fstr = gmpmath.dec_range_to_str(d1, d2, scientific=False)
+            estr = gmpmath.dec_range_to_str(d1, d2, scientific=True)
+        else:
+            d = gmpmath.Dec(self)
+            fstr = d.string
+            estr = d.estring
 
         if len(fstr) <= 16:
             return fstr

@@ -285,7 +285,10 @@ class BaseInterpreter(Evaluator):
         if ctx is None:
             ctx = cls.ctype(props=core.props)
         elif override:
-            ctx = cls.ctype(props=core.props).let(props=ctx.props)
+            allprops = {}
+            allprops.update(core.props)
+            allprops.update(ctx.props)
+            ctx = ctx.let(props=allprops)
         else:
             ctx = ctx.let(props=core.props)
 
