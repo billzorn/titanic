@@ -986,9 +986,22 @@ def dec_range_to_digital(d1, d2):
             raise ValueError('empty dec range {} - {}'.format(repr(d1), repr(d2)))
         if d2.negative:
             d1, d2 = d2, d1
-        # zero case
 
-        return False
+        # zero case
+        uncertain = True
+        candidate = None
+        current = digital.Digital(m=0, exp=0)
+
+        while uncertain:
+            if envelope_encloses(current, d1, d2):
+                candidate = current
+                current = current.prev_float()
+            else:
+                if candidate is not None:
+                    return candidate
+                else:
+                    current = current.next_float()
+
     else:
         if d1.c == d2.c:
             raise ValueError('empty dec range {} - {}'.format(repr(d1), repr(d2)))
