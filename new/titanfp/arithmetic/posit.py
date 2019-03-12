@@ -235,14 +235,18 @@ def arg_to_digital(x, ctx=posit_ctx(4, 64)):
     return round_to_posit_ctx(result, ctx=ctx)
 
 
-def digital_to_bits(x, ctx=posit_ctx(4, 64)):
+def digital_to_bits(x, ctx=None):
+    if ctx == None and not isinstance(x, Posit):
+        raise ValueError('must provide a format to convert {} to bits'.format(repr(x)))
+
+    if ctx is not None:
+        rounded = x
+    else:
+        rounded = Interpreter.round_to_context(x, ctx)
+    ctx = rounded.ctx
+
     if ctx.nbits < 2 or ctx.es < 0:
         raise ValueError('format with nbits={}, es={} cannot be represented with posit bit pattern'.format(ctx.nbits, ctx.es))
-
-    try:
-        rounded = round_to_posit_ctx(x, ctx)
-    except sinking.PrecisionError:
-        rounded = round_to_posit_ctx(sinking.Sink(x, inexact=False), ctx)
 
     if rounded.isnan:
         return 1 << (ctx.nbits - 1)
@@ -271,6 +275,62 @@ def digital_to_bits(x, ctx=posit_ctx(4, 64)):
         return -X & bitmask(ctx.nbits)
     else:
         return X
+
+
+def bits_to_digital(i, ctx=posit_ctx(4, 64)):
+    if i & (1 << (ctx.nbits - 1)) == 0:
+        X = i
+        negative = False
+    else:
+        X = -i & bitmask(ctx.nbits - 1)
+        negative = True
+
+    if X == 0:
+        if negative:
+            return Posit(isnan=True, negative=negative, inexact=False, rounded=False, rc=0, ctx=ctx)
+        else:
+            return Posit(c=0, exp=0, negative=negative, inexact=False, rounded=False, rc=0, ctx=ctx)
+
+    # detect the regime
+
+    idx = ctx.nbits - 2
+    r = (X >> idx) & 1
+
+    while idx > 0 and (X >> (idx - 1) & 1) == r:
+        idx -= 1
+
+    # the regime extends one index past idx (or to idx if idx is 0)
+
+    ebits = max(idx - 1, 0)
+    rbits = ctx.nbits - 1 - ebits
+
+    if ebits > ctx.es:
+        sbits = ebits - ctx.es
+        ebits = ctx.es
+    else:
+        sbits = 0
+
+    # pull out bitfields
+    regime = X >> (ebits + sbits)
+    exponent = (X >> sbits) & bitmask(ebits)
+    significand = (X & bitmask(sbits)) | (1 << sbits)
+
+    #print('rbits={}, ebits={}, sbits={}'.format(rbits, ebits, sbits))
+    #print('regime={}, exponent={}, significand={}'.format(regime, exponent, significand))
+
+    # convert regime
+    if regime == 1:
+        regime = regime - rbits
+    else:
+        regime = rbits - (4 - (regime & 3))
+
+    # fix up exponent
+    if ebits < ctx.es:
+        exponent <<= (ctx.es - ebits)
+
+    #print(regime, exponent)
+
+    return Posit(c=significand, e=(ctx.u*regime) + exponent, negative=negative, inexact=False, rounded=False, rc=0, ctx=ctx)
 
 
 def show_bitpattern(x, ctx=posit_ctx(4, 64)):
@@ -323,3 +383,33 @@ def show_bitpattern(x, ctx=posit_ctx(4, 64)):
         return ('posit{:d}({:d}): {:s} {:0'+str(rbits)+'b}').format(
             ctx.nbits, ctx.es, sign, X,
         )
+
+
+
+import sfpy
+import random
+ctx8 = posit_ctx(0, 8)
+ctx16 = posit_ctx(1, 16)
+ctx32 = posit_ctx(2, 32)
+
+def test_posit_bits(ctx=ctx8, nbits=8, sfptype=sfpy.Posit8, tests=None):
+    if tests is None:
+        rng = range(1<<nbits)
+    else:
+        lim = (1<<nbits) - 1
+        rng = [random.randint(0, lim) for _ in range(tests)]
+
+    for i in rng:
+        sfp = sfptype(i)
+        p = Posit(float(sfp), ctx)
+
+        if not digital_to_bits(p) == sfp.bits:
+            print(float(sfp), 'expected', sfp.bits, ': got', digital_to_bits(p))
+
+        #print('----')
+        p2 = bits_to_digital(i, ctx)
+        if not float(p2) == float(sfp):
+            print(i, 'expected', sfp, ': got', str(p2))
+            print(show_bitpattern(i, ctx))
+            trueregime, truee = divmod(p.e, ctx.u)
+            print('should have regime={}, e={}'.format(trueregime, truee))
