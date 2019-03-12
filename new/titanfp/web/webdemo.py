@@ -14,7 +14,7 @@ from ..fpbench import fpcparser, fpcast as ast
 from ..arithmetic import interpreter
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
-
+from ..arithmetic import sinking
 
 here = os.path.dirname(os.path.realpath(__file__))
 dist = os.path.join(here, 'dist')
@@ -32,10 +32,11 @@ webdemo_eval_backends = {
     'posit': posit.Interpreter,
     'softfloat': softfloat.Interpreter,
     'softposit': softposit.Interpreter,
+    'sinking-point': sinking.Interpreter,
 }
 
 webdemo_float_backends = {
-    'ieee754', 'softfloat',
+    'ieee754', 'softfloat', 'sinking-point'
 }
 
 webdemo_posit_backends = {

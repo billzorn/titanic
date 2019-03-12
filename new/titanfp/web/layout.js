@@ -47,6 +47,7 @@ function on_backend() {
     switch (selected) {
     case 'ieee754':
     case 'softfloat':
+    case 'sinking-point':
         $('#float-opts').css('display', '');
         $('#posit-opts').css('display', 'none');
         break;
