@@ -15,7 +15,7 @@ from .arithmetic import evalctx
 from .titanic import digital
 
 from .titanic import gmpmath
-from .titanic import wolfmath
+#from .titanic import wolfmath
 
 
 fpbench_root = '/home/bill/private/research/origin-FPBench'
@@ -514,7 +514,7 @@ corenames += ['herbified_' + name for name in corenames]
 #maths = {corename: run_tool('core2wls.rkt', cores[corename]) for corename in corenames}
 
 
-repl = wolfmath.MathRepl()
+#repl = wolfmath.MathRepl()
 def get_exact_answer(corename, args):
     mathfn = maths[corename][1]
 
@@ -630,15 +630,23 @@ def accbench2(precs):
 
 
 reference_answer = ieee754.Float(302.88271965546954925)
-
-print(str(ieee754.Float(float(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])), ctx4096)))
-
 def accbench_acc(x):
     fx = float(x)
     if fx <= 0 or fx >= 1000000 or math.isnan(fx):
         return None
     else:
         return gmpmath.geo_sim10(x, reference_answer)
+
+print(str(reference_answer))
+print(str(ieee754.Float(float(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])), ctx4096)))
+print(accbench_acc(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])))
+
+
+# sum posits
+thing1 = accbench(True, 1, 32)
+print(str(ieee754.Float(thing1, ctx4096)))
+print(accbench_acc(thing1))
+
 
 
 def accbench_data():

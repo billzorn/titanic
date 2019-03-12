@@ -53,6 +53,7 @@ function on_backend() {
         break;
     case 'posit':
     case 'softposit':
+    case 'sinking-posit':
         $('#float-opts').css('display', 'none');
         $('#posit-opts').css('display', '');
         break;
