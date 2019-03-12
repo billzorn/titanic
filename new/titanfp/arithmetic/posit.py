@@ -147,21 +147,71 @@ class Posit(mpnum.MPNum):
                         #print('UP')
                         new_exp += 1
                         rc = -1
-                    elif unrounded.rc < 1:
+                    elif unrounded.rc < 0:
                         # tie broken the other way
-                        #print('TIE BROKEN DOWN')
+                        #print('RC DOWN')
                         pass
-                    elif new_exp & 1:
-                        # hard coded rne
-                        # TODO: not clear if this is actually what should happen
-                        #print('TIE UP')
-                        new_exp += 1
-                        rc = -1
+                    else:
+                        # "round nearest, ties to arbitrary"
+                        #print('TIE')
+
+                        # just generate the bits and see if that's even
+                        tmp_exp = new_exp << offset
+                        rounded = digital.Digital(negative=unrounded.negative, c=1, exp=tmp_exp, inexact=exp_inexact, rc=rc)
+                        bits = digital_to_bits(rounded, ctx)
+                        if bits & 1:
+                            new_exp += 1
+                            rc = -1
 
                 new_exp <<= offset
                 rounded = digital.Digital(negative=unrounded.negative, c=1, exp=new_exp, inexact=exp_inexact, rc=rc)
 
+            elif sbits == 0:
+                #print('special round')
+                # round "normally", but with the weird behavior for ties
+                rounded = unrounded.round_m(max_p=sbits + 1, min_n=None, rm=RM.RNE, strict=strict)
+
+                # this is always rounding to one bit
+                if unrounded.c == 0:
+                    left_bits = 0
+                    half_bit = 0
+                    low_bits = 0
+                else:
+                    cbits = unrounded.c.bit_length()
+                    left_bits = 1
+                    half_bit = (unrounded.c >> (cbits - 2)) & 1
+                    low_bits = unrounded.c & bitmask(cbits - 2)
+
+                new_exp = unrounded.e
+                if half_bit > 0 or low_bits > 0 or unrounded.rc > 0:
+                    rc = 1
+                    exp_inexact = True
+                else:
+                    rc = unrounded.rc
+                    exp_inexact = unrounded.inexact
+
+                if half_bit > 0:
+                    if low_bits > 0 or unrounded.rc > 0:
+                        # UP
+                        new_exp += 1
+                        rc = -1
+                    elif unrounded.rc < 0:
+                        # DOWN
+                        pass
+                    else:
+                        # TIE
+                        tmp_exp = new_exp
+                        rounded = digital.Digital(negative=unrounded.negative, c=1, exp=tmp_exp, inexact=exp_inexact, rc=rc)
+                        bits = digital_to_bits(rounded, ctx)
+                        if bits & 1:
+                            new_exp += 1
+                            rc = -1
+
+                rounded = digital.Digital(negative=unrounded.negative, c=1, exp=new_exp, inexact=exp_inexact, rc=rc)
+
+
             else:
+                #print('normal round')
                 # we can represent the entire exponent, so only round the mantissa
                 rounded = unrounded.round_m(max_p=sbits + 1, min_n=None, rm=RM.RNE, strict=strict)
 
@@ -243,7 +293,7 @@ def digital_to_bits(x, ctx=None):
         rounded = x
     else:
         rounded = Interpreter.round_to_context(x, ctx)
-    ctx = rounded.ctx
+        ctx = rounded.ctx
 
     if ctx.nbits < 2 or ctx.es < 0:
         raise ValueError('format with nbits={}, es={} cannot be represented with posit bit pattern'.format(ctx.nbits, ctx.es))
@@ -413,3 +463,52 @@ def test_posit_bits(ctx=ctx8, nbits=8, sfptype=sfpy.Posit8, tests=None):
             print(show_bitpattern(i, ctx))
             trueregime, truee = divmod(p.e, ctx.u)
             print('should have regime={}, e={}'.format(trueregime, truee))
+
+
+
+def bad_rounding():
+    cases16 = [
+        -25165824.0,
+        -2.2351741790771484e-08,
+        -7.450580596923828e-09,
+        25165824.0,
+        2.2351741790771484e-08,
+        7.450580596923828e-09,
+        -67108863.99999999,
+        -67108863.999999985,
+        -50331648.00000001,
+        -50331648.0,
+        -33554431.999999996,
+        -33554431.999999993,
+        -25165824.000000004,
+        -5.960464477539062e-08,
+        -5.960464477539061e-08,
+        -4.4703483581542975e-08,
+        -4.470348358154297e-08,
+        -2.980232238769531e-08,
+        -2.9802322387695306e-08,
+        -2.2351741790771488e-08,
+        2.2351741790771488e-08,
+        2.9802322387695306e-08,
+        2.980232238769531e-08,
+        4.470348358154297e-08,
+        4.4703483581542975e-08,
+        5.960464477539061e-08,
+        5.960464477539062e-08,
+        25165824.000000004,
+        33554431.999999993,
+        33554431.999999996,
+        50331648.0,
+        50331648.00000001,
+        67108863.999999985,
+        67108863.99999999,
+    ]
+
+    for case in cases16:
+
+        print('----')
+        sfp = sfpy.Posit16(case)
+        p = Posit(case, ctx=ctx16)
+
+        if not float(sfp) == float(p):
+            print(case, 'expected', sfp, ': got', str(p))
