@@ -260,3 +260,61 @@ class PositCtx(EvalCtx):
         if len(self.props) > 0:
             args.append('props=' + repr(self.props))
         return '{}({})'.format(type(self).__name__, ', '.join(args))
+
+
+class FixedCtx(EvalCtx):
+    """Context for fixed point arithmetic, including quires."""
+
+    p = 64
+    n = -33
+    rm = RM.RNE
+
+    def __init__(self, p=None, n=None, rm=None, bindings=None, props=None):
+        if bindings:
+            self.bindings = bindings.copy()
+        else:
+            self.bindings = {}
+
+        self.props = {}
+        if props:
+            self._update_props(props)
+
+        if p is not None:
+            self.p = p
+        if n is not None:
+            self.n = n
+        if rm is not None:
+            self.rm = rm
+
+    def _update_props(self, props):
+        if 'round' in props:
+            try:
+                self.rm = IEEE_rm[str(props['round']).strip().lower()]
+            except KeyError:
+                raise ValueError('unsupported rounding mode {}'.format(repr(props['round'])))
+        if 'precision' in props:
+            precl = props['precision'].as_list()
+            if precl is not None and len(precl) == 3 and str(precl[0]) == 'fixed':
+                p = int(str(precl[1]))
+                n = int(str(precl[2]))
+            else:
+                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+            self.p = p
+            self.n = n
+        self.props.update(props)
+
+    def _import_fields(self, ctx):
+        self.p = ctx.p
+        self.n = ctx.n
+
+    def __repr__(self):
+        args = ['p=' + repr(self.p), 'n=' + repr(self.n)]
+        if len(self.bindings) > 0:
+            args.append('bindings=' + repr(self.bindings))
+        if len(self.props) > 0:
+            args.append('props=' + repr(self.props))
+        return '{}({})'.format(type(self).__name__, ', '.join(args))
+
+
+def determine_ctx(old_ctx, props):
+    pass

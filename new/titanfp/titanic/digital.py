@@ -712,7 +712,10 @@ class Digital(object):
 
         # Keep all of the bits; this means there can't be any half_bit.
         elif offset == 0:
-            half_bit = None
+            if self.inexact:
+                half_bit = None
+            else:
+                half_bit = 0
 
         # Add on -offset bits to the right;
         # we're trying to make the number more precise.
@@ -752,8 +755,8 @@ class Digital(object):
         if nearest:
             interval_size = -1
             if half_bit is None:
-                raise utils.PrecisionError('insufficient precision to round {} to nearest with p={}, n={}'
-                                     .format(repr(self), repr(p), repr(n)))
+                raise utils.PrecisionError('insufficient precision to round {} ({} * 2**{}) to nearest with p={}'
+                                     .format(repr(self), repr(c), repr(exp), repr(p)))
             # below half: truncate
             if half_bit == 0:
                 direction = RoundingDirection.TRUNCATE
