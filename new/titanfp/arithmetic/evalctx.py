@@ -317,4 +317,28 @@ class FixedCtx(EvalCtx):
 
 
 def determine_ctx(old_ctx, props):
-    pass
+    if precision in props:
+        precl = props['precision'].as_list()
+        if precl is not None and len(precl) == 3:
+            if str(precl[0]) == 'float':
+                new_ctx_t = IEEECtx
+            elif str(precl[0]) == 'posit':
+                new_ctx_t = PositCtx
+            elif str(precl[0]) == 'fixed':
+                new_ctx_t = FixedCtx
+            else:
+                raise ValueError('unsupported precision {}'.format(repr(props['precision'])))
+        else:
+            precs = str(props['precision']).strip().lower()
+            if precs.startswith('posit'):
+                new_ctx_t = PositCtx
+            else:
+                new_ctx_t = IEEECtx
+
+    # TODO: implement automatic quire sizing here
+
+    if isinstance(old_ctx, new_ctx_t):
+        return old_ctx.let(props=props)
+    else:
+        new_ctx = new_ctx_t(bindings=old_ctx.bindings, props=old_ctx.props)
+        return new_ctx.let(props=props)

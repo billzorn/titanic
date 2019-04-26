@@ -152,6 +152,11 @@ class Interpreter(interpreter.StandardInterpreter):
         x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
         return cls.round_to_context(x, ctx=ctx)
 
+    # this is what makes it mpmf actually
+    @classmethod
+    def _eval_ctx(cls, e, ctx):
+        return cls.evaluate(e.body, evalctx.determine_ctx(ctx, e.props))
+
     @classmethod
     def round_to_context(cls, x, ctx):
         """Not actually used???"""
