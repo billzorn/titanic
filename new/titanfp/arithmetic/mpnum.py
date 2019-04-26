@@ -271,7 +271,13 @@ class MPNum(digital.Digital):
 
     # isinf and isnan are properties
 
-    # isnormal is implementation specific
+    # isnormal is implementation specific - override if necessary
+    def isnormal(self):
+        return not (
+            self.is_zero()
+            or self.isinf
+            or self.isnan
+        )
 
     def signbit(self):
         return self.negative

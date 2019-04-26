@@ -87,6 +87,10 @@ class Fixed(mpnum.MPNum):
         if unrounded.isinf or unrounded.isnan:
             return cls(unrounded, ctx=ctx)
 
+        # do a size check now, to avoid attempting to round to more digits than we have
+        if unrounded.e > ctx.n + ctx.p:
+            return cls(unrounded, isinf=True)
+
         rounded = unrounded.round(min_n=ctx.n, rm=ctx.rm, strict=strict)
 
         # fix up rc, to be compatible with old rounding code
@@ -102,14 +106,6 @@ class Fixed(mpnum.MPNum):
             rounded = cls(rounded, isinf=True)
 
         return cls(rounded, ctx=ctx)
-
-    def isnormal(self):
-        return not (
-            self.is_zero()
-            or self.isinf
-            or self.isnan
-        )
-
 
 class Interpreter(interpreter.StandardInterpreter):
     dtype = Fixed
