@@ -317,7 +317,7 @@ class FixedCtx(EvalCtx):
 
 
 def determine_ctx(old_ctx, props):
-    if precision in props:
+    if 'precision' in props:
         precl = props['precision'].as_list()
         if precl is not None and len(precl) == 3:
             if str(precl[0]) == 'float':
@@ -334,11 +334,21 @@ def determine_ctx(old_ctx, props):
                 new_ctx_t = PositCtx
             else:
                 new_ctx_t = IEEECtx
+    else:
+        new_ctx_t = type(old_ctx)
 
     # TODO: implement automatic quire sizing here
+
+    print(old_ctx)
+    print(new_ctx_t)
 
     if isinstance(old_ctx, new_ctx_t):
         return old_ctx.let(props=props)
     else:
-        new_ctx = new_ctx_t(bindings=old_ctx.bindings, props=old_ctx.props)
-        return new_ctx.let(props=props)
+        # # this would explode because the olds props is problematic for the new constructor
+        # new_ctx = new_ctx_t(bindings=old_ctx.bindings, props=old_ctx.props)
+        # return new_ctx.let(props=props)
+
+        new_props = old_ctx.props.copy()
+        new_props.update(props)
+        return new_ctx_t(bindings=old_ctx.bindings, props=new_props)

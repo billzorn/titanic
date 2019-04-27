@@ -3,6 +3,7 @@
 
 from ..titanic import digital
 from ..titanic import gmpmath
+from ..fpbench import fpcast as ast
 
 from . import evalctx
 from . import mpnum
@@ -120,9 +121,15 @@ class MPMF(mpnum.MPNum):
                 or self.isnan
             )
 
+# TODO: hack, provide a fake constructor-like thing to make contexts of varying types
+
+def mpmf_ctype(bindings=None, props=None):
+    ctx = MPMF._ctx.let(bindings=bindings)
+    return evalctx.determine_ctx(ctx, props)
+
 class Interpreter(interpreter.StandardInterpreter):
     dtype = MPMF
-    ctype = evalctx.EvalCtx
+    ctype = mpmf_ctype
 
     @classmethod
     def arg_to_digital(cls, x, ctx):
@@ -161,3 +168,36 @@ class Interpreter(interpreter.StandardInterpreter):
     def round_to_context(cls, x, ctx):
         """Not actually used???"""
         return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
+
+    # copy-pasta hack
+    @classmethod
+    def arg_ctx(cls, core, args, ctx=None, override=True):
+        if len(core.inputs) != len(args):
+            raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'.format(
+                len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
+
+        if ctx is None:
+            ctx = cls.ctype(props=core.props)
+        elif override:
+            allprops = {}
+            allprops.update(core.props)
+            allprops.update(ctx.props)
+            ctx = evalctx.determine_ctx(ctx, allprops)
+        else:
+            ctx = evalctx.determine_ctx(ctx, core.props)
+
+        arg_bindings = []
+
+        for arg, (name, props) in zip(args, core.inputs):
+            local_ctx = evalctx.determine_ctx(ctx, props)
+
+            if isinstance(arg, cls.dtype):
+                argval = arg
+            elif isinstance(arg, ast.Expr):
+                argval = cls.evaluate(arg, ctx)
+            else:
+                argval = cls.arg_to_digital(arg, local_ctx)
+
+            arg_bindings.append((name, argval))
+
+        return ctx.let(bindings=arg_bindings)
