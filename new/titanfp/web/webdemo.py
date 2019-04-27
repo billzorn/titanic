@@ -15,6 +15,7 @@ from ..arithmetic import interpreter
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
+from ..arithmetic import mpmf
 
 here = os.path.dirname(os.path.realpath(__file__))
 dist = os.path.join(here, 'dist')
@@ -34,6 +35,7 @@ webdemo_eval_backends = {
     'softposit': softposit.Interpreter,
     'sinking-point': sinking.Interpreter,
     'sinking-posit': sinkingposit.Interpreter,
+    'mpmf': mpmf.Interpreter,
 }
 
 webdemo_float_backends = {
@@ -44,6 +46,10 @@ webdemo_posit_backends = {
     'posit', 'softposit', 'sinking-posit'
 }
 
+
+webdemo_mpmf_backends = {
+    'mpmf'
+}
 
 class WebtoolError(Exception):
     """Unable to run webtool; malformed data or bad options."""
@@ -148,6 +154,8 @@ class WebtoolState(object):
             return self.float_override
         elif self.backend in webdemo_posit_backends:
             return self.posit_override
+        elif self.backend in webdemo_mpmf_backends:
+            return False
         else:
             return None
 
@@ -175,6 +183,10 @@ def run_eval(data):
         if precision is not None:
             props['precision'] = precision
         ctx = backend.ctype(props=props)
+
+        # hack?
+        if state.backend in webdemo_mpmf_backends:
+            ctx = None # use context from the FPCore
 
         try:
             arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)

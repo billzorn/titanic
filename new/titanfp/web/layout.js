@@ -45,15 +45,22 @@ $(window).on('resize', debounce(resize_webtool, 100));
 function on_backend() {
     const selected = $('#backend').val();
     switch (selected) {
+    case 'mpmf':
+        $('#mpmf-opts').css('display', '');
+        $('#float-opts').css('display', 'none');
+        $('#posit-opts').css('display', 'none');
+        break;
     case 'ieee754':
     case 'softfloat':
     case 'sinking-point':
+        $('#mpmf-opts').css('display', 'none');
         $('#float-opts').css('display', '');
         $('#posit-opts').css('display', 'none');
         break;
     case 'posit':
     case 'softposit':
     case 'sinking-posit':
+        $('#mpmf-opts').css('display', 'none');
         $('#float-opts').css('display', 'none');
         $('#posit-opts').css('display', '');
         break;
