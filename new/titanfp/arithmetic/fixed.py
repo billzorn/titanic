@@ -91,7 +91,7 @@ class Fixed(mpnum.MPNum):
         if unrounded.e > ctx.n + ctx.p:
             return cls(unrounded, isinf=True)
 
-        rounded = unrounded.round(min_n=ctx.n, rm=ctx.rm, strict=strict)
+        rounded = unrounded.round_new(min_n=ctx.n, rm=ctx.rm, strict=strict)
 
         # fix up rc, to be compatible with old rounding code
         if rounded.rounded:

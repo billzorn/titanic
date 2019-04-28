@@ -863,7 +863,7 @@ class Digital(object):
         (False, RM.RAZ): (False, RoundingMode.AWAY_ZERO),
     }
 
-    def round(self, max_p=None, min_n=None, rm=RM.RNE, strict=True):
+    def round_new(self, max_p=None, min_n=None, rm=RM.RNE, strict=True):
         """Round the mantissa to at most max_p precision, or a least absolute digit
         in position min_n, whichever is less precise. Rounding is implemented generally
         for all real values; the requested precision may be one or even zero bits,
