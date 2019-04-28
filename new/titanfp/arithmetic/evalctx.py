@@ -339,9 +339,6 @@ def determine_ctx(old_ctx, props):
 
     # TODO: implement automatic quire sizing here
 
-    print(old_ctx)
-    print(new_ctx_t)
-
     if isinstance(old_ctx, new_ctx_t):
         return old_ctx.let(props=props)
     else:

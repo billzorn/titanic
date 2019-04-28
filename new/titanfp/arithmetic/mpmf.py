@@ -192,9 +192,9 @@ class Interpreter(interpreter.StandardInterpreter):
             local_ctx = evalctx.determine_ctx(ctx, props)
 
             if isinstance(arg, cls.dtype):
-                argval = arg
+                argval = cls.round_to_context(arg, ctx=local_ctx)
             elif isinstance(arg, ast.Expr):
-                argval = cls.evaluate(arg, ctx)
+                argval = cls.evaluate(arg, local_ctx)
             else:
                 argval = cls.arg_to_digital(arg, local_ctx)
 
