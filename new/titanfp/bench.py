@@ -10,6 +10,7 @@ import numpy as np
 from .fpbench import fpcparser
 from .arithmetic import ieee754, sinking
 from .arithmetic import posit
+from .arithmetic import mpmf
 from .arithmetic import core2math
 from .arithmetic import evalctx
 from .titanic import digital
@@ -744,3 +745,126 @@ def congapaper():
         print('  ' + a)
         quadratic(a, herbified=True)
         print()
+
+
+arclen_fpcore = """(FPCore ((! :precision (fixed 64 -1) n))
+ :name "arclength"
+ :cite (precimonious-2013)
+ :precision {}
+ :pre (>= n 0)
+ (let ((dppi (acos -1)))
+   (let ((h (/ dppi n)))
+     (while
+      (<= i n)
+      ((s1
+        0
+        (let ((t2
+               (let ((x (* i h)))
+                 (while
+                  (<= k 5)
+                  ((d0
+                    (! :precision binary32 2)
+                    (! :precision binary32 (* 2 d0)))
+                   (t0 x (+ t0 (/ (sin (* d0 x)) d0)))
+                   (k (! :precision binary32 1) (! :precision binary32 (+ k 1))))
+                  t0))))
+          (let ((s0 (sqrt (+ (* h h) (* (- t2 t1) (- t2 t1))))))
+            (! :precision {} (+ s1 s0)))))
+       (t1
+        0
+        (let ((t2
+               (let ((x (* i h)))
+                 (while
+                  (<= k 5)
+                  ((d0
+                    (! :precision binary32 2)
+                    (! :precision binary32 (* 2 d0)))
+                   (t0 x (+ t0 (/ (sin (* d0 x)) d0)))
+                   (k (! :precision binary32 1) (! :precision binary32 (+ k 1))))
+                  t0))))
+          t2))
+       (i
+        (! :precision (fixed 64 -1) 1)
+        (! :precision (fixed 64 -1) (+ i 1))))
+      s1))))
+"""
+
+arclen_reference = ieee754.Float('5.7957763227371650583')
+
+def arclen_acc(x):
+    fx = float(x)
+    if fx <= 0 or fx >= 1000000 or math.isnan(fx):
+        return None
+    else:
+        return gmpmath.geo_sim(x, arclen_reference)
+
+def arclen_bench(overall, accumulate, n):
+    text = arclen_fpcore.format(overall, accumulate)
+    core = fpcparser.compile1(text)
+    result = mpmf.Interpreter.interpret(core, [n], ctx=None)
+    return result, arclen_acc(result)
+
+def print_arclen_bench(overall, accumulate, n):
+    print('{}\t{}\t{}\t'.format(overall, accumulate, str(n)), end='', flush=True)
+    value, acc = arclen_bench(overall, accumulate, n)
+    print('{}\t{:.2f}'.format(str(value), float(acc)), flush=True)
+
+print('')
+
+# repro
+def tab1_a():
+    repro_n = 100000
+    print_arclen_bench('(float 16 64)', '(float 16 64)', repro_n)
+    print_arclen_bench('float64', '(float 16 64)', repro_n)
+    print_arclen_bench('float64', 'float64', repro_n)
+    print_arclen_bench('float32', '(float 16 64)', repro_n)
+
+def tab1_b():
+    print_arclen_bench('(float 16 64)', '(float 16 64)', 10000)
+    print_arclen_bench('(float 16 64)', '(float 16 64)', 1000)
+    print_arclen_bench('(float 16 64)', '(float 16 64)', 100)
+    print_arclen_bench('float32', 'float32', 100)
+
+def tab2_a():
+    repro_n = 100000
+    # print_arclen_bench('(float 16 64)', '(fixed 128 -126)', repro_n)
+    # print_arclen_bench('posit64', '(fixed 128 -126)', repro_n)
+    # print_arclen_bench('posit32', '(fixed 128 -126)', repro_n)
+    print_arclen_bench('posit32', 'posit32', repro_n)
+
+def tab2_b():
+    print_arclen_bench('posit16', '(fixed 64 -49)', 10)
+    print_arclen_bench('posit16', '(fixed 64 -49)', 100)
+    print_arclen_bench('posit16', '(fixed 64 -49)', 1000)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 10)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 100)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 1000)
+
+def sweep_accumulate(overall, start, end, n_start, n_end, n_step):
+    print('prec\t' + '\t'.join((str(n) for n in range(n_start, n_end+n_step, n_step))),flush=True)
+
+    for accbits in range(start, end+1):
+        print(accbits, end='')
+        for n in range(n_start, n_end+n_step, n_step):
+            accumulate = '(fixed {} {})'.format(accbits, (-accbits) + 2)
+            result, acc = arclen_bench(overall, accumulate, n)
+            if acc is None or acc < 0:
+                acc = 0
+            print('\t{:.3f}'.format(acc), end='')
+        print(flush=True)
+
+def sweep_overall(accumulate, start, end, n_start, n_end, n_step):
+    print('prec\t' + '\t'.join((str(n) for n in range(n_start, n_end+n_step, n_step))),flush=True)
+
+    for accbits in range(start, end+1):
+        print(accbits, end='')
+        for n in range(n_start, n_end+n_step, n_step):
+            overall = '(posit 1 {})'.format(accbits)
+            result, acc = arclen_bench(overall, accumulate, n)
+            if acc is None or acc < 0:
+                acc = 0
+            print('\t{:.3f}'.format(acc), end='')
+        print(flush=True)
+
+#sweep_accumulate('(posit 1 16)', 3, 20, 5, 200, 5)
+#sweep_overall('(fixed 64 -49)', 8, 16, 5, 200, 5)
