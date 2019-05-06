@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "dependencies": {},
     "devDependencies": {
-        "jquery": "^3.3.1",
+        "jquery": "^3.4.1",
         "lodash-es": "^4.17.11",
         "monaco-editor": "^0.15.6",
         "css-loader": "^2.1.0",
