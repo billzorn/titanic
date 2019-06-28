@@ -94,7 +94,9 @@ class Evaluator(object):
         # control flow
         ast.If: '_eval_if',
         ast.Let: '_eval_let',
+        ast.LetStar: '_eval_letstar',
         ast.While: '_eval_while',
+        ast.WhileStar: '_eval_whilestar',
         # catch-all for operations with some number of arguments
         ast.NaryExpr: '_eval_op',
         # catch-all for operations not recognized by the compiler
@@ -264,6 +266,21 @@ class BaseInterpreter(Evaluator):
         bindings = [(name, cls.evaluate(expr, ctx)) for name, expr in e.let_bindings]
         return cls.evaluate(e.body, ctx.let(bindings=bindings))
 
+    # @classmethod
+    # def _eval_letstar(cls, e, ctx):
+    #     bindings = []
+    #     for name, expr in e.let_bindings:
+    #         local_ctx = ctx.let(bindings=bindings)
+    #         bindings.append((name, cls.evaluate(expr, local_ctx)))
+    #     return cls.evaluate(e.body, ctx.let(bindings=bindings))
+
+    @classmethod
+    def _eval_letstar(cls, e, ctx):
+        for name, expr in e.let_bindings:
+            new_binding = (name, cls.evaluate(expr, ctx))
+            ctx = ctx.let(bindings=[new_binding])
+        return cls.evaluate(e.body, ctx)
+
     @classmethod
     def _eval_while(cls, e, ctx):
         bindings = [(name, cls.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
@@ -271,6 +288,17 @@ class BaseInterpreter(Evaluator):
         while cls.evaluate(e.cond, ctx):
             bindings = [(name, cls.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
+        return cls.evaluate(e.body, ctx)
+
+    @classmethod
+    def _eval_whilestar(cls, e, ctx):
+        for name, init_expr, update_expr in e.while_bindings:
+            new_binding = (name, cls.evaluate(init_expr, ctx))
+            ctx = ctx.let(bindings=[new_binding])
+        while cls.evaluate(e.cond, ctx):
+            for name, init_expr, update_expr in e.while_bindings:
+                new_binding = (name, cls.evaluate(update_expr, ctx))
+                ctx = ctx.let(bindings=[new_binding])
         return cls.evaluate(e.body, ctx)
 
 

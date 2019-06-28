@@ -277,6 +277,14 @@ class Let(Expr):
             return False
         return self.let_bindings == other.let_bindings and self.body == other.body
 
+class LetStar(Let):
+    name: str = 'let*'
+
+    def __eq__(self, other):
+        if not isinstance(other, LetStar):
+            return False
+        return self.let_bindings == other.let_bindings and self.body == other.body
+
 class While(Expr):
     name: str = 'while'
 
@@ -298,6 +306,13 @@ class While(Expr):
             return False
         return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
 
+class WhileStar(While):
+    name: str = 'while*'
+
+    def __eq__(self, other):
+        if not isinstance(other, WhileStar):
+            return False
+        return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
 
 # cast is the identity function, used for repeated rounding
 

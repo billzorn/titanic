@@ -36,7 +36,9 @@ reserved_constructs = {
     'cast' : None,
     'if' : None,
     'let' : None,
+    'let*' : None,
     'while' : None,
+    'while*' : None,
     'digits' : None,
 
     # IEEE 754 required arithmetic (negation is a special case of subtraction)
@@ -288,8 +290,25 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
+    def visitExprLetStar(self, ctx) -> ast.Expr:
+        return ast.LetStar(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            ctx.body.accept(self),
+        )
+
     def visitExprWhile(self, ctx) -> ast.Expr:
         return ast.While(
+            ctx.cond.accept(self),
+            [*zip(
+                (x.text for x in ctx.xs),
+                (e0.accept(self) for e0 in ctx.e0s),
+                (e.accept(self) for e in ctx.es),
+            )],
+            ctx.body.accept(self),
+        )
+
+    def visitExprWhileStar(self, ctx) -> ast.Expr:
+        return ast.WhileStar(
             ctx.cond.accept(self),
             [*zip(
                 (x.text for x in ctx.xs),

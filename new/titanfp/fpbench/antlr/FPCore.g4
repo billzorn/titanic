@@ -23,7 +23,9 @@ expr
     | OPEN 'cast' body=expr CLOSE #ExprCast
     | OPEN 'if' cond=expr then_body=expr else_body=expr CLOSE # ExprIf
     | OPEN 'let' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLet
+    | OPEN 'let*' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLetStar
     | OPEN 'while' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhile
+    | OPEN 'while*' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhileStar
     | OPEN op=SYMBOL (args+=expr)* CLOSE # ExprOp
     ;
 
