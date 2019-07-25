@@ -22,7 +22,7 @@ def posit_ctx(es, nbits):
 
 class Posit(mpnum.MPNum):
 
-    _ctx : PositCtx = posit_ctx(4, 64)
+    _ctx : PositCtx = posit_ctx(3, 64)
 
     @property
     def ctx(self):

@@ -5,7 +5,7 @@ export const fpcore = {
     defaultToken: 'invalid',
 
     keywords: [
-        'FPCore', 'if', 'let', 'while', '!', 'digits',
+        'FPCore', 'if', 'let', 'let*', 'while', 'while*', '!', 'digits',
     ],
 
     operators: [

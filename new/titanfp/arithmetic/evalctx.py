@@ -32,7 +32,7 @@ wrap_synonyms = {'wrap'}
 
 prefer_float = {'binary', 'float', 'quad', 'half', 'single', 'double', 'extended', 'longdouble', 'quadruple'}
 prefer_posit = {'posit'}
-prefer_fixed = {'int', 'char', 'short', 'long'}
+prefer_fixed = {'fixed', 'int', 'char', 'short', 'long'}
 
 
 class EvalCtx(object):
@@ -397,7 +397,7 @@ class FixedCtx(EvalCtx):
     scale = 0
     nbits = 64
     rm = RM.RTN
-    of = OF.WRAP
+    of = OF.INFINITY
 
     p = nbits
     n = scale - 1
@@ -538,7 +538,6 @@ def determine_ctx(old_ctx, props):
     if 'precision' in props:
         prec = props['precision']
         m = ctx_type_re.match(str(prec))
-        print(m)
         if m:
             if m.group(1):
                 new_ctx_t = IEEECtx

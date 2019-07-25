@@ -737,7 +737,7 @@ class Digital(object):
 
         # TODO: sanity check
         assert exp == n+1
-        assert p is None or (c.bit_length() == p)
+        assert p is None or c == 0 or (c.bit_length() == p)
 
         return p, exp, c, half_bit, low_bit
 

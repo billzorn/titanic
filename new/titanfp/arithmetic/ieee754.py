@@ -12,18 +12,18 @@ from . import interpreter
 
 
 used_ctxs = {}
-def ieee_ctx(w, p):
+def ieee_ctx(es, nbits, rm=RM.RNE):
     try:
-        return used_ctxs[(w, p)]
+        return used_ctxs[(es, nbits, rm)]
     except KeyError:
-        ctx = IEEECtx(w=w, p=p)
-        used_ctxs[(w, p)] = ctx
+        ctx = IEEECtx(es=es, nbits=nbits, rm=rm)
+        used_ctxs[(es, nbits, rm)] = ctx
         return ctx
 
 
 class Float(mpnum.MPNum):
 
-    _ctx : IEEECtx = ieee_ctx(11, 53)
+    _ctx : IEEECtx = ieee_ctx(11, 64)
 
     @property
     def ctx(self):
@@ -37,7 +37,7 @@ class Float(mpnum.MPNum):
 
     def is_identical_to(self, other):
         if isinstance(other, type(self)):
-            return super().is_identical_to(other) and self.ctx.w == other.ctx.w and self.ctx.p == other.ctx.p
+            return super().is_identical_to(other) and self.ctx.es == other.ctx.es and self.ctx.nbits == other.ctx.nbits
         else:
             return super().is_identical_to(other)
 
@@ -54,7 +54,7 @@ class Float(mpnum.MPNum):
             unrounded = gmpmath.mpfr_to_digital(f)
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True))
 
-        self._ctx = ieee_ctx(ctx.w, ctx.p)
+        self._ctx = ieee_ctx(ctx.es, ctx.nbits, rm=ctx.rm)
 
     def __repr__(self):
         return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, ctx={})'.format(
@@ -71,11 +71,11 @@ class Float(mpnum.MPNum):
     @classmethod
     def _select_context(cls, *args, ctx=None):
         if ctx is not None:
-            return ieee_ctx(ctx.w, ctx.p)
+            return ieee_ctx(ctx.es, ctx.nbits, rm=ctx.rm)
         else:
-            w = max((f.ctx.w for f in args if isinstance(f, cls)))
+            es = max((f.ctx.es for f in args if isinstance(f, cls)))
             p = max((f.ctx.p for f in args if isinstance(f, cls)))
-            return ieee_ctx(w, p)
+            return ieee_ctx(es, es + p)
 
     @classmethod
     def _round_to_context(cls, unrounded, ctx=None, strict=False):
@@ -85,20 +85,17 @@ class Float(mpnum.MPNum):
             else:
                 raise ValueError('no context specified to round {}'.format(repr(unrounded)))
 
-        if ctx.rm != RM.RNE:
-            raise ValueError('unimplemented rounding mode {}'.format(repr(rm)))
-
         if unrounded.isinf or unrounded.isnan:
             return cls(unrounded, ctx=ctx)
 
         magnitude = cls(unrounded, negative=False)
         if magnitude < ctx.fbound:
-            return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
+            return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
         else:
             if magnitude > ctx.fbound or magnitude.rc >= 0:
                 return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
             else:
-                return cls(unrounded.round_m(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
+                return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
 
     # most operations come from mpnum
 

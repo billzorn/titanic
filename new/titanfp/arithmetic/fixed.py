@@ -3,6 +3,7 @@
 
 from ..titanic import digital
 from ..titanic import gmpmath
+from ..titanic.ops import RM, OF
 
 from .evalctx import FixedCtx
 from . import mpnum
@@ -10,18 +11,18 @@ from . import interpreter
 
 
 used_ctxs = {}
-def fixed_ctx(p, n):
+def fixed_ctx(scale, nbits, rm=RM.RTN, of=OF.INFINITY):
     try:
-        return used_ctxs[(p, n)]
+        return used_ctxs[(scale, nbits, rm, of)]
     except KeyError:
-        ctx = FixedCtx(p=p, n=n)
-        used_ctxs[(p, n)] = ctx
+        ctx = FixedCtx(scale=scale, nbits=nbits, rm=rm, of=of)
+        used_ctxs[(scale, nbits, rm, of)] = ctx
         return ctx
 
 
 class Fixed(mpnum.MPNum):
 
-    _ctx : FixedCtx = fixed_ctx(64, -33)
+    _ctx : FixedCtx = fixed_ctx(0, 64)
 
     @property
     def ctx(self):
@@ -35,7 +36,7 @@ class Fixed(mpnum.MPNum):
 
     def is_identical_to(self, other):
         if isinstance(other, type(self)):
-            return super().is_identical_to(other) and self.ctx.p == other.ctx.p and self.ctx.n == other.ctx.n
+            return super().is_identical_to(other) and self.ctx.scale == other.ctx.scale and self.ctx.nbits == other.ctx.nbits
         else:
             return super().is_identical_to(other)
 
@@ -52,7 +53,7 @@ class Fixed(mpnum.MPNum):
             unrounded = gmpmath.mpfr_to_digital(f)
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True))
 
-        self._ctx = fixed_ctx(ctx.p, ctx.n)
+        self._ctx = fixed_ctx(ctx.scale, ctx.nbits, rm=ctx.rm, of=ctx.of)
 
     def __repr__(self):
         return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, ctx={})'.format(
@@ -69,12 +70,12 @@ class Fixed(mpnum.MPNum):
     @classmethod
     def _select_context(cls, *args, ctx=None):
         if ctx is not None:
-            return fixed_ctx(ctx.p, ctx.n)
+            return fixed_ctx(ctx.scale, ctx.nbits, rm=ctx.rm, of=ctx.of)
         else:
             n = min((f.ctx.n for f in args if isinstance(f, cls)))
             maxbit = max((f.ctx.n + f.ctx.p for f in args if isinstance(f, cls)))
-            p = maxbit - n
-            return fixed_ctx(p, n)
+            nbits = maxbit - n
+            return fixed_ctx(n + 1, nbits)
 
     @classmethod
     def _round_to_context(cls, unrounded, ctx=None, strict=False):
@@ -83,6 +84,9 @@ class Fixed(mpnum.MPNum):
                 ctx = unrounded.ctx
             else:
                 raise ValueError('no context specified to round {}'.format(repr(unrounded)))
+
+        if  ctx.of != OF.INFINITY:
+            raise ValueError('unsupported overflow mode {}'.format(str(ctx.of)))
 
         if unrounded.isinf or unrounded.isnan:
             return cls(unrounded, ctx=ctx)

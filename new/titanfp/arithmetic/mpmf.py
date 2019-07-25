@@ -50,11 +50,11 @@ class MPMF(mpnum.MPNum):
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True))
 
         if isinstance(ctx, evalctx.IEEECtx):
-            self._ctx = ieee754.ieee_ctx(ctx.w, ctx.p)
+            self._ctx = ieee754.ieee_ctx(ctx.es, ctx.nbits, rm=ctx.rm)
         elif isinstance(ctx, evalctx.PositCtx):
             self._ctx = posit.posit_ctx(ctx.es, ctx.nbits)
         elif isinstance(ctx, evalctx.FixedCtx):
-            self._ctx = fixed.fixed_ctx(ctx.p, ctx.n)
+            self._ctx = fixed.fixed_ctx(ctx.scale, ctx.nbits, rm=ctx.rm, of=ctx.of)
         else:
             raise ValueError('unsupported context {}'.format(repr(ctx)))
 
@@ -83,11 +83,11 @@ class MPMF(mpnum.MPNum):
             raise ValueError('arguments do not contain a context?\n{}'.format(repr(args)))
 
         if isinstance(ctx, evalctx.IEEECtx):
-            return ieee754.ieee_ctx(ctx.w, ctx.p)
+            return ieee754.ieee_ctx(ctx.es, ctx.nbits, rm=ctx.rm)
         elif isinstance(ctx, evalctx.PositCtx):
             return posit.posit_ctx(ctx.es, ctx.nbits)
         elif isinstance(ctx, evalctx.FixedCtx):
-            return fixed.fixed_ctx(ctx.p, ctx.n)
+            return fixed.fixed_ctx(ctx.scale, ctx.nbits, rm=ctx.rm, of=ctx.of)
         else:
             raise ValueError('unsupported context {}'.format(repr(ctx)))
 
