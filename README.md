@@ -1,5 +1,3 @@
-# ![Image](../master/titanfp/web/piceberg.png?raw=true)
-
 # Titanic
 
 Titanic is a tool for designing and experimenting

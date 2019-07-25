@@ -1,3 +1,9 @@
+# packaging
+pip
+wheel
+twine
+keyring
+
 # math libs
 numpy ~= 1.16.1
 gmpy2 ~= 2.0.8
