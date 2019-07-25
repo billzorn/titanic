@@ -436,79 +436,79 @@ def show_bitpattern(x, ctx=posit_ctx(4, 64)):
 
 
 
-import sfpy
-import random
-ctx8 = posit_ctx(0, 8)
-ctx16 = posit_ctx(1, 16)
-ctx32 = posit_ctx(2, 32)
+# import sfpy
+# import random
+# ctx8 = posit_ctx(0, 8)
+# ctx16 = posit_ctx(1, 16)
+# ctx32 = posit_ctx(2, 32)
 
-def test_posit_bits(ctx=ctx8, nbits=8, sfptype=sfpy.Posit8, tests=None):
-    if tests is None:
-        rng = range(1<<nbits)
-    else:
-        lim = (1<<nbits) - 1
-        rng = [random.randint(0, lim) for _ in range(tests)]
+# def test_posit_bits(ctx=ctx8, nbits=8, sfptype=sfpy.Posit8, tests=None):
+#     if tests is None:
+#         rng = range(1<<nbits)
+#     else:
+#         lim = (1<<nbits) - 1
+#         rng = [random.randint(0, lim) for _ in range(tests)]
 
-    for i in rng:
-        sfp = sfptype(i)
-        p = Posit(float(sfp), ctx)
+#     for i in rng:
+#         sfp = sfptype(i)
+#         p = Posit(float(sfp), ctx)
 
-        if not digital_to_bits(p) == sfp.bits:
-            print(float(sfp), 'expected', sfp.bits, ': got', digital_to_bits(p))
+#         if not digital_to_bits(p) == sfp.bits:
+#             print(float(sfp), 'expected', sfp.bits, ': got', digital_to_bits(p))
 
-        #print('----')
-        p2 = bits_to_digital(i, ctx)
-        if not float(p2) == float(sfp):
-            print(i, 'expected', sfp, ': got', str(p2))
-            print(show_bitpattern(i, ctx))
-            trueregime, truee = divmod(p.e, ctx.u)
-            print('should have regime={}, e={}'.format(trueregime, truee))
+#         #print('----')
+#         p2 = bits_to_digital(i, ctx)
+#         if not float(p2) == float(sfp):
+#             print(i, 'expected', sfp, ': got', str(p2))
+#             print(show_bitpattern(i, ctx))
+#             trueregime, truee = divmod(p.e, ctx.u)
+#             print('should have regime={}, e={}'.format(trueregime, truee))
 
 
 
-def bad_rounding():
-    cases16 = [
-        -25165824.0,
-        -2.2351741790771484e-08,
-        -7.450580596923828e-09,
-        25165824.0,
-        2.2351741790771484e-08,
-        7.450580596923828e-09,
-        -67108863.99999999,
-        -67108863.999999985,
-        -50331648.00000001,
-        -50331648.0,
-        -33554431.999999996,
-        -33554431.999999993,
-        -25165824.000000004,
-        -5.960464477539062e-08,
-        -5.960464477539061e-08,
-        -4.4703483581542975e-08,
-        -4.470348358154297e-08,
-        -2.980232238769531e-08,
-        -2.9802322387695306e-08,
-        -2.2351741790771488e-08,
-        2.2351741790771488e-08,
-        2.9802322387695306e-08,
-        2.980232238769531e-08,
-        4.470348358154297e-08,
-        4.4703483581542975e-08,
-        5.960464477539061e-08,
-        5.960464477539062e-08,
-        25165824.000000004,
-        33554431.999999993,
-        33554431.999999996,
-        50331648.0,
-        50331648.00000001,
-        67108863.999999985,
-        67108863.99999999,
-    ]
+# def bad_rounding():
+#     cases16 = [
+#         -25165824.0,
+#         -2.2351741790771484e-08,
+#         -7.450580596923828e-09,
+#         25165824.0,
+#         2.2351741790771484e-08,
+#         7.450580596923828e-09,
+#         -67108863.99999999,
+#         -67108863.999999985,
+#         -50331648.00000001,
+#         -50331648.0,
+#         -33554431.999999996,
+#         -33554431.999999993,
+#         -25165824.000000004,
+#         -5.960464477539062e-08,
+#         -5.960464477539061e-08,
+#         -4.4703483581542975e-08,
+#         -4.470348358154297e-08,
+#         -2.980232238769531e-08,
+#         -2.9802322387695306e-08,
+#         -2.2351741790771488e-08,
+#         2.2351741790771488e-08,
+#         2.9802322387695306e-08,
+#         2.980232238769531e-08,
+#         4.470348358154297e-08,
+#         4.4703483581542975e-08,
+#         5.960464477539061e-08,
+#         5.960464477539062e-08,
+#         25165824.000000004,
+#         33554431.999999993,
+#         33554431.999999996,
+#         50331648.0,
+#         50331648.00000001,
+#         67108863.999999985,
+#         67108863.99999999,
+#     ]
 
-    for case in cases16:
+#     for case in cases16:
 
-        print('----')
-        sfp = sfpy.Posit16(case)
-        p = Posit(case, ctx=ctx16)
+#         print('----')
+#         sfp = sfpy.Posit16(case)
+#         p = Posit(case, ctx=ctx16)
 
-        if not float(sfp) == float(p):
-            print(case, 'expected', sfp, ': got', str(p))
+#         if not float(sfp) == float(p):
+#             print(case, 'expected', sfp, ': got', str(p))
