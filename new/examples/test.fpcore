@@ -1,5 +1,0 @@
-(FPCore (x)
-        :name round
-        (let ([n (! :precision binary64 6755399441055744)])
-          (- (! :precision binary64 (+ x n))
-             n)))
