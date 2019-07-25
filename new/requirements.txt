@@ -7,4 +7,4 @@ antlr4-python3-runtime ~= 4.7.2
 
 # softfloat libs
 sfpy ~= 0.4.2
-softposit ~= 0.3.3
+softposit ~= 0.3.4.4

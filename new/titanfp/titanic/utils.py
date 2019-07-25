@@ -14,6 +14,39 @@ class PrecisionError(RoundingError):
     """Insufficient precision to perform rounding."""
 
 
+# some common data structures
+
+class ImmutableDict(dict):
+    def __delitem__(self, key):
+        raise ValueError('ImmutableDict cannot be modified: attempt to delete {}'
+                         .format(repr(key)))
+
+    def __setitem__(self, key, value):
+        raise ValueError('ImmutableDict cannot be modified: attempt to assign [{}] = {}'
+                         .format(repr(key), repr(value)))
+
+    def clear(self):
+        raise ValueError('ImmutableDict cannot be modified: attempt to clear')
+
+    def pop(self, key, *args):
+        raise ValueError('ImmutableDict cannot be modified: attempt to pop {}'
+                         .format(repr(key)))
+
+    def popitem(self):
+        raise ValueError('ImmutableDict cannot be modified: attempt to popitem')
+
+    def setdefault(self, key, default=None):
+        raise ValueError('ImmutableDict cannot be modified: attempt to setdefault {}, default={}'
+                         .format(repr(key), repr(default)))
+
+    def update(self, *args, **kwargs):
+        raise ValueError('ImmutableDict cannot be modified: attempt to update')
+
+    @classmethod
+    def fromkeys(cls, *args):
+        return cls(dict.fromkeys(*args))
+
+
 # Useful things
 
 def bitmask(n: int) -> int:

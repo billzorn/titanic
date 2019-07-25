@@ -16,6 +16,12 @@ class RM(IntEnum):
     ROUND_AWAY_ZERO = 5
     RAZ = 5
 
+class OF(IntEnum):
+    INFINITY = 1
+    INF = 1
+    CLAMP = 2
+    WRAP = 3
+
 @unique
 class OP(IntEnum):
     add = 0

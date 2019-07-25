@@ -395,9 +395,9 @@ def split_xs(xs, ys):
     return cdfs
 
 
-# from ipython
-import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
+# # from ipython
+# import matplotlib.pyplot as plt
+# import matplotlib.lines as mlines
 
 def do_scatter(xs, ys, title, fname):
     fig, ax = plt.subplots()
@@ -789,6 +789,81 @@ arclen_fpcore = """(FPCore ((! :precision (fixed 64 -1) n))
       s1))))
 """
 
+old_arclen_fpcore = """(FPCore ((! :precision (fixed 64 -1) n))
+ :name "arclength"
+ :cite (precimonious-2013)
+ :precision {}
+ :pre (>= n 0)
+ (let ((dppi (acos -1)))
+   (let ((h (/ dppi n)))
+     (while
+      (<= i n)
+      ((s1
+        0
+        (let ((t2
+               (let ((x (* i h)))
+                 (while
+                  (<= k 5)
+                  ((d0
+                    (! :precision binary32 2)
+                    (! :precision binary32 (* 2 d0)))
+                   (t0 x (+ t0 (/ (sin (* d0 x)) d0)))
+                   (k (! :precision binary32 1) (! :precision binary32 (+ k 1))))
+                  t0))))
+          (let ((s0 (sqrt (+ (* h h) (* (- t2 t1) (- t2 t1))))))
+            (! :precision {} (+ s1 s0)))))
+       (t1
+        0
+        (let ((t2
+               (let ((x (* i h)))
+                 (while
+                  (<= k 5)
+                  ((d0
+                    (! :precision binary32 2)
+                    (! :precision binary32 (* 2 d0)))
+                   (t0 x (+ t0 (/ (sin (* d0 x)) d0)))
+                   (k (! :precision binary32 1) (! :precision binary32 (+ k 1))))
+                  t0))))
+          t2))
+       (i
+        (! :precision (fixed 64 -1) 1)
+        (! :precision (fixed 64 -1) (+ i 1))))
+      s1))))
+"""
+
+arclen_fpcore = """(FPCore ((! :precision binary64 n))
+ :name "arclength"
+ :cite (precimonious-2013)
+ :precision {}
+ :pre (>= n 0)
+
+ (let* ([dppi PI]
+        [h (/ dppi n)]
+        [t1 0])
+
+  (while* (<= i n)
+
+   ([t2 0
+     (let ([x (* i h)])
+      (while* (<= k 5)
+       ([d1 (! :precision binary32 1)
+         (! :precision binary32 (* d1 2))]
+        [t1 x
+         (+ t1 (/ (sin (* d1 x)) d1))]
+        [k (! :precision binary32 1) (! :precision binary32 (+ k 1))])
+       t1))]
+
+    [s1 0
+     (let ([s0 (sqrt (+ (* h h) (* (- t2 t1) (- t2 t1))))])
+      (! :precision {} (+ s1 s0)))]
+
+    [t1 t1 t2]
+
+    [i (! :precision binary64 1) (! :precision binary64 (+ i 1))])
+
+    s1)))
+"""
+
 arclen_reference = ieee754.Float('5.7957763227371650583')
 
 def arclen_acc(x):
@@ -798,15 +873,15 @@ def arclen_acc(x):
     else:
         return gmpmath.geo_sim(x, arclen_reference)
 
-def arclen_bench(overall, accumulate, n):
+def arclen_bench(overall, accumulate, n, interpreter=mpmf.Interpreter):
     text = arclen_fpcore.format(overall, accumulate)
     core = fpcparser.compile1(text)
-    result = mpmf.Interpreter.interpret(core, [n], ctx=None)
+    result = interpreter.interpret(core, [n], ctx=None)
     return result, arclen_acc(result)
 
-def print_arclen_bench(overall, accumulate, n):
+def print_arclen_bench(overall, accumulate, n, interpreter=mpmf.Interpreter):
     print('{}\t{}\t{}\t'.format(overall, accumulate, str(n)), end='', flush=True)
-    value, acc = arclen_bench(overall, accumulate, n)
+    value, acc = arclen_bench(overall, accumulate, n, interpreter=interpreter)
     print('{}\t{:.2f}'.format(str(value), float(acc)), flush=True)
 
 print('')
@@ -868,3 +943,30 @@ def sweep_overall(accumulate, start, end, n_start, n_end, n_step):
 
 #sweep_accumulate('(posit 1 16)', 3, 20, 5, 200, 5)
 #sweep_overall('(fixed 64 -49)', 8, 16, 5, 200, 5)
+
+def ada_tab1():
+    print_arclen_bench('binary64', '(fixed 128 -120)', 10000)
+    print_arclen_bench('binary64', '(float 15 64)', 10000)
+    print_arclen_bench('binary32', 'binary32', 10000)
+    print_arclen_bench('binary64', '(fixed 128 -120)', 100000)
+    print_arclen_bench('binary64', '(float 15 64)', 100000)
+    print_arclen_bench('binary32', 'binary32', 100000)
+    print_arclen_bench('posit32', 'posit32', 10000)
+    print_arclen_bench('posit32', 'posit32', 100000)
+    print_arclen_bench('posit32', '(fixed 128 -120)', 100000)
+
+def ada_tab1b():
+    print_arclen_bench('posit16', '(fixed 64 -49)', 1000)
+    print_arclen_bench('(float 5 11)', '(fixed 64 -49)', 1000)
+    print_arclen_bench('(float 8 8)', '(fixed 64 -49)', 1000)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 10)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 100)
+    print_arclen_bench('posit8', '(fixed 64 -49)', 1000)
+
+def ada_tab2():
+    print_arclen_bench('binary64', '(float 15 64)', 10000, interpreter=sinking.Interpreter)
+    print_arclen_bench('binary64', '(float 15 64)', 100000, interpreter=sinking.Interpreter)
+    print_arclen_bench('binary32', 'binary32', 10000, interpreter=sinking.Interpreter)
+    print_arclen_bench('binary32', 'binary32', 100000, interpreter=sinking.Interpreter)
+    print_arclen_bench('binary32', '(float 15 64)', 10000, interpreter=sinking.Interpreter)
+    print_arclen_bench('binary32', '(float 15 64)', 100000, interpreter=sinking.Interpreter)

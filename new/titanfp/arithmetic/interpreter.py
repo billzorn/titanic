@@ -3,11 +3,12 @@
 
 import itertools
 
+from ..titanic import utils
 from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
 
 
-class EvaluatorError(Exception):
+class EvaluatorError(utils.TitanicError):
     """Base Titanic evaluator error."""
 
 class EvaluatorUnimplementedError(EvaluatorError):
@@ -15,15 +16,6 @@ class EvaluatorUnimplementedError(EvaluatorError):
 
 class EvaluatorUnboundError(EvaluatorError, LookupError):
     """Unbound variable encountered during evaluation."""
-
-
-class _CacheSentinel(object):
-    def __getitem__(self, key):
-        raise KeyError(repr(key))
-
-    def __setitem__(self, key, value):
-        raise ValueError('must initialize the evaluator dispatch cache before storing {}: {}'
-                         .format(repr(key), repr(value)))
 
 
 class Evaluator(object):
@@ -165,7 +157,7 @@ class Evaluator(object):
         ast.Not: '_eval_not',
     }
 
-    _evaluator_cache = _CacheSentinel()
+    _evaluator_cache = utils.ImmutableDict()
 
     # this is the sort of things that should be tracked in an instance
     # rather than implemented directly in the class...
@@ -177,7 +169,7 @@ class Evaluator(object):
             method = cls._evaluator_cache[type(e)]
         except KeyError:
             # initialize the cache for this class if it hasn't been initialized already
-            if isinstance(cls._evaluator_cache, _CacheSentinel):
+            if isinstance(cls._evaluator_cache, utils.ImmutableDict):
                 cls._evaluator_cache = {}
             # walk up the mro and assign the evaluator for the first subtype to this type
             method = None

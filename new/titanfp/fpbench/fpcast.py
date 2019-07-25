@@ -41,7 +41,10 @@ class Data(Expr):
             return False
         return self.value == other.value
 
-    def as_number(self, strict=False) -> Expr:
+    def is_number(self):
+        return isinstance(self.value, Val) and not isinstance(self.value, Constant)
+    
+    def as_number(self, strict=False):
         if isinstance(self.value, Val) and not isinstance(self.value, Constant):
             return self.value
         elif strict:
@@ -49,7 +52,10 @@ class Data(Expr):
         else:
             return None
 
-    def as_symbol(self, strict=False) -> str:
+    def is_symbol(self):
+        return isinstance(self.value, Var) or isinstance(self.value, Constant)
+        
+    def as_symbol(self, strict=False):
         if isinstance(self.value, Var) or isinstance(self.value, Constant):
             return self.value.value
         elif strict:
@@ -57,7 +63,10 @@ class Data(Expr):
         else:
             return None
 
-    def as_string(self, strict=False) -> str:
+    def is_string(self):
+        return isinstance(self.value, String)
+
+    def as_string(self, strict=False):
         if isinstance(self.value, String):
             return self.value.value
         elif strict:
@@ -65,7 +74,10 @@ class Data(Expr):
         else:
             return None
 
-    def as_list(self, strict=False) -> typing.List[Expr]:
+    def is_list(self):
+        return isinstance(self.value, list)
+        
+    def as_list(self, strict=False):
         if isinstance(self.value, list):
             return self.value
         elif strict:

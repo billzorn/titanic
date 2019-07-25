@@ -210,6 +210,12 @@ class Sink(digital.Digital):
         result = type(self)(self, negative=False)
         return self._round_to_context(result, ctx=ctx, strict=False)
 
+    # temporary hack
+    def sin(self, ctx=None):
+        ctx = self._select_context(self, ctx=ctx)
+        result = gmpmath.compute(OP.sin, self, prec=ctx.p)
+        return self._round_to_context(result, ctx=ctx, strict=False)
+
 
 class Interpreter(interpreter.StandardInterpreter):
     dtype = Sink
