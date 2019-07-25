@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='titanfp',
-    version='0.1.1',
+    version='0.0.0',
     description='floating point analysis with fpbench',
     packages=setuptools.find_packages('.'),
     package_data={
