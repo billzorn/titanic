@@ -9,31 +9,38 @@ parse_exprs : expr* EOF ;
 
 // FPCore grammar, implementing the standard from fpbench.org
 
-fpcore : OPEN 'FPCore' OPEN (inputs+=argument)* CLOSE (props+=prop)* e=expr CLOSE ;
+fpcore : OPEN 'FPCore' (ident=SYMBOL)? OPEN (inputs+=argument)* CLOSE (props+=prop)* e=expr CLOSE ;
+
+dimension
+    : name=SYMBOL
+    | size=number
+    ;
 
 argument
     : name=SYMBOL
-    | OPEN '!' (props+=prop)* name=SYMBOL CLOSE
+    | OPEN name=SYMBOL (shape+=dimension)+ CLOSE
+    | OPEN '!' (props+=prop)* name=SYMBOL (shape+=dimension)* CLOSE
     ;
 
 expr
-    : n=number #ExprNum
-    | x=SYMBOL #ExprSym
-    | OPEN '!' (props+=prop)* body=expr CLOSE #ExprCtx
-    | OPEN 'cast' body=expr CLOSE #ExprCast
+    : n=number # ExprNum
+    | x=SYMBOL # ExprSym
+    | OPEN '!' (props+=prop)* body=expr CLOSE # ExprCtx
+    | OPEN 'tensor' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprTensor
     | OPEN 'if' cond=expr then_body=expr else_body=expr CLOSE # ExprIf
     | OPEN 'let' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLet
     | OPEN 'let*' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLetStar
     | OPEN 'while' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhile
     | OPEN 'while*' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhileStar
+    | OPEN 'data' d=datum CLOSE # ExprData
     | OPEN op=SYMBOL (args+=expr)* CLOSE # ExprOp
     ;
 
 number
-    : n=DECNUM #NumberDec
-    | n=HEXNUM #NumberHex
-    | n=RATIONAL #NumberRational
-    | OPEN 'digits' m=DECNUM e=DECNUM b=DECNUM CLOSE #NumberDigits
+    : n=DECNUM # NumberDec
+    | n=HEXNUM # NumberHex
+    | n=RATIONAL # NumberRational
+    | OPEN 'digits' m=DECNUM e=DECNUM b=DECNUM CLOSE # NumberDigits
     ;
 
 // Keywords in properties are not required by the grammar to start with a colon;
@@ -41,9 +48,9 @@ number
 prop : name=SYMBOL d=datum ;
 
 datum
-    : n=number #DatumNum
-    | x=SYMBOL #DatumSym
-    | s=STRING #DatumStr
+    : n=number # DatumNum
+    | x=SYMBOL # DatumSym
+    | s=STRING # DatumStr
     | OPEN (data+=datum)* CLOSE # DatumList
     ;
 

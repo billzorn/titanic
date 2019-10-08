@@ -31,9 +31,15 @@ def _neg_or_sub(a, b=None):
 reserved_constructs = {
     # reserved
     'FPCore' : None,
-    # control flow (these asts are assembled directly in the visitor)
+    # annotations
     '!' : None,
-    'cast' : None,
+    'cast' : ast.Cast,
+    # tensor operations
+    'tensor' : None,
+    'dim' : ast.Dim,
+    'size' : ast.Size,
+    'get' : ast.Get,
+    # control flow (these asts are assembled directly in the visitor)
     'if' : None,
     'let' : None,
     'let*' : None,
@@ -152,6 +158,12 @@ class Visitor(FPCoreVisitor):
             parsed[name] = x
         return parsed
 
+    def _parse_shape(self, shape):
+        if shape:
+            return [dim.accept(self) for dim in shape]
+        else:
+            return None
+
     def __init__(self):
         super().__init__()
         self._val_literals = {}
@@ -165,10 +177,15 @@ class Visitor(FPCoreVisitor):
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
     def visitFpcore(self, ctx) -> ast.FPCore:
+        if ctx.ident is None:
+            ident = None
+        else:
+            ident = ctx.ident.text
+            
         inputs = [arg.accept(self) for arg in ctx.inputs]
 
         input_set = set()
-        for name, props in inputs:
+        for name, props, shape in inputs:
             if name in input_set:
                 raise FPCoreParserError('duplicate argument name {}'.format(name))
             # Arguments that are shadowed by constants will never be able to be
@@ -177,6 +194,17 @@ class Visitor(FPCoreVisitor):
                 raise FPCoreParserError('argument name {} is a reserved constant'.format(name))
             else:
                 input_set.add(name)
+            # Also check the names of dimensions.
+            if shape:
+                for dim in shape:
+                    if isinstance(dim, str):
+                        if dim in input_set:
+                            raise FPCoreParserError('duplicate argument name {} for tensor dimension'.format(dim))
+                        elif dim in reserved_constants:
+                            raise FPCoreParserError('dimension name {} is a reserved constant'.format(dim))
+                        else:
+                            input_set.add(dim)
+                                                    
 
         props = self._parse_props(ctx.props)
         e = ctx.e.accept(self)
@@ -196,10 +224,20 @@ class Visitor(FPCoreVisitor):
         else:
             spec= None
 
-        return ast.FPCore(inputs, e, props=props, name=name, pre=pre, spec=spec)
+        return ast.FPCore(inputs, e, props=props, ident=ident, name=name, pre=pre, spec=spec)
 
+    def visitDimSym(self, ctx):
+        return ctx.name.text
+
+    def visitDimSize(self, ctx):
+        n = ctx.size.accept(self)
+        if isinstance(n, ast.Integer):
+            return n.i
+        else:
+            raise FPCoreParserError('fixed dimension {} must be an integer'.format(ctx.size.text))
+    
     def visitArgument(self, ctx):
-        return ctx.name.text, self._parse_props(ctx.props)
+        return ctx.name.text, self._parse_props(ctx.props), self._parse_shape(ctx.shape)
 
     def visitNumberDec(self, ctx) -> ast.Expr:
         k = ctx.n.text
@@ -272,8 +310,9 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
-    def visitExprCast(self, ctx) -> ast.Expr:
-        return ast.Cast(
+    def visitExprTensor(self, ctx) -> ast.Expr:
+        return ast.Tensor(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
             ctx.body.accept(self),
         )
 
@@ -317,6 +356,9 @@ class Visitor(FPCoreVisitor):
             )],
             ctx.body.accept(self),
         )
+
+    def visitExprData(self, ctx) -> ast.Expr:
+        return ast.Data(ctx.d.accept(self))
 
     def visitExprOp(self, ctx) -> ast.Expr:
         op = ctx.op.text

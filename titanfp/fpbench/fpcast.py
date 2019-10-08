@@ -9,11 +9,18 @@ def sexp_to_string(e):
     else:
         return str(e)
 
-def annotation_to_string(e, props):
+def annotation_to_string(e, props, shape=None):
     if props:
-        return '(! ' + ''.join((':' + k + ' ' + sexp_to_string(v) + ' ' for k, v in props.items())) + str(e) + ')'
+        if shape:
+            return ('(! ' + ''.join((':' + k + ' ' + sexp_to_string(v) + ' ' for k, v in props.items()))
+                    + str(e) + ' '.join((sexp_to_string(dim) for dim in shape)) + ')')
+        else:
+            return '(! ' + ''.join((':' + k + ' ' + sexp_to_string(v) + ' ' for k, v in props.items())) + str(e) + ')'
     else:
-        return str(e)
+        if shape:
+            return '(' + str(e) + ' '.join((sexp_to_string(dim) for dim in shape)) + ')'
+        else:
+            return str(e)
 
 
 # base ast class
@@ -43,7 +50,7 @@ class Data(Expr):
 
     def is_number(self):
         return isinstance(self.value, Val) and not isinstance(self.value, Constant)
-    
+
     def as_number(self, strict=False):
         if isinstance(self.value, Val) and not isinstance(self.value, Constant):
             return self.value
@@ -54,7 +61,7 @@ class Data(Expr):
 
     def is_symbol(self):
         return isinstance(self.value, Var) or isinstance(self.value, Constant)
-        
+
     def as_symbol(self, strict=False):
         if isinstance(self.value, Var) or isinstance(self.value, Constant):
             return self.value.value
@@ -76,7 +83,7 @@ class Data(Expr):
 
     def is_list(self):
         return isinstance(self.value, list)
-        
+
     def as_list(self, strict=False):
         if isinstance(self.value, list):
             return self.value
@@ -248,6 +255,29 @@ class Ctx(Expr):
         return self.props == other.props and self.body == other.body
 
 
+# tensors
+
+class Tensor(Expr):
+    name: str = 'tensor'
+
+    def __init__(self, dim_bindings: typing.List[typing.Tuple[str, Expr]], body: Expr) -> None:
+        self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        return ('(' + self.name
+                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ') '
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.body) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, Tensor):
+            return False
+        return self.dim_bindings == other.dim_bindings and self.body == other.body
+
+
 # control flow
 
 class If(Expr):
@@ -326,11 +356,22 @@ class WhileStar(While):
             return False
         return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
 
+
 # cast is the identity function, used for repeated rounding
 
 class Cast(UnaryExpr):
     name: str = 'cast'
 
+# tensor operations
+
+class Dim(UnaryExpr):
+    name: str = 'dim'
+
+class Size(NaryExpr):
+    name: str = 'size'
+
+class Get(NaryExpr):
+    name: str = 'get'
 
 # IEEE 754 required arithmetic
 
@@ -540,25 +581,26 @@ class Not(UnaryExpr):
 # fpcore objects and helpers
 
 class FPCore(object):
-    def __init__(self, inputs, e, props=None, name=None, pre=None, spec=None):
+    def __init__(self, inputs, e, props=None, ident=None, name=None, pre=None, spec=None):
         self.inputs = inputs
         self.e = e
         if props is None:
             self.props = {}
         else:
             self.props = props
+        self.ident = ident
         self.name = name
         self.pre = pre
         self.spec = spec
 
     def __str__(self):
-        return 'FPCore ({})\n  name: {}\n   pre: {}\n  spec: {}\n  {}'.format(
-            ' '.join((annotation_to_string(name, props) for name, props in self.inputs)),
-            str(self.name), str(self.pre), str(self.spec), str(self.e))
+        return 'FPCore ({})\n  ident: {}\n  name: {}\n   pre: {}\n  spec: {}\n  {}'.format(
+            ' '.join((annotation_to_string(*arg) for arg in self.inputs)),
+            str(self.ident), str(self.name), str(self.pre), str(self.spec), str(self.e))
 
     def __repr__(self):
-        return 'FPCore(\n  {},\n  {},\n  props={}\n)'.format(
-            repr(self.inputs), repr(self.e), repr(self.props))
+        return 'FPCore(\n  {},\n  {},\n  ident={}\n  props={}\n)'.format(
+            repr(self.inputs), repr(self.e), repr(self.ident), repr(self.props))
 
     def __eq__(self, other):
         if not isinstance(other, FPCore):
@@ -568,6 +610,6 @@ class FPCore(object):
     @property
     def sexp(self):
         return '(FPCore ({}) {}{})'.format(
-            ' '.join((annotation_to_string(name, props) for name, props in self.inputs)),
+            ' '.join((annotation_to_string(*arg) for arg in self.inputs)),
             ''.join(':' + name + ' ' + sexp_to_string(prop) + ' ' for name, prop in self.props.items()),
             str(self.e))
