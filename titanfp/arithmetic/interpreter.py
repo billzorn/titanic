@@ -3,10 +3,10 @@
 
 import itertools
 
-from ..titanic import utils
+from ..titanic import utils, digital
 from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
-
+from . import ndarray
 
 class EvaluatorError(utils.TitanicError):
     """Base Titanic evaluator error."""
@@ -42,6 +42,10 @@ class Evaluator(object):
         # Note that let creates a new context, so the old one will
         # not be changed.
         return cls.evaluate(e.body, ctx.let(props=e.props))
+
+    @classmethod
+    def _eval_tensor(cls, e, ctx):
+        raise EvaluatorUnimplementedError('tensor {}: unimplemented'.format(str(e)))
 
     @classmethod
     def _eval_if(cls, e, ctx):
@@ -83,6 +87,8 @@ class Evaluator(object):
         ast.String: '_eval_string',
         # rounding contexts
         ast.Ctx: '_eval_ctx',
+        # Tensors
+        ast.Tensor: '_eval_tensor',
         # control flow
         ast.If: '_eval_if',
         ast.Let: '_eval_let',
@@ -95,6 +101,9 @@ class Evaluator(object):
         ast.UnknownOperator: '_eval_unknown',
         # specific operations
         ast.Cast: '_eval_cast',
+        ast.Dim: '_eval_dim',
+        ast.Size: '_eval_size',
+        ast.Get: '_eval_get',
         ast.Add: '_eval_add',
         ast.Sub: '_eval_sub',
         ast.Mul: '_eval_mul',
@@ -243,6 +252,56 @@ class BaseInterpreter(Evaluator):
         except KeyError as exn:
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
+    @classmethod
+    def _eval_dim(cls, e, ctx):
+        nd = cls.evaluate(e.children[0], ctx)
+        if not isinstance(nd, ndarray.NDArray):
+            raise EvaluatorError('{} must be a tensor to get its dimension'.format(repr(nd)))
+        return digital.Digital(m=len(nd.shape), exp=0)
+
+    @classmethod
+    def _eval_size(cls, e, ctx):
+        nd = cls.evaluate(e.children[0], ctx)
+        if not isinstance(nd, ndarray.NDArray):
+            raise EvaluatorError('{} must be a tensor to get the size of a dimension'.format(repr(nd)))
+        idx = cls.evaluate(e.children[1], ctx)
+        if not idx.is_integer():
+            raise EvaluatorError('computed shape index {} must be an integer'.format(repr(idx)))
+        i = int(idx.m * (2**idx.exp))
+        return digital.Digital(m=nd.shape[i], exp=0)
+
+
+    @classmethod
+    def _eval_get(cls, e, ctx):
+        nd = cls.evaluate(e.children[0], ctx)
+        if not isinstance(nd, ndarray.NDArray):
+            raise EvaluatorError('{} must be a tensor to get an element'.format(repr(nd)))
+        pos = []
+        for child in e.children[1:]:
+            idx = cls.evaluate(child, ctx)
+            if not idx.is_integer():
+                raise EvaluatorError('computed index {} must be an integer'.format(repr(idx)))
+            pos.append(int(idx.m * (2**idx.exp)))
+        return nd[pos]
+
+    # Tensors
+
+    @classmethod
+    def _eval_tensor(cls, e, ctx):
+        shape = []
+        names = []
+        for name, expr in e.dim_bindings:
+            size = cls.evaluate(expr, ctx)
+            if not size.is_integer():
+                raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            # can you spot the bug in this arbitrary precision -> integer conversion?
+            shape.append(int(size.m * (2**size.exp)))
+            names.append(name)
+            
+        data = [cls.evaluate(e.body, ctx.let(bindings=[(name, digital.Digital(m=i,exp=0))
+                                                       for name, i in zip(names, ndarray.position(shape, idx))]))
+                for idx in range(ndarray.shape_size(shape))]
+        return ndarray.NDArray(shape=shape, data=data)
 
     # control flow
 
@@ -314,7 +373,7 @@ class BaseInterpreter(Evaluator):
 
         arg_bindings = []
 
-        for arg, (name, props) in zip(args, core.inputs):
+        for arg, (name, props, shape) in zip(args, core.inputs):
             local_ctx = ctx.let(props=props)
 
             if isinstance(arg, cls.dtype):
