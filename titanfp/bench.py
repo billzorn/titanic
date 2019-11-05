@@ -108,12 +108,12 @@ def bits_agreement(hi, lo):
 
     return bitsim, one_ulp_agreement, zero_ulp_agreement
 
-ctx4096 = evalctx.IEEECtx(w=32, p=4096)
-ctx128 = evalctx.IEEECtx(w=32, p=128)
-ctx64 = evalctx.IEEECtx(w=16, p=64)
-ctx32 = evalctx.IEEECtx(w=16, p=32)
-ctx_double = evalctx.IEEECtx(w=11, p=53)
-ctx512 = evalctx.IEEECtx(w=20, p=512)
+ctx4096 = evalctx.IEEECtx(es=32, nbits=4128)
+ctx128 = evalctx.IEEECtx(es=32, nbits=160)
+ctx64 = evalctx.IEEECtx(es=16, nbits=80)
+ctx32 = evalctx.IEEECtx(es=16, nbits=48)
+ctx_double = evalctx.IEEECtx(es=11, nbits=64)
+ctx512 = evalctx.IEEECtx(es=20, nbits=532)
 
 rejections = 100
 progress_update = 10000
@@ -584,13 +584,13 @@ def make_table():
 
 
 
-def accbench(use_posit=False, w_es=8, p_nbits=24):
+def accbench(use_posit=False, es=8, nbits=32):
     core = cores['accbench']
     if use_posit:
-        ctx = evalctx.PositCtx(es=w_es, nbits=p_nbits)
+        ctx = evalctx.PositCtx(es=es, nbits=nbits)
         return posit.Interpreter.interpret(core, [], ctx=ctx)
     else:
-        ctx = evalctx.IEEECtx(w=w_es, p=p_nbits)
+        ctx = evalctx.IEEECtx(es=es, nbits=nbits)
         return ieee754.Interpreter.interpret(core, [], ctx=ctx)
 
 annotated_accbench = """(FPCore ()
@@ -613,21 +613,48 @@ accbench_pt2 = """(FPCore ()
   (- PI (+ (sqrt 2) (sqrt 3))))
 """
 
-def runit(text, w, p):
+
+annotated_accbench_2 = """(FPCore ()
+:name "Accuracy on a 32-bit budget"
+(! :precision {} (pow
+  (! :precision {} (/
+    (! :precision {} (- (/ (! :precision binary32 27) (! :precision binary32 10)) (! :precision {} E)))
+    (! :precision {} (- (! :precision {} PI) (+ (! :precision {} (sqrt 2)) (! :precision {} (sqrt 3)))))
+))
+(! :precision {} (/ (! :precison binary32 67) (! :precision binary32 16)))
+))
+)
+"""
+
+def runit(text, es, nbits=32):
     core = fpcparser.compile1(text)
-    ctx = evalctx.IEEECtx(w=w, p=p)
+    ctx = evalctx.IEEECtx(es=es, nbits=nbits)
     return float(ieee754.Interpreter.interpret(core, [], ctx=ctx))
 
 def accbench2(precs):
-    annotations = ['custom_binary32_{:d}'.format(i) for i in precs]
+    annotations = ['(float {:d} 32)'.format(i) for i in precs]
     if len(annotations) < 11:
         annotations += ['binary32'] * (11 - len(annotations))
 
     text = annotated_accbench.format(*annotations)
     core = fpcparser.compile1(text)
 
-    ctx = evalctx.IEEECtx(w=8, p=24)
+    ctx = evalctx.IEEECtx(es=8, nbits=32)
     return ieee754.Interpreter.interpret(core, [], ctx=ctx)
+
+def accbench3(annotations, ctx=None):
+    text = annotated_accbench.format(*annotations)
+    core = fpcparser.compile1(text)
+
+    if ctx is None:
+        ctx = evalctx.IEEECtx(es=8, nbits=32)
+    return mpmf.Interpreter.interpret(core, [], ctx=ctx)
+
+def accbench4(annotations, r, ctx):
+    final_annotations = annotations[0:3] + [r] + annotations[3:4] + [r,r,r] + annotations[4:5]
+    text = annotated_accbench_2.format(*final_annotations)
+    core = fpcparser.compile1(text)
+    return mpmf.Interpreter.interpret(core, [], ctx=ctx)
 
 
 reference_answer = ieee754.Float(302.88271965546954925)
@@ -637,8 +664,10 @@ def accbench_acc(x):
         return None
     else:
         return gmpmath.geo_sim10(x, reference_answer)
-
 print(str(reference_answer))
+
+
+
 print(str(ieee754.Float(float(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])), ctx4096)))
 print(accbench_acc(accbench2([5, 8, 2, 3, 2, 2, 2, 2, 2, 2, 4])))
 
@@ -650,27 +679,79 @@ print(accbench_acc(thing1))
 
 
 
-def accbench_data():
-    for i in range(2,31):
-        result = accbench2([i] * 11)
-        print(str(ieee754.Float(float(result), ctx4096)), accbench_acc(result))
+def accbench_uniform_floats():
+    for i in range(5,23):
+        annot = '(float {:d} 32)'.format(i)
+        ctx = evalctx.IEEECtx(es=i, nbits=32)
+        result = accbench4([annot] * 5, annot, ctx)
+        print(str(ieee754.Float(float(result), ctx4096)), accbench_acc(result), sep='\t')
+
+def accbench_uniform_posits():
+    for i in range(0,18):
+        annot = '(posit {:d} 32)'.format(i)
+        ctx = evalctx.PositCtx(es=i, nbits=32)
+        result = accbench4([annot] * 5, annot, ctx)
+        print(str(ieee754.Float(float(result), ctx4096)), accbench_acc(result), sep='\t')
+
+
+def float_n_32(i,j):
+    return ['(float {:d} 32)'.format(n) for n in range(i,j)]
+def posit_n_32(i,j):
+    return ['(posit {:d} 32)'.format(n) for n in range(i,j)]
+def better_accsweep(kind):
+    if kind == 'mpmf':
+        ctx = evalctx.IEEECtx(es=8, nbits=32)
+        choices = float_n_32(2,9) + posit_n_32(0,5)
+        choices_r = float_n_32(2,4) + posit_n_32(0,2)
+    elif kind == 'float':
+        ctx = evalctx.IEEECtx(es=8, nbits=32)
+        choices = float_n_32(1,12)
+        choices_r = float_n_32(1,12)
+    elif kind == 'posit':
+        ctx = evalctx.PositCtx(es=1, nbits=32)
+        choices = posit_n_32(0,11)
+        choices_r = posit_n_32(0,11)
+    else:
+        raise ValueError('kind must be in {"mpmf", "float", "posit"}')
+
+    count = 0
+    total = (len(choices) ** 5) * len(choices_r)
+    onprog = total // 10
+
+    print('sweeping {} configurations'.format(total))
+    
+    best = None
+    for A in choices:
+        for B in choices:
+            for C in float_n_32(2,13) + posit_n_32(0,11):
+                for D in choices:
+                    for E in choices:
+                        for R in choices_r:
+                            result = accbench4([A,B,C,D,E], R, ctx)
+                            acc = accbench_acc(result)
+                            if acc is not None and (best is None or acc > best):
+                                best = acc
+                                print([A,B,C,D,E], R, str(result), acc, sep='\t', flush=True)
+                            count += 1
+                            if count % onprog == 0:
+                                print(count, flush=True)
 
 choices = [2,3,4,5,6,7,8,9]
 choices2 = [2,3,4]
 choices_c = [2]
 def accsweep_yolo():
     best = None
-    for i1 in choices: # pow
-        for i2 in choices: # div
-            for i3 in choices2: # sub 27. - E
+    for i1 in choices: # pow (A)
+        for i2 in choices: # div (B)
+            for i3 in choices2: # sub 2.7 - E (C)
                 for i4 in choices2: # div -> 2.7
                     for i5 in choices_c: # E
-                        for i6 in choices2: # sub PI - sqrt2 - sqrt3
+                        for i6 in choices2: # sub PI - sqrt2 - sqrt3 (D)
                             for i7 in choices_c: # PI
                                 for i8 in choices_c: # sqrt2
                                     for i9 in choices_c: # sqrt3
                                         for i10 in choices2: # add sqrt2 + sqrt3
-                                            for i11 in choices: # div -> 67/16
+                                            for i11 in choices: # div -> 67/16 (E)
                                                 result = accbench2([i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11])
                                                 acc = accbench_acc(result)
                                                 if acc is not None and (best is None or acc > best):
@@ -691,7 +772,7 @@ def sinkbench_acc(x):
 
 def sinkbench(w, p):
     core = cores['sinkbench']
-    ctx = evalctx.IEEECtx(w=w, p=p)
+    ctx = evalctx.IEEECtx(es=w, nbits=p+es)
     return sinking.Interpreter.interpret(core, [], ctx=ctx)
 
 def sinksweep():
@@ -715,7 +796,7 @@ def quadratic(a, herbified=False):
     else:
         core = cores['quadratic']
 
-    ctx = evalctx.IEEECtx(w=11, p=53)
+    ctx = evalctx.IEEECtx(es=11, nbits=64)
     inputs = [sinking.Sink(a, ctx), sinking.Sink(2.0, ctx), sinking.Sink(3.0, ctx)]
 
     result = sinking.Interpreter.interpret(core, inputs, ctx=ctx)

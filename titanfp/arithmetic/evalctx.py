@@ -69,7 +69,7 @@ class EvalCtx(object):
     _reserved_fields = {'bindings', 'props'}
 
     def __str__(self):
-        fields = ['    ' + str(k) + ': ' + str(v) for k, v in self.__dict__.items() if k not in _reserved_fields]
+        fields = ['    ' + str(k) + ': ' + str(v) for k, v in self.__dict__.items() if k not in self._reserved_fields]
         bindings = ['    ' + str(k) + ': ' + str(v) for k, v in self.bindings.items()]
         props = ['    ' + str(k) + ': ' + str(v) for k, v in self.props.items()]
         if len(bindings) > 0:
