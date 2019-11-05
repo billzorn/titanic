@@ -188,7 +188,7 @@ class Interpreter(interpreter.StandardInterpreter):
 
         arg_bindings = []
 
-        for arg, (name, props) in zip(args, core.inputs):
+        for arg, (name, props, shape) in zip(args, core.inputs):
             local_ctx = evalctx.determine_ctx(ctx, props)
 
             if isinstance(arg, cls.dtype):
