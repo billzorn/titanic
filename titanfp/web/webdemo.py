@@ -1,11 +1,16 @@
 import sys
 import os
+import io
 import threading
 import traceback
 import html
 import json
+import base64
 import http
 import multiprocessing
+
+from PIL import Image
+import numpy as np
 
 # from .fserver import AsyncTCPServer, AsyncHTTPRequestHandler
 from . import fserver
@@ -97,6 +102,8 @@ class WebtoolState(object):
     es = 4
     nbits = 64
     posit_override = False
+    img = None
+    img_tensor = None
 
     def __init__(self, data):
         try:
@@ -137,6 +144,24 @@ class WebtoolState(object):
         if 'posit_override' in payload:
             self.posit_override = self._read_bool(payload['posit_override'], 'posit_override')
 
+        if 'usr_img' in payload:
+            imgdata = payload['usr_img']
+
+            try:
+                decoded = base64.decodebytes(bytes(imgdata, 'ascii'))
+                self.img = Image.open(io.BytesIO(decoded))
+                img_sexp = img_to_sexp(self.img)
+                print(len(img_sexp))
+                self.img_tensor = fpcparser.read_exprs('(data ' + img_sexp + ')')
+
+            except Exception:
+                self.img_tensor = []
+                print('Exception decoding user image:', file=sys.stderr, flush=True)
+                traceback.print_exc()
+                print('', file=sys.stderr, flush=True)
+        else:
+            self.img_tensor = []
+
         self.payload = payload
 
     @property
@@ -160,6 +185,17 @@ class WebtoolState(object):
             return None
 
 
+def np_array_to_sexp(a):
+    if isinstance(a, np.ndarray):
+        return '(' + ' '.join((np_array_to_sexp(elt) for elt in a)) + ')'
+    else:
+        return repr(a)
+        
+def img_to_sexp(img):
+    a = np.array(img)
+    return np_array_to_sexp(a)
+
+        
 def run_eval(data):
     #print('Eval yo!')
     #print(repr(data))
@@ -168,10 +204,16 @@ def run_eval(data):
         state = WebtoolState(data)
         if state.cores is None or len(state.cores) != 1:
             raise WebtoolError('must provide exactly one FPCore')
+        
         core = state.cores[0]
-        if len(state.args) != len(core.inputs):
-            raise WebtoolArgumentError('expected {:d} arguments for FPCore, got {:d}:\n  {}'
-                                       .format(len(core.inputs), len(state.args), ', '.join(map(str, state.args))))
+        nargs = len(state.args)
+        extra_arg_msg = ''
+        if state.img is not None:
+            nargs += 1
+            extra_arg_msg = '\n  If an image is provided, it will be passed in a tensor as the first argument to the core'
+        if nargs != len(core.inputs):
+            raise WebtoolArgumentError('expected {:d} arguments for FPCore, got {:d}:\n  {}{}'
+                                       .format(len(core.inputs), len(state.args), ', '.join(map(str, state.args)), extra_arg_msg))
 
         if state.backend in webdemo_eval_backends:
             backend = webdemo_eval_backends[state.backend]
@@ -189,6 +231,7 @@ def run_eval(data):
             ctx = None # use context from the FPCore
 
         try:
+            print(state.img_tensor)
             arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)
             named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
             e_val = backend.interpret(core, state.args, ctx=ctx, override=state.override)

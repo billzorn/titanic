@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="titanfp.css" type="text/css">
+    <title>Titanic Evaluator</title>
+  </head>
+
+  <body>
+
+    <section id="webtool">
+      <div id="editor" class="left container code"></div>
+      <div class="right container">
+        <div class="controls">
+
+          <div class="control-header">
+            <a href="/"><img width="32px" height="32px" src="piceberg_round.png"/></a>
+            <h1 class="text" style="padding-left:16px;">Titanic Evaluator</h1>
+            <div style="flex:1;"></div>
+            <a class="text" href="http://fpbench.org/benchmarks.html">browse benchmarks</a>
+          </div>
+
+          <div class="control-element">
+            <select id="backend" class="text">
+              <option selected value="mpmf">Multiple Precision, Multiple Format Evaluator</option>
+              <option value="ieee754">Evaluate FPCore with IEEE 754 floating-point</option>
+              <option value="posit">Evaluate FPCore with Posits</option>
+              <!-- <option value="softfloat">Evaluate FPCore with SoftFloat</option> -->
+              <!-- <option value="softposit">Evaluate FPCore with SoftPosit</option> -->
+              <!-- <option value="sinking-point">Evaluate FPCore with Sinking-Point</option> -->
+              <!-- <option value="sinking-posit">Evaluate FPCore with Sinking Posits (EXPERIMENTAL)</option> -->
+            </select>
+          </div>
+
+          <div id="mpmf-opts" class="backend-opts control-element">
+            <p class="text">Enter options as properties in the FPCore</p>
+          </div>
+
+          <div id="float-opts" class="backend-opts control-element">
+            <label for="float-w" class="text" style="padding-left:8px;" title="The number of bits in the exponent">w:</label>
+            <input id="float-w" class="code" style="width:4em;" name="w" type="number" min="2" max="1024" value="11" title="The number of bits in the exponent">
+            <label for="float-p" class="text" style="padding-left:8px;" title="The number of bits in the significand">p:</label>
+            <input id="float-p" class="code" style="width:5em;" name="p" type="number" min="2" max="1024" value="53" title="The number of bits in the significand">
+            <select id="float-select" class="code" style="margin-left:16px;" title="Shorhand IEEE 754 name">
+              <option value="binary16">binary16</option>
+              <option value="binary32">binary32</option>
+              <option selected value="binary64">binary64</option>
+              <option value="custom">custom</option>
+            </select>
+            <label for="float-override" class="text" style="padding-left:8px;padding-right:4px;" title="Override precision settings at the top level of the FPCore">override</label>
+            <input id="float-override" type="checkbox" checked title="Override precision settings at the top level of the FPCore">
+          </div>
+
+          <div id="posit-opts" class="backend-opts control-element" style="display:none;">
+            <label for="posit-es" class="text" style="padding-left:8px;" title="The number of exponent bits (note the posit exponent is mostly stored in the regime)">es:</label>
+            <input id="posit-es" class="code" style="width:4em;" name="es" type="number" min="0" max="16" value="4" title="The number of exponent bits (note the posit exponent is mostly stored in the regime)">
+            <label for="posit-nbits" class="text" style="padding-left:8px;" title="The total number of bits in the posit">nbits:</label>
+            <input id="posit-nbits" class="code" style="width:5em;" name="nbits" type="number" min="2" max="128" value="64" title="The total number of bits in the posit">
+            <select id="posit-select" class="code" style="margin-left:16px;" title="Shorhand posit name">
+              <option value="posit8">posit8</option>
+              <option value="posit16">posit16</option>
+              <option value="posit32">posit32</option>
+              <option selected value="posit64">posit64</option>
+              <option value="custom">custom</option>
+            </select>
+            <label for="posit-override" class="text" style="padding-left:8px;padding-right:4px;" title="Override precision settings at the top level of the FPCore">override</label>
+            <input id="posit-override" type="checkbox" checked title="Override precision settings at the top level of the FPCore">
+          </div>
+
+          <div class="args control-element">
+            <label for="args" class="text" title="Arguments should be whitespace separated numbers or expressions, in the same order specified in the FPCore">FPCore arguments:</label>
+            <textarea id="args" class="code" rows="5" style="resize:vertical;"></textarea>
+          </div>
+
+          <div class="actions control-element" style="padding-bottom:16px;">
+            <button id="evaluate" class="text" onclick="">Evaluate FPCore</button>
+            <a id="permalink" class="code" href="" style="margin-left:16px;" title="Permanent link to this FPCore">permalink</a>
+          </div>
+
+        </div>
+
+        
+        <div id="imginput" class="control-element">
+          <input id="user_upload" type="file" onchange="" style="padding:10px;background:#2d2d2d;"/>
+          <img id="user_preview" src="http://placehold.it/180" alt="your image" style="max-width:180px;"/>
+        </div>
+
+        
+        <div id="output" class="output">
+        </div>
+      </div>
+    </section>
+
+  </body>
+
+</html>

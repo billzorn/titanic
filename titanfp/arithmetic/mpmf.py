@@ -174,7 +174,7 @@ class Interpreter(interpreter.StandardInterpreter):
     def arg_ctx(cls, core, args, ctx=None, override=True):
         if len(core.inputs) != len(args):
             raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'.format(
-                len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
+                len(args), len(core.inputs), ' '.join((name for name, props, shape in core.inputs))))
 
         if ctx is None:
             ctx = cls.ctype(props=core.props)

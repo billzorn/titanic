@@ -182,21 +182,64 @@ function eval_result(result, id_name) {
 }
 
 function submit_eval() {
-    const payload = JSON.stringify(get_webtool_state());
+    const data_object = get_webtool_state();
     const id_name = register_result();
 
     $('#' + id_name).html('<div class="output-row><p class="code">Evaluating...</p></div>');
-    
-    $.ajax({
-        type: 'POST',
-        url: 'eval',
-        data: payload,
-        contentType: 'application/json',
-        success: (result) => eval_result(result, id_name),
-    });
+
+    const img_input = $('#user_upload')[0];
+    if (img_input.files && img_input.files[0]) {
+        const file = img_input.files[0];
+
+        var reader = new FileReader();
+
+        reader.onload = function(e) {
+            var data = e.target.result.replace("data:"+ file.type +";base64,", '');
+            data_object['usr_img'] = data;
+
+            const payload = JSON.stringify(data_object);
+            $.ajax({
+                type: 'POST',
+                url: 'eval',
+                data: payload,
+                contentType: 'application/json',
+                success: (result) => eval_result(result, id_name),
+            });
+        }
+        
+        reader.readAsDataURL(file);
+    } else {
+        const payload = JSON.stringify(data_object);
+        $.ajax({
+            type: 'POST',
+            url: 'eval',
+            data: payload,
+            contentType: 'application/json',
+            success: (result) => eval_result(result, id_name),
+        });
+    }
 }
 
 $('#evaluate').click(submit_eval);
+
+
+// image input
+
+function read_img() {
+    const img_input = this;
+    if (img_input.files && img_input.files[0]) {
+        var reader = new FileReader();
+        
+        reader.onload = function (e) {
+            $('#user_preview')
+                .attr('src', e.target.result);
+        };
+        
+        reader.readAsDataURL(img_input.files[0]);
+    }
+}
+
+$('#user_upload').change(read_img);
 
 
 // permalinks

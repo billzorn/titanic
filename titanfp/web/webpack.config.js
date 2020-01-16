@@ -40,6 +40,12 @@ module.exports = {
             inject: 'body',
             favicon: 'favicon.ico',
         }),
+        new HtmlWebpackPlugin({
+            template: 'imgeval.html',
+            filename: 'imgeval.html',
+            inject: 'body',
+            favicon: 'favicon.ico',
+        }),
         new CopyWebpackPlugin([
             'titanfp.css',
             'piceberg.png',
