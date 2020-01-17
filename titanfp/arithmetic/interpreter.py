@@ -253,6 +253,14 @@ class BaseInterpreter(Evaluator):
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
     @classmethod
+    def _eval_data(cls, e, ctx):
+        data, shape = ndarray.flatten_shaped_list(e.as_list())
+        rounded_data = [cls.evaluate(d, ctx) for d in data]        
+        return ndarray.NDArray(shape, data)
+
+    # Tensors
+        
+    @classmethod
     def _eval_dim(cls, e, ctx):
         nd = cls.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
@@ -283,8 +291,6 @@ class BaseInterpreter(Evaluator):
                 raise EvaluatorError('computed index {} must be an integer'.format(repr(idx)))
             pos.append(int(idx.m * (2**idx.exp)))
         return nd[pos]
-
-    # Tensors
 
     @classmethod
     def _eval_tensor(cls, e, ctx):

@@ -2,6 +2,28 @@
 
 import random
 
+
+def flatten_shaped_list(a):
+    if isinstance(a, list):
+        size = len(a)
+        lit = []
+        shape = False
+        for elt in a:
+            subtensor, subshape = flatten_shaped_list(elt)
+            if shape is False:
+                shape = subshape
+            elif subshape != shape:
+                raise ValueError('{} has invalid shape'.format(repr(a)))
+            lit += subtensor
+        if not shape:
+            shape = (size,)
+        else:
+            shape = (size,*shape)
+        return lit, shape
+    else:
+        return [a], None
+
+
 def locate(shape, pos):
     idx = 0
     scale = 1
@@ -58,22 +80,35 @@ def testn(dims, dimsz, count, step=0):
 
 class NDArray(object):
 
-    def __init__(self, shape, data=None):
-        self.shape = shape
-        self.size = shape_size(shape)
-        if data is None:
-            self.data = [None]*self.size
+    def __init__(self, shape=None, data=None):
+        if shape is None:
+            if data is None:
+                self.shape = ()
+                self.data = []
+            else:
+                if isinstance(data, list):
+                    lit, shape = flatten_shaped_list(data)
+                    self.shape = shape
+                    self.size = shape_size(shape)
+                    self.data = lit
+                else:
+                    raise ValueError('data must be provided as a shaped list, got {}'.format(repr(data)))
         else:
-            if len(data) != self.size:
-                raise ValueError('wrong data size {} for shape {}, expecting {}'.format(len(data), self.shape, self.size))
-            self.data = data
+            self.shape = shape
+            self.size = shape_size(shape)
+            if data is None:
+                self.data = [None]*self.size
+            else:
+                if len(data) != self.size:
+                    raise ValueError('wrong data size {} for shape {}, expecting {}'.format(len(data), self.shape, self.size))
+                self.data = data
 
     def to_list(self):
         data = self.data
         for i in range(-1, -len(self.shape)-1, -1):
             dim = self.shape[i]
             data = [data[chunk * dim:(chunk + 1) * dim] for chunk in range(len(data) // dim)]
-        return data
+        return data[0]
 
     def to_tuple(self):
         return tuple(list(self))

@@ -190,12 +190,12 @@ def np_array_to_sexp(a):
         return '(' + ' '.join((np_array_to_sexp(elt) for elt in a)) + ')'
     else:
         return repr(a)
-        
+
 def img_to_sexp(img):
     a = np.array(img)
     return np_array_to_sexp(a)
 
-        
+
 def run_eval(data):
     #print('Eval yo!')
     #print(repr(data))
@@ -204,7 +204,7 @@ def run_eval(data):
         state = WebtoolState(data)
         if state.cores is None or len(state.cores) != 1:
             raise WebtoolError('must provide exactly one FPCore')
-        
+
         core = state.cores[0]
         nargs = len(state.args)
         extra_arg_msg = ''
@@ -230,18 +230,22 @@ def run_eval(data):
         if state.backend in webdemo_mpmf_backends:
             ctx = None # use context from the FPCore
 
+        if state.img is not None:
+            args_with_image = state.img_tensor + state.args
+        else:
+            args_with_image = state.args
+
         try:
-            print(state.img_tensor)
-            arg_ctx = backend.arg_ctx(core, state.args, ctx=ctx, override=state.override)
+            arg_ctx = backend.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
             named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
-            e_val = backend.interpret(core, state.args, ctx=ctx, override=state.override)
+            e_val = backend.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
         except interpreter.EvaluatorError as e:
             raise WebtoolError(str(e))
 
         try:
-            pre_val = backend.interpret_pre(core, state.args, ctx=ctx, override=state.override)
+            pre_val = backend.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
 

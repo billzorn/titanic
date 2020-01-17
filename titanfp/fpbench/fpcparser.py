@@ -181,7 +181,7 @@ class Visitor(FPCoreVisitor):
             ident = None
         else:
             ident = ctx.ident.text
-            
+
         inputs = [arg.accept(self) for arg in ctx.inputs]
 
         input_set = set()
@@ -204,7 +204,7 @@ class Visitor(FPCoreVisitor):
                             raise FPCoreParserError('dimension name {} is a reserved constant'.format(dim))
                         else:
                             input_set.add(dim)
-                                                    
+
 
         props = self._parse_props(ctx.props)
         e = ctx.e.accept(self)
@@ -235,7 +235,7 @@ class Visitor(FPCoreVisitor):
             return n.i
         else:
             raise FPCoreParserError('fixed dimension {} must be an integer'.format(ctx.size.text))
-    
+
     def visitArgument(self, ctx):
         return ctx.name.text, self._parse_props(ctx.props), self._parse_shape(ctx.shape)
 
