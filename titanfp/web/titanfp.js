@@ -170,6 +170,11 @@ function eval_result(result, id_name) {
         body += '<div class="output-row">'
         body += '<pre class="output-pre code">' + result.e_val + '</pre>'
         body += '</div>';
+        if ('result_img' in result) {
+            body += '<div class="output-row">';
+            body += '<img src="data:image/png;base64, ' + result.result_img + '" alt="computed image" />';
+            body += '</div>';
+        }
     } else {
         if (result.message) {
             body = '<pre class="output-pre code">' + result.message + '</pre>';

@@ -21,6 +21,7 @@ from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
 from ..arithmetic import mpmf
+from ..arithmetic import ndarray
 
 here = os.path.dirname(os.path.realpath(__file__))
 dist = os.path.join(here, 'dist')
@@ -195,6 +196,17 @@ def img_to_sexp(img):
     a = np.array(img)
     return np_array_to_sexp(a)
 
+def pixel(x):
+    return max(0, min(int(x), 255))
+
+def b64_encode_image(e):
+    bitmap_tensor = ndarray.NDArray(shape=e.shape, data=[pixel(d) for d in e.data])
+    bitmap = np.array(bitmap_tensor.to_list(), dtype=np.uint8)
+    img = Image.fromarray(bitmap)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return str(base64.encodebytes(buf.getvalue()), 'ascii')
+
 
 def run_eval(data):
     #print('Eval yo!')
@@ -255,6 +267,10 @@ def run_eval(data):
             'e_val': str(e_val),
             'pre_val': str(pre_val),
         }
+
+        if state.img is not None:
+            result['result_img'] = b64_encode_image(e_val)
+            print(result['result_img'])
 
     except WebtoolError as e:
         result = {

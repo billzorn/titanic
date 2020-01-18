@@ -255,11 +255,11 @@ class BaseInterpreter(Evaluator):
     @classmethod
     def _eval_data(cls, e, ctx):
         data, shape = ndarray.flatten_shaped_list(e.as_list())
-        rounded_data = [cls.evaluate(d, ctx) for d in data]        
-        return ndarray.NDArray(shape, data)
+        rounded_data = [cls.evaluate(d, ctx) for d in data]
+        return ndarray.NDArray(shape, rounded_data)
 
     # Tensors
-        
+
     @classmethod
     def _eval_dim(cls, e, ctx):
         nd = cls.evaluate(e.children[0], ctx)
@@ -303,7 +303,7 @@ class BaseInterpreter(Evaluator):
             # can you spot the bug in this arbitrary precision -> integer conversion?
             shape.append(int(size.m * (2**size.exp)))
             names.append(name)
-            
+
         data = [cls.evaluate(e.body, ctx.let(bindings=[(name, digital.Digital(m=i,exp=0))
                                                        for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]

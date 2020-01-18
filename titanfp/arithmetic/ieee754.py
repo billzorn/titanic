@@ -68,6 +68,9 @@ class Float(mpnum.MPNum):
     def __float__(self):
         return float(gmpmath.digital_to_mpfr(self))
 
+    def __int__(self):
+        return int(gmpmath.digital_to_mpfr(self))
+
     @classmethod
     def _select_context(cls, *args, ctx=None):
         if ctx is not None:
