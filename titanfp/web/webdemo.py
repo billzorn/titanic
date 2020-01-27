@@ -261,6 +261,11 @@ def run_eval(data):
         try:
             arg_ctx = backend.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
             named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
+
+            # yuck
+            if state.img is not None:
+                named_args[0][1] = 'image'
+            
             e_val = backend.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
@@ -281,6 +286,7 @@ def run_eval(data):
 
         if state.img is not None:
             result['result_img'] = b64_encode_image(e_val)
+            result['e_val'] = 'image'
 
     except WebtoolError as e:
         result = {
