@@ -38,7 +38,7 @@ reserved_constructs = {
     'tensor' : None,
     'dim' : ast.Dim,
     'size' : ast.Size,
-    'get' : ast.Get,
+    'ref' : ast.Ref,
     # control flow (these asts are assembled directly in the visitor)
     'if' : None,
     'let' : None,

@@ -16,6 +16,7 @@ import numpy as np
 from . import fserver
 
 from ..fpbench import fpcparser, fpcast as ast
+from ..titanic import digital
 from ..arithmetic import interpreter
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
@@ -151,9 +152,12 @@ class WebtoolState(object):
             try:
                 decoded = base64.decodebytes(bytes(imgdata, 'ascii'))
                 self.img = Image.open(io.BytesIO(decoded))
-                img_sexp = img_to_sexp(self.img)
-                print(len(img_sexp))
-                self.img_tensor = fpcparser.read_exprs('(data ' + img_sexp + ')')
+
+                nd = np_array_to_ndarray(np.array(self.img))
+                self.img_tensor = [ast.ValueExpr(nd)]
+                
+                # img_sexp = img_to_sexp(self.img)
+                # self.img_tensor = fpcparser.read_exprs('(data ' + img_sexp + ')')
 
             except Exception:
                 self.img_tensor = []
@@ -195,6 +199,13 @@ def np_array_to_sexp(a):
 def img_to_sexp(img):
     a = np.array(img)
     return np_array_to_sexp(a)
+
+# convert everything into integers, should be fine for images
+def np_array_to_ndarray(a):
+    data, shape = ndarray.flatten_shaped_list(a.tolist())
+    assert shape == a.shape
+    interned_data = [digital.Digital(m=int(d), exp=0) for d in data]
+    return ndarray.NDArray(shape, interned_data)
 
 def pixel(x):
     return max(0, min(int(x), 255))
@@ -270,7 +281,6 @@ def run_eval(data):
 
         if state.img is not None:
             result['result_img'] = b64_encode_image(e_val)
-            print(result['result_img'])
 
     except WebtoolError as e:
         result = {

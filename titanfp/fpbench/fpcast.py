@@ -152,7 +152,7 @@ class ValueExpr(Expr):
         self.value: str = value
 
     def __str__(self):
-        return self.value
+        return str(self.value)
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
@@ -370,8 +370,8 @@ class Dim(UnaryExpr):
 class Size(NaryExpr):
     name: str = 'size'
 
-class Get(NaryExpr):
-    name: str = 'get'
+class Ref(NaryExpr):
+    name: str = 'ref'
 
 # IEEE 754 required arithmetic
 

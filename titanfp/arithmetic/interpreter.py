@@ -30,6 +30,10 @@ class Evaluator(object):
         raise EvaluatorUnimplementedError('expr {}: unimplemented'.format(str(e)))
 
     @classmethod
+    def _eval_value(cls, e, ctx):
+        raise EvaluatorUnimplementedError('value {}: unimplemented'.format(str(e)))
+
+    @classmethod
     def _eval_var(cls, e, ctx):
         raise EvaluatorUnimplementedError('var {}: unimplemented'.format(str(e)))
 
@@ -70,7 +74,9 @@ class Evaluator(object):
     _evaluator_dispatch = {
         # catch-all for otherwise unimplemented AST nodes
         ast.Expr: '_eval_expr',
-        # unstructured data, which normally isn't evaluated
+        # the parent value class represents interned data that should be returned exactly
+        ast.ValueExpr: '_eval_value',
+        # structured data, which represents a tensor literal (unless it's malformed)
         ast.Data: '_eval_data',
         # variables are their own thing
         ast.Var: '_eval_var',
@@ -103,7 +109,7 @@ class Evaluator(object):
         ast.Cast: '_eval_cast',
         ast.Dim: '_eval_dim',
         ast.Size: '_eval_size',
-        ast.Get: '_eval_get',
+        ast.Ref: '_eval_ref',
         ast.Add: '_eval_add',
         ast.Sub: '_eval_sub',
         ast.Mul: '_eval_mul',
@@ -235,6 +241,10 @@ class BaseInterpreter(Evaluator):
     # values
 
     @classmethod
+    def _eval_value(cls, e, ctx):
+        return e.value
+    
+    @classmethod
     def _eval_var(cls, e, ctx):
         try:
             return ctx.bindings[e.value]
@@ -280,7 +290,7 @@ class BaseInterpreter(Evaluator):
 
 
     @classmethod
-    def _eval_get(cls, e, ctx):
+    def _eval_ref(cls, e, ctx):
         nd = cls.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get an element'.format(repr(nd)))

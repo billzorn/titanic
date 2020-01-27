@@ -456,6 +456,20 @@ class Digital(object):
         return order is not None and order > 0
 
 
+    def __int__(self):
+        if self.exp > 0:
+            i = self.c << self.exp
+        elif self.exp == 0:
+            i = self.c
+        else:
+            i = self.c >> -self.exp
+
+        if self.negative:
+            return -i
+        else:
+            return i
+
+
     def round_m(self, max_p, min_n=None, rm=RM.RNE, strict=True):
         """Round the mantissa to at most max_p precision, or a least absolute digit
         in position min_n, whichever is less precise. Exact numbers can always be rounded
