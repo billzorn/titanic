@@ -204,7 +204,8 @@ def img_to_sexp(img):
 def np_array_to_ndarray(a):
     data, shape = ndarray.flatten_shaped_list(a.tolist())
     assert shape == a.shape
-    interned_data = [digital.Digital(m=int(d), exp=0) for d in data]
+    #interned_data = [digital.Digital(m=int(d), exp=0) for d in data]
+    interned_data = [ieee754.Float(m=int(d), exp=0) for d in data]
     return ndarray.NDArray(shape, interned_data)
 
 def pixel(x):
