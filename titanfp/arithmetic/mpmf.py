@@ -130,55 +130,47 @@ def mpmf_ctype(bindings=None, props=None):
 
 class Interpreter(interpreter.StandardInterpreter):
     dtype = MPMF
-    ctype = mpmf_ctype
+    ctype = staticmethod(mpmf_ctype)
 
-    @classmethod
-    def arg_to_digital(cls, x, ctx):
-        return cls.dtype(x, ctx=ctx)
+    def arg_to_digital(self, x, ctx):
+        return self.dtype(x, ctx=ctx)
 
-    @classmethod
-    def _eval_constant(cls, e, ctx):
-        return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
+    def _eval_constant(self, e, ctx):
+        return self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
 
     # unfortunately, interpreting these values efficiently requries info from the context,
     # so it has to be implemented per interpreter...
 
-    @classmethod
-    def _eval_integer(cls, e, ctx):
+    def _eval_integer(self, e, ctx):
         x = digital.Digital(m=e.i, exp=0, inexact=False)
-        return cls.round_to_context(x, ctx=ctx)
+        return self.round_to_context(x, ctx=ctx)
 
-    @classmethod
-    def _eval_rational(cls, e, ctx):
+    def _eval_rational(self, e, ctx):
         p = digital.Digital(m=e.p, exp=0, inexact=False)
         q = digital.Digital(m=e.q, exp=0, inexact=False)
         x = gmpmath.compute(OP.div, p, q, prec=ctx.p)
-        return cls.round_to_context(x, ctx=ctx)
+        return self.round_to_context(x, ctx=ctx)
 
-    @classmethod
-    def _eval_digits(cls, e, ctx):
+    def _eval_digits(self, e, ctx):
         x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
-        return cls.round_to_context(x, ctx=ctx)
+        return self.round_to_context(x, ctx=ctx)
 
     # this is what makes it mpmf actually
-    @classmethod
-    def _eval_ctx(cls, e, ctx):
-        return cls.evaluate(e.body, evalctx.determine_ctx(ctx, e.props))
+    def _eval_ctx(self, e, ctx):
+        return self.evaluate(e.body, evalctx.determine_ctx(ctx, e.props))
 
-    @classmethod
-    def round_to_context(cls, x, ctx):
+    def round_to_context(self, x, ctx):
         """Not actually used???"""
-        return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
+        return self.dtype._round_to_context(x, ctx=ctx, strict=False)
 
     # copy-pasta hack
-    @classmethod
-    def arg_ctx(cls, core, args, ctx=None, override=True):
+    def arg_ctx(self, core, args, ctx=None, override=True):
         if len(core.inputs) != len(args):
             raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'.format(
                 len(args), len(core.inputs), ' '.join((name for name, props, shape in core.inputs))))
 
         if ctx is None:
-            ctx = cls.ctype(props=core.props)
+            ctx = self.ctype(props=core.props)
         elif override:
             allprops = {}
             allprops.update(core.props)
@@ -192,25 +184,25 @@ class Interpreter(interpreter.StandardInterpreter):
         for arg, (name, props, shape) in zip(args, core.inputs):
             local_ctx = evalctx.determine_ctx(ctx, props)
 
-            if isinstance(arg, cls.dtype):
-                argval = cls.round_to_context(arg, ctx=local_ctx)
+            if isinstance(arg, self.dtype):
+                argval = self.round_to_context(arg, ctx=local_ctx)
             elif isinstance(arg, ast.Expr):
-                argval = cls.evaluate(arg, local_ctx)
+                argval = self.evaluate(arg, local_ctx)
             elif isinstance(arg, ndarray.NDArray):
                 rounded_data = [
-                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    self.round_to_context(d, ctx=local_ctx) if isinstance(arg, self.dtype) else self.arg_to_digital(d, local_ctx)
                     for d in arg.data
                 ]
                 argval = ndarray.NDArray(shape=arg.shape, data=rounded_data)
             elif isinstance(arg, list):
                 nd_unrounded = ndarray.NDArray(shape=None, data=arg)
                 rounded_data = [
-                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    self.round_to_context(d, ctx=local_ctx) if isinstance(arg, self.dtype) else self.arg_to_digital(d, local_ctx)
                     for d in nd_unrounded.data
                 ]
                 argval = ndarray.NDArray(shape=nd_unrounded.shape, data=rounded_data)
             else:
-                argval = cls.arg_to_digital(arg, local_ctx)
+                argval = self.arg_to_digital(arg, local_ctx)
 
             if isinstance(argval, ndarray.NDArray):
                 if len(shape) != len(argval.shape):

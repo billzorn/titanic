@@ -258,22 +258,24 @@ def run_eval(data):
         else:
             args_with_image = state.args
 
+        backend_interpreter = backend()
+            
         try:
-            arg_ctx = backend.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
+            arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
             named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
 
             # yuck
             if state.img is not None:
                 named_args[0][1] = 'image'
 
-            e_val = backend.interpret(core, args_with_image, ctx=ctx, override=state.override)
+            e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
         except interpreter.EvaluatorError as e:
             raise WebtoolError(str(e))
 
         try:
-            pre_val = backend.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
+            pre_val = backend_interpreter.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
 

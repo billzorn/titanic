@@ -25,50 +25,39 @@ class Evaluator(object):
 
     ctype = EvalCtx
 
-    @classmethod
-    def _eval_expr(cls, e, ctx):
+    def _eval_expr(self, e, ctx):
         raise EvaluatorUnimplementedError('expr {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_value(cls, e, ctx):
+    def _eval_value(self, e, ctx):
         raise EvaluatorUnimplementedError('value {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_var(cls, e, ctx):
+    def _eval_var(self, e, ctx):
         raise EvaluatorUnimplementedError('var {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_val(cls, e, ctx):
+    def _eval_val(self, e, ctx):
         raise EvaluatorUnimplementedError('val {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_ctx(cls, e, ctx):
+    def _eval_ctx(self, e, ctx):
         # Note that let creates a new context, so the old one will
         # not be changed.
-        return cls.evaluate(e.body, ctx.let(props=e.props))
+        return self.evaluate(e.body, ctx.let(props=e.props))
 
-    @classmethod
-    def _eval_tensor(cls, e, ctx):
+    def _eval_tensor(self, e, ctx):
         raise EvaluatorUnimplementedError('tensor {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_if(cls, e, ctx):
+    def _eval_if(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_let(cls, e, ctx):
+    def _eval_let(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_while(cls, e, ctx):
+    def _eval_while(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_op(cls, e, ctx):
+    def _eval_op(self, e, ctx):
         raise EvaluatorUnimplementedError('op {}: unimplemented'.format(str(e)))
 
-    @classmethod
-    def _eval_unknown(cls, e, ctx):
+    def _eval_unknown(self, e, ctx):
         raise EvaluatorError('unknown operation {}'.format(e.name))
 
     _evaluator_dispatch = {
@@ -178,29 +167,28 @@ class Evaluator(object):
     # rather than implemented directly in the class...
     # evals = 0
 
-    @classmethod
-    def evaluate(cls, e, ctx):
+    def evaluate(self, e, ctx):
         try:
-            method = cls._evaluator_cache[type(e)]
+            method = self._evaluator_cache[type(e)]
         except KeyError:
             # initialize the cache for this class if it hasn't been initialized already
-            if isinstance(cls._evaluator_cache, utils.ImmutableDict):
-                cls._evaluator_cache = {}
+            if isinstance(self._evaluator_cache, utils.ImmutableDict):
+                self._evaluator_cache = {}
             # walk up the mro and assign the evaluator for the first subtype to this type
             method = None
             ecls = type(e)
             for superclass in ecls.__mro__:
-                method_name = cls._evaluator_dispatch.get(superclass, None)
-                if method_name is not None and hasattr(cls, method_name):
-                    method = getattr(cls, method_name)
-                    cls._evaluator_cache[ecls] = method
+                method_name = self._evaluator_dispatch.get(superclass, None)
+                if method_name is not None and hasattr(self, method_name):
+                    method = getattr(self, method_name)
+                    self._evaluator_cache[ecls] = method
                     break
             if method is None:
                 raise EvaluatorError('Evaluator: unable to dispatch for expression {} with mro {}'
                                      .format(repr(e), repr(ecls.__mro__)))
 
-        # cls.evals += 1
-        # if cls.evals & 0xfffff == 0xfffff:
+        # self.evals += 1
+        # if self.evals & 0xfffff == 0xfffff:
         #     print(',', end='', flush=True)
 
 
@@ -229,156 +217,142 @@ class BaseInterpreter(Evaluator):
         'FALSE': False,
     }
 
-    @staticmethod
     def arg_to_digital(x, ctx):
         raise EvaluatorUnimplementedError('arg_to_digital({}): unimplemented'.format(repr(x)))
 
-    @staticmethod
     def round_to_context(x, ctx):
         raise EvaluatorUnimplementedError('round_to_context({}): unimplemented'.format(repr(x)))
 
 
     # values
 
-    @classmethod
-    def _eval_value(cls, e, ctx):
+    def _eval_value(self, e, ctx):
         return e.value
-    
-    @classmethod
-    def _eval_var(cls, e, ctx):
+
+    def _eval_var(self, e, ctx):
         try:
             return ctx.bindings[e.value]
         except KeyError as exn:
             raise EvaluatorUnboundError(exn.args[0])
 
-    @classmethod
-    def _eval_val(cls, e, ctx):
-        return cls.arg_to_digital(e.value, ctx)
+    def _eval_val(self, e, ctx):
+        return self.arg_to_digital(e.value, ctx)
 
-    @classmethod
-    def _eval_constant(cls, e, ctx):
+    def _eval_constant(self, e, ctx):
         try:
-            return cls.constants[e.value]
+            return self.constants[e.value]
         except KeyError as exn:
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
-    @classmethod
-    def _eval_data(cls, e, ctx):
-        data, shape = ndarray.flatten_shaped_list(e.as_list())
-        rounded_data = [cls.evaluate(d, ctx) for d in data]
-        return ndarray.NDArray(shape, rounded_data)
+    def _eval_data(self, e, ctx):
+        try:
+            data, shape = ndarray.flatten_shaped_list(e.as_list())
+            rounded_data = [self.evaluate(d, ctx) for d in data]
+            return ndarray.NDArray(shape, rounded_data)
+        except Exception:
+            traceback.print_exc()
+            raise EvaluatorError('expecting a well-formed tensor literal, got:\n{}'.format(str(e)))
 
     # Tensors
 
-    @classmethod
-    def _eval_dim(cls, e, ctx):
-        nd = cls.evaluate(e.children[0], ctx)
+    def _eval_dim(self, e, ctx):
+        nd = self.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get its dimension'.format(repr(nd)))
         return digital.Digital(m=len(nd.shape), exp=0)
 
-    @classmethod
-    def _eval_size(cls, e, ctx):
-        nd = cls.evaluate(e.children[0], ctx)
+    def _eval_size(self, e, ctx):
+        nd = self.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get the size of a dimension'.format(repr(nd)))
-        idx = cls.evaluate(e.children[1], ctx)
+        idx = self.evaluate(e.children[1], ctx)
         if not idx.is_integer():
             raise EvaluatorError('computed shape index {} must be an integer'.format(repr(idx)))
         i = int(idx.m * (2**idx.exp))
         return digital.Digital(m=nd.shape[i], exp=0)
 
-
-    @classmethod
-    def _eval_ref(cls, e, ctx):
-        nd = cls.evaluate(e.children[0], ctx)
+    def _eval_ref(self, e, ctx):
+        nd = self.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get an element'.format(repr(nd)))
         pos = []
         for child in e.children[1:]:
-            idx = cls.evaluate(child, ctx)
+            idx = self.evaluate(child, ctx)
             if not idx.is_integer():
                 raise EvaluatorError('computed index {} must be an integer'.format(repr(idx)))
             pos.append(int(idx.m * (2**idx.exp)))
         return nd[pos]
 
-    @classmethod
-    def _eval_tensor(cls, e, ctx):
+    def _eval_tensor(self, e, ctx):
         shape = []
         names = []
         for name, expr in e.dim_bindings:
-            size = cls.evaluate(expr, ctx)
+            size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
             # can you spot the bug in this arbitrary precision -> integer conversion?
             shape.append(int(size.m * (2**size.exp)))
             names.append(name)
 
-        data = [cls.evaluate(e.body, ctx.let(bindings=[(name, digital.Digital(m=i,exp=0))
-                                                       for name, i in zip(names, ndarray.position(shape, idx))]))
+        data = [self.evaluate(e.body, ctx.let(bindings=[(name, digital.Digital(m=i,exp=0))
+                                                        for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]
         return ndarray.NDArray(shape=shape, data=data)
 
+
     # control flow
 
-    @classmethod
-    def _eval_if(cls, e, ctx):
-        if cls.evaluate(e.cond, ctx):
-            return cls.evaluate(e.then_body, ctx)
+    def _eval_if(self, e, ctx):
+        if self.evaluate(e.cond, ctx):
+            return self.evaluate(e.then_body, ctx)
         else:
-            return cls.evaluate(e.else_body, ctx)
+            return self.evaluate(e.else_body, ctx)
 
-    @classmethod
-    def _eval_let(cls, e, ctx):
-        bindings = [(name, cls.evaluate(expr, ctx)) for name, expr in e.let_bindings]
-        return cls.evaluate(e.body, ctx.let(bindings=bindings))
+    def _eval_let(self, e, ctx):
+        bindings = [(name, self.evaluate(expr, ctx)) for name, expr in e.let_bindings]
+        return self.evaluate(e.body, ctx.let(bindings=bindings))
 
-    # @classmethod
-    # def _eval_letstar(cls, e, ctx):
+    # def _eval_letstar(self, e, ctx):
     #     bindings = []
     #     for name, expr in e.let_bindings:
     #         local_ctx = ctx.let(bindings=bindings)
-    #         bindings.append((name, cls.evaluate(expr, local_ctx)))
-    #     return cls.evaluate(e.body, ctx.let(bindings=bindings))
+    #         bindings.append((name, self.evaluate(expr, local_ctx)))
+    #     return self.evaluate(e.body, ctx.let(bindings=bindings))
 
-    @classmethod
-    def _eval_letstar(cls, e, ctx):
+    def _eval_letstar(self, e, ctx):
         for name, expr in e.let_bindings:
-            new_binding = (name, cls.evaluate(expr, ctx))
+            new_binding = (name, self.evaluate(expr, ctx))
             ctx = ctx.let(bindings=[new_binding])
-        return cls.evaluate(e.body, ctx)
+        return self.evaluate(e.body, ctx)
 
-    @classmethod
-    def _eval_while(cls, e, ctx):
-        bindings = [(name, cls.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+    def _eval_while(self, e, ctx):
+        bindings = [(name, self.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
         ctx = ctx.let(bindings=bindings)
-        while cls.evaluate(e.cond, ctx):
-            bindings = [(name, cls.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+        while self.evaluate(e.cond, ctx):
+            bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
-        return cls.evaluate(e.body, ctx)
+        return self.evaluate(e.body, ctx)
 
-    @classmethod
-    def _eval_whilestar(cls, e, ctx):
+    def _eval_whilestar(self, e, ctx):
         for name, init_expr, update_expr in e.while_bindings:
-            new_binding = (name, cls.evaluate(init_expr, ctx))
+            new_binding = (name, self.evaluate(init_expr, ctx))
             ctx = ctx.let(bindings=[new_binding])
-        while cls.evaluate(e.cond, ctx):
+        while self.evaluate(e.cond, ctx):
             for name, init_expr, update_expr in e.while_bindings:
-                new_binding = (name, cls.evaluate(update_expr, ctx))
+                new_binding = (name, self.evaluate(update_expr, ctx))
                 ctx = ctx.let(bindings=[new_binding])
-        return cls.evaluate(e.body, ctx)
+        return self.evaluate(e.body, ctx)
 
 
     # interpreter interface
 
-    @classmethod
-    def arg_ctx(cls, core, args, ctx=None, override=True):
+    def arg_ctx(self, core, args, ctx=None, override=True):
         if len(core.inputs) != len(args):
             raise ValueError('incorrect number of arguments: got {}, expecting {} ({})'.format(
                 len(args), len(core.inputs), ' '.join((name for name, props in core.inputs))))
 
         if ctx is None:
-            ctx = cls.ctype(props=core.props)
+            ctx = self.ctype(props=core.props)
         elif override:
             allprops = {}
             allprops.update(core.props)
@@ -392,25 +366,25 @@ class BaseInterpreter(Evaluator):
         for arg, (name, props, shape) in zip(args, core.inputs):
             local_ctx = ctx.let(props=props)
 
-            if isinstance(arg, cls.dtype):
-                argval = cls.round_to_context(arg, ctx=local_ctx)
+            if isinstance(arg, self.dtype):
+                argval = self.round_to_context(arg, ctx=local_ctx)
             elif isinstance(arg, ast.Expr):
-                argval = cls.evaluate(arg, local_ctx)
+                argval = self.evaluate(arg, local_ctx)
             elif isinstance(arg, ndarray.NDArray):
                 rounded_data = [
-                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    self.round_to_context(d, ctx=local_ctx) if isinstance(arg, self.dtype) else self.arg_to_digital(d, local_ctx)
                     for d in arg.data
                 ]
                 argval = ndarray.NDArray(shape=arg.shape, data=rounded_data)
             elif isinstance(arg, list):
                 nd_unrounded = ndarray.NDArray(shape=None, data=arg)
                 rounded_data = [
-                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    self.round_to_context(d, ctx=local_ctx) if isinstance(arg, self.dtype) else self.arg_to_digital(d, local_ctx)
                     for d in nd_unrounded.data
                 ]
                 argval = ndarray.NDArray(shape=nd_unrounded.shape, data=rounded_data)
             else:
-                argval = cls.arg_to_digital(arg, local_ctx)
+                argval = self.arg_to_digital(arg, local_ctx)
 
             if isinstance(argval, ndarray.NDArray):
                 if len(shape) != len(argval.shape):
@@ -425,18 +399,16 @@ class BaseInterpreter(Evaluator):
 
         return ctx.let(bindings=arg_bindings)
 
-    @classmethod
-    def interpret(cls, core, args, ctx=None, override=True):
-        ctx = cls.arg_ctx(core, args, ctx=ctx, override=override)
-        return cls.evaluate(core.e, ctx)
+    def interpret(self, core, args, ctx=None, override=True):
+        ctx = self.arg_ctx(core, args, ctx=ctx, override=override)
+        return self.evaluate(core.e, ctx)
 
-    @classmethod
-    def interpret_pre(cls, core, args, ctx=None, override=True):
+    def interpret_pre(self, core, args, ctx=None, override=True):
         if core.pre is None:
             return True
         else:
-            ctx = cls.arg_ctx(core, args, ctx=ctx, override=override)
-            return cls.evaluate(core.pre, ctx)
+            ctx = self.arg_ctx(core, args, ctx=ctx, override=override)
+            return self.evaluate(core.pre, ctx)
 
 
 class SimpleInterpreter(BaseInterpreter):
@@ -445,51 +417,42 @@ class SimpleInterpreter(BaseInterpreter):
     simple arithmetic operators: a + b, a > b, abs(a).
     """
 
-    @classmethod
-    def _eval_cast(cls, e, ctx):
-        return cls.round_to_context(cls.evaluate(e.children[0], ctx), ctx)
+    def _eval_cast(self, e, ctx):
+        return self.round_to_context(self.evaluate(e.children[0], ctx), ctx)
 
-    @classmethod
-    def _eval_add(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) + cls.evaluate(e.children[1], ctx)
+    def _eval_add(self, e, ctx):
+        return self.evaluate(e.children[0], ctx) + self.evaluate(e.children[1], ctx)
 
-    @classmethod
-    def _eval_sub(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) - cls.evaluate(e.children[1], ctx)
+    def _eval_sub(self, e, ctx):
+        return self.evaluate(e.children[0], ctx) - self.evaluate(e.children[1], ctx)
 
-    @classmethod
-    def _eval_mul(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) * cls.evaluate(e.children[1], ctx)
+    def _eval_mul(self, e, ctx):
+        return self.evaluate(e.children[0], ctx) * self.evaluate(e.children[1], ctx)
 
     # Division may need to be overwritten for types that raise an exception on
     # division by 0 (such as Python floats).
 
-    @classmethod
-    def _eval_div(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx) / cls.evaluate(e.children[1], ctx)
+    def _eval_div(self, e, ctx):
+        return self.evaluate(e.children[0], ctx) / self.evaluate(e.children[1], ctx)
 
-    @classmethod
-    def _eval_neg(cls, e, ctx):
-        return -cls.evaluate(e.children[0], ctx)
+    def _eval_neg(self, e, ctx):
+        return -self.evaluate(e.children[0], ctx)
 
-    @classmethod
-    def _eval_fabs(cls, e, ctx):
-        return abs(cls.evaluate(e.children[0], ctx))
+    def _eval_fabs(self, e, ctx):
+        return abs(self.evaluate(e.children[0], ctx))
 
     # In the common case where nan isn't ordered, it will probably be necessary
     # to override these functions so that they do the right thing.
 
-    @classmethod
-    def _eval_fmax(cls, e, ctx):
-        return max(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
+    def _eval_fmax(self, e, ctx):
+        return max(self.evaluate(e.children[0], ctx), self.evaluate(e.children[1], ctx))
 
-    @classmethod
-    def _eval_fmin(cls, e, ctx):
-        return min(cls.evaluate(e.children[0], ctx), cls.evaluate(e.children[1], ctx))
+    def _eval_fmin(self, e, ctx):
+        return min(self.evaluate(e.children[0], ctx), self.evaluate(e.children[1], ctx))
 
     # This ugly code is designed to cause comparison operators to short-circuit.
     # A more elegant implementation:
-    #    children = [cls.evaluate(child, ctx) for child in e.children]
+    #    children = [self.evaluate(child, ctx) for child in e.children]
     #    for x, y in zip(children, children[1:]):
     #        if not x < y:
     #            return False
@@ -497,76 +460,71 @@ class SimpleInterpreter(BaseInterpreter):
     # does not short-circuit, which is inconsistent with the behavior of
     # _eval_and and _eval_or, which use the short-circuiting all and any builtins.
 
-    @classmethod
-    def _eval_lt(cls, e, ctx):
+    def _eval_lt(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) < cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) < self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
-            a = cls.evaluate(e.children[0], ctx)
+            a = self.evaluate(e.children[0], ctx)
             for child in e.children[1:]:
-                b = cls.evaluate(child, ctx)
+                b = self.evaluate(child, ctx)
                 if not a < b:
                     return False
                 a = b
             return True
 
-    @classmethod
-    def _eval_gt(cls, e, ctx):
+    def _eval_gt(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) > cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) > self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
-            a = cls.evaluate(e.children[0], ctx)
+            a = self.evaluate(e.children[0], ctx)
             for child in e.children[1:]:
-                b = cls.evaluate(child, ctx)
+                b = self.evaluate(child, ctx)
                 if not a > b:
                     return False
                 a = b
             return True
 
-    @classmethod
-    def _eval_leq(cls, e, ctx):
+    def _eval_leq(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) <= cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) <= self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
-            a = cls.evaluate(e.children[0], ctx)
+            a = self.evaluate(e.children[0], ctx)
             for child in e.children[1:]:
-                b = cls.evaluate(child, ctx)
+                b = self.evaluate(child, ctx)
                 if not a <= b:
                     return False
                 a = b
             return True
 
-    @classmethod
-    def _eval_geq(cls, e, ctx):
+    def _eval_geq(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) >= cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) >= self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
-            a = cls.evaluate(e.children[0], ctx)
+            a = self.evaluate(e.children[0], ctx)
             for child in e.children[1:]:
-                b = cls.evaluate(child, ctx)
+                b = self.evaluate(child, ctx)
                 if not a >= b:
                     return False
                 a = b
             return True
 
-    @classmethod
-    def _eval_eq(cls, e, ctx):
+    def _eval_eq(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) == cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) == self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
-            a = cls.evaluate(e.children[0], ctx)
+            a = self.evaluate(e.children[0], ctx)
             for child in e.children[1:]:
-                b = cls.evaluate(child, ctx)
+                b = self.evaluate(child, ctx)
                 if not a == b:
                     return False
                 a = b
@@ -578,10 +536,9 @@ class SimpleInterpreter(BaseInterpreter):
     # index with the child expressions themselves, or we might notice that shared
     # subtrees are actually the same object and forget to re-evaluate some of them.
 
-    @classmethod
-    def _eval_neq(cls, e, ctx):
+    def _eval_neq(self, e, ctx):
         if len(e.children) == 2:
-            return cls.evaluate(e.children[0], ctx) != cls.evaluate(e.children[1], ctx)
+            return self.evaluate(e.children[0], ctx) != self.evaluate(e.children[1], ctx)
         elif len(e.children) < 2:
             return True
         else:
@@ -592,30 +549,27 @@ class SimpleInterpreter(BaseInterpreter):
                 if cached[i1]:
                     a = cache[i1]
                 else:
-                    a = cls.evaluate(e.children[i1], ctx)
+                    a = self.evaluate(e.children[i1], ctx)
                     cache[i1] = a
                     cached[i1] = True
                 if cached[i2]:
                     b = cache[i2]
                 else:
-                    b = cls.evaluate(e.children[i2], ctx)
+                    b = self.evaluate(e.children[i2], ctx)
                     cache[i2] = b
                     cached[i2] = True
                 if not a != b:
                     return False
             return True
 
-    @classmethod
-    def _eval_and(cls, e, ctx):
-        return all(cls.evaluate(child, ctx) for child in e.children)
+    def _eval_and(self, e, ctx):
+        return all(self.evaluate(child, ctx) for child in e.children)
 
-    @classmethod
-    def _eval_or(cls, e, ctx):
-        return any(cls.evaluate(child, ctx) for child in e.children)
+    def _eval_or(self, e, ctx):
+        return any(self.evaluate(child, ctx) for child in e.children)
 
-    @classmethod
-    def _eval_not(cls, e, ctx):
-        return not cls.evaluate(e.children[0], ctx)
+    def _eval_not(self, e, ctx):
+        return not self.evaluate(e.children[0], ctx)
 
 
 class StandardInterpreter(SimpleInterpreter):
@@ -625,206 +579,155 @@ class StandardInterpreter(SimpleInterpreter):
     i.e. MPNum.
     """
 
-    @classmethod
-    def _eval_add(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).add(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_add(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).add(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_sub(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sub(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_sub(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).sub(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_mul(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).mul(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_mul(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).mul(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_div(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).div(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_div(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).div(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_sqrt(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sqrt(ctx=ctx)
+    def _eval_sqrt(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).sqrt(ctx=ctx)
 
-    @classmethod
-    def _eval_fma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fma(cls.evaluate(e.children[1], ctx), cls.evaluate(e.children[2], ctx), ctx=ctx)
+    def _eval_fma(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fma(self.evaluate(e.children[1], ctx), self.evaluate(e.children[2], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_neg(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).neg(ctx=ctx)
+    def _eval_neg(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).neg(ctx=ctx)
 
-    @classmethod
-    def _eval_copysign(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).copysign(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_copysign(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).copysign(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_fabs(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fabs(ctx=ctx)
+    def _eval_fabs(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fabs(ctx=ctx)
 
-    @classmethod
-    def _eval_fdim(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fdim(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_fdim(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fdim(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_fmax(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmax(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_fmax(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fmax(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_fmin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmin(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_fmin(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fmin(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_fmod(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).fmod(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_fmod(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).fmod(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_remainder(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).remainder(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_remainder(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).remainder(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_ceil(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).ceil(ctx=ctx)
+    def _eval_ceil(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).ceil(ctx=ctx)
 
-    @classmethod
-    def _eval_floor(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).floor(ctx=ctx)
+    def _eval_floor(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).floor(ctx=ctx)
 
-    @classmethod
-    def _eval_nearbyint(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).nearbyint(ctx=ctx)
+    def _eval_nearbyint(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).nearbyint(ctx=ctx)
 
-    @classmethod
-    def _eval_round(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).round(ctx=ctx)
+    def _eval_round(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).round(ctx=ctx)
 
-    @classmethod
-    def _eval_trunc(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).trunc(ctx=ctx)
+    def _eval_trunc(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).trunc(ctx=ctx)
 
-    @classmethod
-    def _eval_acos(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).acos(ctx=ctx)
+    def _eval_acos(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).acos(ctx=ctx)
 
-    @classmethod
-    def _eval_acosh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).acosh(ctx=ctx)
+    def _eval_acosh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).acosh(ctx=ctx)
 
-    @classmethod
-    def _eval_asin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).asin(ctx=ctx)
+    def _eval_asin(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).asin(ctx=ctx)
 
-    @classmethod
-    def _eval_asinh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).asinh(ctx=ctx)
+    def _eval_asinh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).asinh(ctx=ctx)
 
-    @classmethod
-    def _eval_atan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atan(ctx=ctx)
+    def _eval_atan(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).atan(ctx=ctx)
 
-    @classmethod
-    def _eval_atan2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atan2(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_atan2(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).atan2(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_atanh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).atanh(ctx=ctx)
+    def _eval_atanh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).atanh(ctx=ctx)
 
-    @classmethod
-    def _eval_cos(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cos(ctx=ctx)
+    def _eval_cos(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).cos(ctx=ctx)
 
-    @classmethod
-    def _eval_cosh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cosh(ctx=ctx)
+    def _eval_cosh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).cosh(ctx=ctx)
 
-    @classmethod
-    def _eval_sin(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sin(ctx=ctx)
+    def _eval_sin(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).sin(ctx=ctx)
 
-    @classmethod
-    def _eval_sinh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).sinh(ctx=ctx)
+    def _eval_sinh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).sinh(ctx=ctx)
 
-    @classmethod
-    def _eval_tan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tan(ctx=ctx)
+    def _eval_tan(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).tan(ctx=ctx)
 
-    @classmethod
-    def _eval_tanh(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tanh(ctx=ctx)
+    def _eval_tanh(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).tanh(ctx=ctx)
 
-    @classmethod
-    def _eval_exp(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).exp_(ctx=ctx)
+    def _eval_exp(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).exp_(ctx=ctx)
 
-    @classmethod
-    def _eval_exp2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).exp2(ctx=ctx)
+    def _eval_exp2(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).exp2(ctx=ctx)
 
-    @classmethod
-    def _eval_expm1(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).expm1(ctx=ctx)
+    def _eval_expm1(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).expm1(ctx=ctx)
 
-    @classmethod
-    def _eval_log(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log(ctx=ctx)
+    def _eval_log(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).log(ctx=ctx)
 
-    @classmethod
-    def _eval_log10(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log10(ctx=ctx)
+    def _eval_log10(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).log10(ctx=ctx)
 
-    @classmethod
-    def _eval_log1p(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log1p(ctx=ctx)
+    def _eval_log1p(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).log1p(ctx=ctx)
 
-    @classmethod
-    def _eval_log2(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).log2(ctx=ctx)
+    def _eval_log2(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).log2(ctx=ctx)
 
-    @classmethod
-    def _eval_cbrt(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).cbrt(ctx=ctx)
+    def _eval_cbrt(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).cbrt(ctx=ctx)
 
-    @classmethod
-    def _eval_hypot(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).hypot(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_hypot(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).hypot(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_pow(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).pow(cls.evaluate(e.children[1], ctx), ctx=ctx)
+    def _eval_pow(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).pow(self.evaluate(e.children[1], ctx), ctx=ctx)
 
-    @classmethod
-    def _eval_erf(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).erf(ctx=ctx)
+    def _eval_erf(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).erf(ctx=ctx)
 
-    @classmethod
-    def _eval_erfc(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).erfc(ctx=ctx)
+    def _eval_erfc(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).erfc(ctx=ctx)
 
-    @classmethod
-    def _eval_lgamma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).lgamma(ctx=ctx)
+    def _eval_lgamma(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).lgamma(ctx=ctx)
 
-    @classmethod
-    def _eval_tgamma(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).tgamma(ctx=ctx)
+    def _eval_tgamma(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).tgamma(ctx=ctx)
 
-    @classmethod
-    def _eval_isfinite(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isfinite()
+    def _eval_isfinite(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).isfinite()
 
-    @classmethod
-    def _eval_isinf(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isinf
+    def _eval_isinf(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).isinf
 
-    @classmethod
-    def _eval_isnan(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isnan
+    def _eval_isnan(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).isnan
 
-    @classmethod
-    def _eval_isnormal(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).isnormal()
+    def _eval_isnormal(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).isnormal()
 
-    @classmethod
-    def _eval_signbit(cls, e, ctx):
-        return cls.evaluate(e.children[0], ctx).signbit()
+    def _eval_signbit(self, e, ctx):
+        return self.evaluate(e.children[0], ctx).signbit()
