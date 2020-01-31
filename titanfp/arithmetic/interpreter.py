@@ -396,8 +396,30 @@ class BaseInterpreter(Evaluator):
                 argval = cls.round_to_context(arg, ctx=local_ctx)
             elif isinstance(arg, ast.Expr):
                 argval = cls.evaluate(arg, local_ctx)
+            elif isinstance(arg, ndarray.NDArray):
+                rounded_data = [
+                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    for d in arg.data
+                ]
+                argval = ndarray.NDArray(shape=arg.shape, data=rounded_data)
+            elif isinstance(arg, list):
+                nd_unrounded = ndarray.NDArray(shape=None, data=arg)
+                rounded_data = [
+                    cls.round_to_context(d, ctx=local_ctx) if isinstance(arg, cls.dtype) else cls.arg_to_digital(d, local_ctx)
+                    for d in nd_unrounded.data
+                ]
+                argval = ndarray.NDArray(shape=nd_unrounded.shape, data=rounded_data)
             else:
                 argval = cls.arg_to_digital(arg, local_ctx)
+
+            if isinstance(argval, ndarray.NDArray):
+                if len(shape) != len(argval.shape):
+                    raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
+                for dim, argdim in zip(shape, argval.shape):
+                    if isinstance(dim, int) and dim != argdim:
+                        raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
+                    elif isinstance(dim, str):
+                        arg_bindings.append((dim, digital.Digital(m=argdim,exp=0)))
 
             arg_bindings.append((name, argval))
 

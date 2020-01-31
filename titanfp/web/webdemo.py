@@ -153,9 +153,8 @@ class WebtoolState(object):
                 decoded = base64.decodebytes(bytes(imgdata, 'ascii'))
                 self.img = Image.open(io.BytesIO(decoded))
 
-                nd = np_array_to_ndarray(np.array(self.img))
-                self.img_tensor = [ast.ValueExpr(nd)]
-                
+                self.img_tensor = [np_array_to_ndarray(np.array(self.img))]
+
                 # img_sexp = img_to_sexp(self.img)
                 # self.img_tensor = fpcparser.read_exprs('(data ' + img_sexp + ')')
 
@@ -205,7 +204,7 @@ def np_array_to_ndarray(a):
     data, shape = ndarray.flatten_shaped_list(a.tolist())
     assert shape == a.shape
     #interned_data = [digital.Digital(m=int(d), exp=0) for d in data]
-    interned_data = [ieee754.Float(m=int(d), exp=0) for d in data]
+    interned_data = [int(d) for d in data]
     return ndarray.NDArray(shape, interned_data)
 
 def pixel(x):
@@ -266,7 +265,7 @@ def run_eval(data):
             # yuck
             if state.img is not None:
                 named_args[0][1] = 'image'
-            
+
             e_val = backend.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
@@ -286,8 +285,9 @@ def run_eval(data):
         }
 
         if state.img is not None:
-            result['result_img'] = b64_encode_image(e_val)
-            result['e_val'] = 'image'
+            if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [1,3,4]:
+                result['result_img'] = b64_encode_image(e_val)
+                result['e_val'] = 'image'
 
     except WebtoolError as e:
         result = {

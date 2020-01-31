@@ -12,8 +12,8 @@ parse_exprs : expr* EOF ;
 fpcore : OPEN 'FPCore' (ident=SYMBOL)? OPEN (inputs+=argument)* CLOSE (props+=prop)* e=expr CLOSE ;
 
 dimension
-    : name=SYMBOL
-    | size=number
+    : name=SYMBOL # DimSym
+    | size=number # DimSize
     ;
 
 argument
