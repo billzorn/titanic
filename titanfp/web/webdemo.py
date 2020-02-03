@@ -303,9 +303,8 @@ def run_eval(data):
             if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [3,4]:
                 e_img = e_val
                 if state.heatmap:
-                    p = ctx.p
                     e_img = ndarray.NDArray(shape=e_img.shape, data=[
-                        (max(0, p - d.p) / p) * 255 for d in e_img.data
+                        (max(0, d.ctx.p - d.p) / d.ctx.p) * 255 for d in e_img.data
                     ])
                 result['result_img'] = b64_encode_image(e_img)
                 result['e_val'] = 'image'
