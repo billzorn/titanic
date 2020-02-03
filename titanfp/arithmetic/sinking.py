@@ -11,7 +11,7 @@ from . import interpreter
 from . import ieee754
 
 class Sink(digital.Digital):
-    _ctx : IEEECtx = ieee754.ieee_ctx(11, 53)
+    _ctx : IEEECtx = ieee754.ieee_ctx(11, 64)
 
     @property
     def ctx(self):
@@ -28,7 +28,7 @@ class Sink(digital.Digital):
 
     def is_identical_to(self, other):
         if isinstance(other, type(self)):
-            return super().is_identical_to(other) and self.ctx.w == other.ctx.w and self.ctx.p == other.ctx.p
+            return super().is_identical_to(other) and self.ctx.es == other.ctx.es and self.ctx.nbits == other.ctx.nbits
         else:
             return super().is_identical_to(other)
 
@@ -43,7 +43,7 @@ class Sink(digital.Digital):
             unrounded = gmpmath.mpfr_to_digital(f)
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True), **kwargs)
 
-        self._ctx = ieee754.ieee_ctx(ctx.w, ctx.p)
+        self._ctx = ieee754.ieee_ctx(ctx.es, ctx.p)
 
     def __repr__(self):
         return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, ctx={})'.format(
@@ -82,9 +82,9 @@ class Sink(digital.Digital):
     @classmethod
     def _select_context(cls, *args, ctx=None):
         if ctx is not None:
-            return ieee754.ieee_ctx(ctx.w, ctx.p)
+            return ieee754.ieee_ctx(ctx.es, ctx.p)
         else:
-            w = max((f.ctx.w for f in args if isinstance(f, cls)))
+            w = max((f.ctx.es for f in args if isinstance(f, cls)))
             p = max((f.ctx.p for f in args if isinstance(f, cls)))
             return ieee754.ieee_ctx(w, p)
 

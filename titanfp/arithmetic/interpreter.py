@@ -217,6 +217,9 @@ class BaseInterpreter(Evaluator):
         'FALSE': False,
     }
 
+    def __init__(self):
+        self.cores = {}
+
     def arg_to_digital(x, ctx):
         raise EvaluatorUnimplementedError('arg_to_digital({}): unimplemented'.format(repr(x)))
 
@@ -259,7 +262,8 @@ class BaseInterpreter(Evaluator):
         nd = self.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get its dimension'.format(repr(nd)))
-        return digital.Digital(m=len(nd.shape), exp=0)
+        #return digital.Digital(m=len(nd.shape), exp=0)
+        return self.arg_to_digital(len(nd.shape), ctx=ctx)
 
     def _eval_size(self, e, ctx):
         nd = self.evaluate(e.children[0], ctx)
@@ -269,7 +273,8 @@ class BaseInterpreter(Evaluator):
         if not idx.is_integer():
             raise EvaluatorError('computed shape index {} must be an integer'.format(repr(idx)))
         i = int(idx.m * (2**idx.exp))
-        return digital.Digital(m=nd.shape[i], exp=0)
+        #return digital.Digital(m=nd.shape[i], exp=0)
+        return self.arg_to_digital(nd.shape[i], ctx=ctx)
 
     def _eval_ref(self, e, ctx):
         nd = self.evaluate(e.children[0], ctx)
@@ -294,7 +299,7 @@ class BaseInterpreter(Evaluator):
             shape.append(int(size.m * (2**size.exp)))
             names.append(name)
 
-        data = [self.evaluate(e.body, ctx.let(bindings=[(name, digital.Digital(m=i,exp=0))
+        data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]
         return ndarray.NDArray(shape=shape, data=data)
@@ -343,6 +348,16 @@ class BaseInterpreter(Evaluator):
                 ctx = ctx.let(bindings=[new_binding])
         return self.evaluate(e.body, ctx)
 
+    def _eval_unknown(self, e, ctx):
+        ident = e.name
+        if ident is not None and ident in self.cores:
+            function_core = self.cores[ident]
+        else:
+            raise EvaluatorError('unknown function {}'.format(e.name))
+
+        args = [self.evaluate(child, ctx) for child in e.children]
+
+        return self.interpret(function_core, args, ctx=ctx, override=False)
 
     # interpreter interface
 
@@ -393,11 +408,15 @@ class BaseInterpreter(Evaluator):
                     if isinstance(dim, int) and dim != argdim:
                         raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                     elif isinstance(dim, str):
-                        arg_bindings.append((dim, digital.Digital(m=argdim,exp=0)))
+                        arg_bindings.append((dim, self.arg_to_digital(argdim, local_ctx)))
 
             arg_bindings.append((name, argval))
 
         return ctx.let(bindings=arg_bindings)
+
+    def register_function(self, core):
+        if core.ident is not None:
+            self.cores[core.ident] = core
 
     def interpret(self, core, args, ctx=None, override=True):
         ctx = self.arg_ctx(core, args, ctx=ctx, override=override)

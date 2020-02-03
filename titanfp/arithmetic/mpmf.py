@@ -211,7 +211,7 @@ class Interpreter(interpreter.StandardInterpreter):
                     if isinstance(dim, int) and dim != argdim:
                         raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                     elif isinstance(dim, str):
-                        arg_bindings.append((dim, digital.Digital(m=argdim,exp=0)))
+                        arg_bindings.append((dim, self.arg_to_digital(argdim, local_ctx)))
 
             arg_bindings.append((name, argval))
 

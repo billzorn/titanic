@@ -171,7 +171,7 @@ class WebtoolState(object):
     @property
     def precision(self):
         if self.backend in webdemo_float_backends:
-            return ast.Data([ast.Var('float'), ast.Decnum(str(self.w)), ast.Decnum(str(self.p))])
+            return ast.Data([ast.Var('float'), ast.Decnum(str(self.w)), ast.Decnum(str(self.p + self.w))])
         elif self.backend in webdemo_posit_backends:
             return ast.Data([ast.Var('posit'), ast.Decnum(str(self.es)), ast.Decnum(str(self.nbits))])
         else:
@@ -224,11 +224,25 @@ def run_eval(data):
     #print(repr(data))
 
     try:
-        state = WebtoolState(data)
-        if state.cores is None or len(state.cores) != 1:
-            raise WebtoolError('must provide exactly one FPCore')
 
-        core = state.cores[0]
+        state = WebtoolState(data)
+        if state.backend in webdemo_eval_backends:
+            backend = webdemo_eval_backends[state.backend]
+            backend_interpreter = backend()
+        else:
+            raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
+        if state.cores is None or len(state.cores) < 1:
+            raise WebtoolError('must provide one or more FPCores')
+
+        main = None
+        for core in state.cores:
+            backend_interpreter.register_function(core)
+            if core.ident and core.ident.lower() == 'main':
+                main = core
+        if main is None:
+            main = state.cores[-1]
+        core = main
+
         nargs = len(state.args)
         extra_arg_msg = ''
         if state.img is not None:
@@ -237,11 +251,6 @@ def run_eval(data):
         if nargs != len(core.inputs):
             raise WebtoolArgumentError('expected {:d} arguments for FPCore, got {:d}:\n  {}{}'
                                        .format(len(core.inputs), len(state.args), ', '.join(map(str, state.args)), extra_arg_msg))
-
-        if state.backend in webdemo_eval_backends:
-            backend = webdemo_eval_backends[state.backend]
-        else:
-            raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
 
         props = {}
         precision = state.precision
@@ -258,8 +267,6 @@ def run_eval(data):
         else:
             args_with_image = state.args
 
-        backend_interpreter = backend()
-            
         try:
             arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
             named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
