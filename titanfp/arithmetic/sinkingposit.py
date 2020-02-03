@@ -164,7 +164,7 @@ class SinkingPosit(digital.Digital):
                         # just generate the bits and see if that's even
                         tmp_exp = new_exp << offset
                         rounded = digital.Digital(negative=unrounded.negative, c=1, exp=tmp_exp, inexact=exp_inexact, rc=rc)
-                        bits = digital_to_bits(rounded, ctx)
+                        bits = posit.digital_to_bits(rounded, ctx)
                         if bits & 1:
                             new_exp += 1
                             rc = -1
@@ -208,7 +208,7 @@ class SinkingPosit(digital.Digital):
                         # TIE
                         tmp_exp = new_exp
                         rounded = digital.Digital(negative=unrounded.negative, c=1, exp=tmp_exp, inexact=exp_inexact, rc=rc)
-                        bits = digital_to_bits(rounded, ctx)
+                        bits = posit.digital_to_bits(rounded, ctx)
                         if bits & 1:
                             new_exp += 1
                             rc = -1

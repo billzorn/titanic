@@ -43,7 +43,7 @@ class Sink(digital.Digital):
             unrounded = gmpmath.mpfr_to_digital(f)
             super().__init__(x=self._round_to_context(unrounded, ctx=ctx, strict=True), **kwargs)
 
-        self._ctx = ieee754.ieee_ctx(ctx.es, ctx.p)
+        self._ctx = ieee754.ieee_ctx(ctx.es, ctx.nbits)
 
     def __repr__(self):
         return '{}(negative={}, c={}, exp={}, inexact={}, rc={}, isinf={}, isnan={}, ctx={})'.format(

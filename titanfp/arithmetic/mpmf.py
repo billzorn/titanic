@@ -15,7 +15,7 @@ from . import ndarray
 
 class MPMF(mpnum.MPNum):
 
-    _ctx : evalctx.EvalCtx = ieee754.ieee_ctx(11, 53)
+    _ctx : evalctx.EvalCtx = ieee754.ieee_ctx(11, 64)
 
     @property
     def ctx(self):
