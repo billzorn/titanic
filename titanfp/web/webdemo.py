@@ -166,6 +166,9 @@ class WebtoolState(object):
         else:
             self.img_tensor = []
 
+        if 'heatmap' in payload:
+            self.heatmap = self._read_bool(payload['heatmap'], 'heatmap')
+
         self.payload = payload
 
     @property
@@ -259,6 +262,7 @@ def run_eval(data):
         ctx = backend.ctype(props=props)
 
         print(ctx)
+        print(state.heatmap)
 
         # hack?
         if state.backend in webdemo_mpmf_backends:
@@ -296,8 +300,14 @@ def run_eval(data):
         }
 
         if state.img is not None:
-            if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [1,3,4]:
-                result['result_img'] = b64_encode_image(e_val)
+            if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [3,4]:
+                e_img = e_val
+                if state.heatmap:
+                    p = ctx.p
+                    e_img = ndarray.NDArray(shape=e_img.shape, data=[
+                        (max(0, p - d.p) / p) * 255 for d in e_img.data
+                    ])
+                result['result_img'] = b64_encode_image(e_img)
                 result['e_val'] = 'image'
 
         # 2d matrix printer

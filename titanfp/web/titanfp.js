@@ -106,6 +106,7 @@ function get_webtool_state() {
         'es': $('#posit-es').val(),
         'nbits': $('#posit-nbits').val(),
         'posit_override': $('#posit-override').is(':checked'),
+        'heatmap': $('#heatmap').is(':checked'),
     };
 }
 
@@ -136,6 +137,9 @@ function set_webtool_state(state) {
     }
     if (state.hasOwnProperty('posit_override')) {
         $('#posit-override').prop('checked', state.posit_override == 'true');
+    }
+    if (state.hasOwnProperty('heatmap')) {
+        $('#heatmap').prop('checked', state.heatmap == 'true');
     }
 }
 
