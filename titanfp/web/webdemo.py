@@ -258,6 +258,8 @@ def run_eval(data):
             props['precision'] = precision
         ctx = backend.ctype(props=props)
 
+        print(ctx)
+
         # hack?
         if state.backend in webdemo_mpmf_backends:
             ctx = None # use context from the FPCore
@@ -297,6 +299,12 @@ def run_eval(data):
             if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [1,3,4]:
                 result['result_img'] = b64_encode_image(e_val)
                 result['e_val'] = 'image'
+
+        # 2d matrix printer
+        if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 2:
+            ndstr = ndarray.NDArray(shape=e_val.shape, data=[str(d) for d in e_val.data])
+            result['mat_2d'] = ndstr.to_list()
+            result['e_val'] = '2d matrix'
 
     except WebtoolError as e:
         result = {

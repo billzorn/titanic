@@ -170,6 +170,17 @@ function eval_result(result, id_name) {
         body += '<div class="output-row">'
         body += '<pre class="output-pre code">' + result.e_val + '</pre>'
         body += '</div>';
+        if ('mat_2d' in result) {
+            body += '<table class="output-row" style="border-spacing: 10px 0;">';
+            for (let row of result.mat_2d) {
+                body += '<tr>';
+                for (let col of row) {
+                    body += '<td><pre class="output-pre code">' + col + '</pre></td>';
+                }
+                body += '</tr>';
+            }
+            body += '</table>';
+        }
         if ('result_img' in result) {
             body += '<div class="output-row">';
             body += '<img src="data:image/png;base64, ' + result.result_img + '" alt="computed image" />';
@@ -211,7 +222,7 @@ function submit_eval() {
                 success: (result) => eval_result(result, id_name),
             });
         }
-        
+
         reader.readAsDataURL(file);
     } else {
         const payload = JSON.stringify(data_object);
@@ -234,12 +245,12 @@ function read_img() {
     const img_input = this;
     if (img_input.files && img_input.files[0]) {
         var reader = new FileReader();
-        
+
         reader.onload = function (e) {
             $('#user_preview')
                 .attr('src', e.target.result);
         };
-        
+
         reader.readAsDataURL(img_input.files[0]);
     }
 }
