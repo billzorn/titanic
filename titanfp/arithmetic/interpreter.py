@@ -355,7 +355,8 @@ class BaseInterpreter(Evaluator):
         else:
             raise EvaluatorError('unknown function {}'.format(e.name))
 
-        args = [self.evaluate(child, ctx) for child in e.children]
+        # wrap in Value, to avoid rounding the inputs again
+        args = [ast.ValueExpr(self.evaluate(child, ctx)) for child in e.children]
 
         return self.interpret(function_core, args, ctx=ctx, override=False)
 
