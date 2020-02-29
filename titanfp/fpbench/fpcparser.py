@@ -316,6 +316,15 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
+    def visitExprTensorStar(self, ctx) -> ast.Expr:
+        print(repr(ctx.name))
+        print(repr(ctx.while_xs))
+        # TODO
+        return ast.Tensor(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            ctx.body.accept(self),
+        )
+
     def visitExprIf(self, ctx) -> ast.Expr:
         return ast.If(
             ctx.cond.accept(self),
@@ -353,6 +362,28 @@ class Visitor(FPCoreVisitor):
                 (x.text for x in ctx.xs),
                 (e0.accept(self) for e0 in ctx.e0s),
                 (e.accept(self) for e in ctx.es),
+            )],
+            ctx.body.accept(self),
+        )
+
+    def visitExprFor(self, ctx) -> ast.Expr:
+        return ast.For(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            [*zip(
+                (x.text for x in ctx.while_xs),
+                (e0.accept(self) for e0 in ctx.while_e0s),
+                (e.accept(self) for e in ctx.while_es),
+            )],
+            ctx.body.accept(self),
+        )
+
+    def visitExprForStar(self, ctx) -> ast.Expr:
+        return ast.ForStar(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            [*zip(
+                (x.text for x in ctx.while_xs),
+                (e0.accept(self) for e0 in ctx.while_e0s),
+                (e.accept(self) for e in ctx.while_es),
             )],
             ctx.body.accept(self),
         )

@@ -277,6 +277,49 @@ class Tensor(Expr):
             return False
         return self.dim_bindings == other.dim_bindings and self.body == other.body
 
+class TensorStar(Tensor):
+    name: str = 'tensor*'
+
+    def __init__(self, ident='', dim_bindings=[], while_bindings=[], body=None) -> None:
+        if body is None:
+            raise ValueError('must specify a body for TensorStar')
+        self.ident: str = ''
+        self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
+        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        if self.ident:
+            ident_str = ' ' + self.ident
+        else:
+            ident_str = ''
+
+        if self.while_bindings:
+            while_str = ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ')'
+        else:
+            while_str = ''
+            
+        return ('(' + self.name
+                + ident_str
+                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ')'
+                + while_str
+                + ' ' + str(self.body) + ')')
+
+    def __repr__(self):
+        return (type(self).__name__ + '('
+                + repr(self.ident) + ', '
+                + repr(self.dim_bindings) + ', '
+                + repr(self.while_bindings) + ', '
+                + repr(self.body) + ')')
+
+    def __eq__(self, other):
+        if not isinstance(other, ForStar):
+            return False
+        return (self.ident == other.ident
+                and self.dim_bindings == other.dim_bindings
+                and self.while_bindings = other.while_bindings
+                and self.body == other.body)
+
 
 # control flow
 
@@ -355,6 +398,39 @@ class WhileStar(While):
         if not isinstance(other, WhileStar):
             return False
         return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
+
+class For(Expr):
+    name: str = 'for'
+
+    def __init__(self,
+                 dim_bindings: typing.List[typing.Tuple[str, Expr]],
+                 while_bindings: typing.List[typing.Tuple[str, Expr, Expr]],
+                 body: Expr) -> None:
+        self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
+        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        return ('(' + self.name
+                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ')'
+                + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+    def __eq__(self, other):
+        if not isinstance(other, For):
+            return False
+        return self.dim_bindings == other.dim_bindings and self.while_bindings == other.while_bindings and self.body == other.body
+
+class ForStar(Expr):
+    name: str = 'for*'
+
+    def __eq__(self, other):
+        if not isinstance(other, ForStar):
+            return False
+        return self.dim_bindings == other.dim_bindings and self.while_bindings == other.while_bindings and self.body == other.body    
 
 
 # cast is the identity function, used for repeated rounding

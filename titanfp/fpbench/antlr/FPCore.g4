@@ -27,11 +27,18 @@ expr
     | x=SYMBOL # ExprSym
     | OPEN '!' (props+=prop)* body=expr CLOSE # ExprCtx
     | OPEN 'tensor' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprTensor
+    | OPEN 'tensor*' (name=SYMBOL)? OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE
+                                   (OPEN (OPEN while_xs+=SYMBOL while_e0s+=expr while_es+=expr CLOSE)* CLOSE)?
+                                    body=expr CLOSE # ExprTensorStar
     | OPEN 'if' cond=expr then_body=expr else_body=expr CLOSE # ExprIf
     | OPEN 'let' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLet
     | OPEN 'let*' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprLetStar
     | OPEN 'while' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhile
     | OPEN 'while*' cond=expr OPEN (OPEN xs+=SYMBOL e0s+=expr es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprWhileStar
+    | OPEN 'for' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE
+                 OPEN (OPEN while_xs+=SYMBOL while_e0s+=expr while_es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprFor
+    | OPEN 'for*' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE
+                  OPEN (OPEN while_xs+=SYMBOL while_e0s+=expr while_es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprForStar
     | OPEN 'data' d=datum CLOSE # ExprData
     | OPEN op=SYMBOL (args+=expr)* CLOSE # ExprOp
     ;
