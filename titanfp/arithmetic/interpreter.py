@@ -90,6 +90,8 @@ class Evaluator(object):
         ast.LetStar: '_eval_letstar',
         ast.While: '_eval_while',
         ast.WhileStar: '_eval_whilestar',
+        ast.For: '_eval_for',
+        ast.ForStar: '_eval_forstar',
         # catch-all for operations with some number of arguments
         ast.NaryExpr: '_eval_op',
         # catch-all for operations not recognized by the compiler
@@ -295,10 +297,10 @@ class BaseInterpreter(Evaluator):
             size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
-            # can you spot the bug in this arbitrary precision -> integer conversion?
-            shape.append(int(size.m * (2**size.exp)))
+            shape.append(int(size))
             names.append(name)
 
+        # TODO: should coordinates be rounded?
         data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]
@@ -346,6 +348,53 @@ class BaseInterpreter(Evaluator):
             for name, init_expr, update_expr in e.while_bindings:
                 new_binding = (name, self.evaluate(update_expr, ctx))
                 ctx = ctx.let(bindings=[new_binding])
+        return self.evaluate(e.body, ctx)
+
+    def _eval_for(self, e, ctx):
+        shape = []
+        names = []
+        for name, expr in e.dim_bindings:
+            size = self.evaluate(expr, ctx)
+            if not size.is_integer():
+                raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            shape.append(int(size))
+            names.append(name)
+
+        bindings = [(name, self.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+        ctx = ctx.let(bindings=bindings)
+
+        for idx in range(ndarray.shape_size(shape)):
+            # TODO: should coordinates be rounded?
+            print(ndarray.position(shape, idx))
+            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+                                    for name, i in zip(names, ndarray.position(shape, idx))])
+            bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
+            ctx = ctx.let(bindings=bindings)
+
+        return self.evaluate(e.body, ctx)
+
+    def _eval_forstar(self, e, ctx):
+        shape = []
+        names = []
+        for name, expr in e.dim_bindings:
+            size = self.evaluate(expr, ctx)
+            if not size.is_integer():
+                raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            shape.append(int(size))
+            names.append(name)
+
+        for name, init_expr, update_expr in e.while_bindings:
+            new_binding = (name, self.evaluate(init_expr, ctx))
+            ctx = ctx.let(bindings=[new_binding])
+
+        for idx in range(ndarray.shape_size(shape)):
+            # TODO: should coordinates be rounded?
+            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+                                    for name, i in zip(names, ndarray.position(shape, idx))])
+            for name, init_expr, update_expr in e.while_bindings:
+                new_binding = (name, self.evaluate(update_expr, ctx))
+                ctx = ctx.let(bindings=[new_binding])
+
         return self.evaluate(e.body, ctx)
 
     def _eval_unknown(self, e, ctx):
