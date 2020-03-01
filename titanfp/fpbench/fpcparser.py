@@ -313,15 +313,23 @@ class Visitor(FPCoreVisitor):
     def visitExprTensor(self, ctx) -> ast.Expr:
         return ast.Tensor(
             [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            
             ctx.body.accept(self),
         )
 
     def visitExprTensorStar(self, ctx) -> ast.Expr:
-        print(repr(ctx.name))
-        print(repr(ctx.while_xs))
-        # TODO
-        return ast.Tensor(
+        if ctx.name is None:
+            ident = ''
+        else:
+            ident = ctx.name.text
+        return ast.TensorStar(
+            ident,
             [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            [*zip(
+                (x.text for x in ctx.while_xs),
+                (e0.accept(self) for e0 in ctx.while_e0s),
+                (e.accept(self) for e in ctx.while_es),
+            )],
             ctx.body.accept(self),
         )
 

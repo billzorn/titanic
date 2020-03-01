@@ -317,7 +317,7 @@ class TensorStar(Tensor):
             return False
         return (self.ident == other.ident
                 and self.dim_bindings == other.dim_bindings
-                and self.while_bindings = other.while_bindings
+                and self.while_bindings == other.while_bindings
                 and self.body == other.body)
 
 
@@ -424,7 +424,7 @@ class For(Expr):
             return False
         return self.dim_bindings == other.dim_bindings and self.while_bindings == other.while_bindings and self.body == other.body
 
-class ForStar(Expr):
+class ForStar(For):
     name: str = 'for*'
 
     def __eq__(self, other):
