@@ -84,6 +84,7 @@ class Evaluator(object):
         ast.Ctx: '_eval_ctx',
         # Tensors
         ast.Tensor: '_eval_tensor',
+        ast.TensorStar: '_eval_tensorstar',
         # control flow
         ast.If: '_eval_if',
         ast.Let: '_eval_let',
@@ -288,7 +289,11 @@ class BaseInterpreter(Evaluator):
             if not idx.is_integer():
                 raise EvaluatorError('computed index {} must be an integer'.format(repr(idx)))
             pos.append(int(idx.m * (2**idx.exp)))
-        return nd[pos]
+        result = nd[pos]
+        if result is None:
+            raise EvaluatorError('index {} has not been computed'.format(repr(pos)))
+        else:
+            return result
 
     def _eval_tensor(self, e, ctx):
         shape = []
@@ -305,6 +310,38 @@ class BaseInterpreter(Evaluator):
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]
         return ndarray.NDArray(shape=shape, data=data)
+
+    def _eval_tensorstar(self, e, ctx):
+        shape = []
+        names = []
+        for name, expr in e.dim_bindings:
+            size = self.evaluate(expr, ctx)
+            if not size.is_integer():
+                raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            shape.append(int(size))
+            names.append(name)
+
+        nd = ndarray.NDArray(shape=shape)
+
+        if e.ident:
+            ctx.let(bindings=[(e.ident, nd)])
+
+        for name, init_expr, update_expr in e.while_bindings:
+            new_binding = (name, self.evaluate(init_expr, ctx))
+            ctx = ctx.let(bindings=[new_binding])
+
+        for idx in range(ndarray.shape_size(shape)):
+            # TODO: should coordinates be rounded?
+            pos = ndarray.position(shape, idx)
+            print(pos)
+            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+                                    for name, i in zip(names, pos)])
+            for name, init_expr, update_expr in e.while_bindings:
+                new_binding = (name, self.evaluate(update_expr, ctx))
+                ctx = ctx.let(bindings=[new_binding])
+            nd[pos] = self.evaluate(e.body, ctx)
+
+        return nd
 
 
     # control flow
@@ -365,7 +402,6 @@ class BaseInterpreter(Evaluator):
 
         for idx in range(ndarray.shape_size(shape)):
             # TODO: should coordinates be rounded?
-            print(ndarray.position(shape, idx))
             ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                     for name, i in zip(names, ndarray.position(shape, idx))])
             bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
