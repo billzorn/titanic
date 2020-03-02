@@ -54,6 +54,9 @@ class Evaluator(object):
     def _eval_while(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
+    def _eval_for(self, e, ctx):
+        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
+
     def _eval_op(self, e, ctx):
         raise EvaluatorUnimplementedError('op {}: unimplemented'.format(str(e)))
 
@@ -324,7 +327,7 @@ class BaseInterpreter(Evaluator):
         nd = ndarray.NDArray(shape=shape)
 
         if e.ident:
-            ctx.let(bindings=[(e.ident, nd)])
+            ctx = ctx.let(bindings=[(e.ident, nd)])
 
         for name, init_expr, update_expr in e.while_bindings:
             new_binding = (name, self.evaluate(init_expr, ctx))
@@ -333,7 +336,6 @@ class BaseInterpreter(Evaluator):
         for idx in range(ndarray.shape_size(shape)):
             # TODO: should coordinates be rounded?
             pos = ndarray.position(shape, idx)
-            print(pos)
             ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                     for name, i in zip(names, pos)])
             for name, init_expr, update_expr in e.while_bindings:

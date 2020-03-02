@@ -283,7 +283,7 @@ class TensorStar(Tensor):
     def __init__(self, ident='', dim_bindings=[], while_bindings=[], body=None) -> None:
         if body is None:
             raise ValueError('must specify a body for TensorStar')
-        self.ident: str = ''
+        self.ident: str = ident
         self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
         self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
         self.body: Expr = body

@@ -40,6 +40,7 @@ expr
     | OPEN 'for*' OPEN (OPEN xs+=SYMBOL es+=expr CLOSE)* CLOSE
                   OPEN (OPEN while_xs+=SYMBOL while_e0s+=expr while_es+=expr CLOSE)* CLOSE body=expr CLOSE # ExprForStar
     | OPEN 'data' d=datum CLOSE # ExprData
+    | OPEN '#' body=expr CLOSE # ExprSugarInt
     | OPEN op=SYMBOL (args+=expr)* CLOSE # ExprOp
     ;
 
