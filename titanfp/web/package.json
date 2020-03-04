@@ -18,6 +18,7 @@
         "copy-webpack-plugin": "^5.1.1"
     },
     "scripts": {
-        "build": "webpack"
+        "build": "webpack",
+        "build-debug": "webpack --mode=development"
     }
 }
