@@ -152,9 +152,16 @@ function register_result() {
     const result_id_name = 'result-' + result_id;
     result_id += 1;
 
-    $('#output').prepend(
+    const output_div = $('#output');
+    
+    output_div.append(
         '<div id="' + result_id_name + '" class="output-item"></div>'
     );
+
+    // // this refuses to scroll past the top of the new element
+    // // ... because the div is 0px tall, until the content is updated
+    // const result_element = document.getElementById(result_id_name);
+    // result_element.scrollIntoView({block: "end"});
 
     return result_id_name;
 }
@@ -199,6 +206,9 @@ function eval_result(result, id_name) {
     }
 
     $('#' + id_name).html(body);
+
+    const output_div = $('#output');
+    output_div.scrollTop(output_div.prop("scrollHeight"));
 }
 
 function submit_eval() {
@@ -206,6 +216,9 @@ function submit_eval() {
     const id_name = register_result();
 
     $('#' + id_name).html('<div class="output-row><p class="code">Evaluating...</p></div>');
+
+    const output_div = $('#output');
+    output_div.scrollTop(output_div.prop("scrollHeight"));
 
     const img_input = $('#user_upload')[0];
     if (img_input.files && img_input.files[0]) {
