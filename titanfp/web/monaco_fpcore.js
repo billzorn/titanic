@@ -4,11 +4,19 @@ export const fpcore = {
 
     defaultToken: 'invalid',
 
+    annotations: [
+        '!', '#',
+    ],
+
     keywords: [
-        'FPCore', 'if', 'let', 'let*', 'while', 'while*', '!', 'digits',
+        'FPCore', 'if', 'let', 'let*',
+        'tensor', 'tensor*', 'for', 'for*', 'while', 'while*',
+        'digits',
     ],
 
     operators: [
+        // tensor
+        'dim', 'size', 'ref',
         // mathematical
         '+', '-', '*', '/', 'fabs',
         'fma', 'exp', 'exp2', 'expm1', 'log',
@@ -58,7 +66,8 @@ export const fpcore = {
             [/[()\[\]]/, '@brackets'],
 
             // symbols, including keywords and operators
-            [/@symbol/, {cases: {'@keywords': 'keyword',
+            [/@symbol/, {cases: {'@annotations': 'string',
+                                 '@keywords': 'keyword',
                                  '@operators': 'keyword.operator',
                                  '@constants': 'number.constant',
                                  ':.+': 'string.property',
