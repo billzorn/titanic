@@ -275,7 +275,7 @@ def run_eval(data):
 
         try:
             arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
-            named_args = [[str(k), str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
+            named_args = [[str(k), 'data' if shape else str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
 
             # yuck
             if state.img is not None:
