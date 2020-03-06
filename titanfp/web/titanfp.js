@@ -175,11 +175,11 @@ function eval_result(result, id_name) {
             body += '<p>' + k + ' = ' + v + '</p>';
         }
         if (result.pre_val == 'False') {
-            body += '<p class="text">(precondition not satisfied)</p>'
+            body += '<p class="text">(precondition not satisfied)</p>';
         }
         body += '</div>';
-        body += '<div class="output-row">'
-        body += '<pre class="output-pre code">' + result.e_val + '</pre>'
+        body += '<div class="output-row">';
+        body += '<pre class="output-pre code">' + result.e_val + '</pre>';
         body += '</div>';
         if ('mat_2d' in result) {
             body += '<table class="output-row" style="border-spacing: 10px 0;">';
@@ -197,6 +197,9 @@ function eval_result(result, id_name) {
             body += '<img src="data:image/png;base64, ' + result.result_img + '" alt="computed image" />';
             body += '</div>';
         }
+        body += '<div class="output-row">';
+        body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated, ' + result.bits_count + ' total bits computed)</pre>';
+        body += '</div>';
     } else {
         if (result.message) {
             body = '<pre class="output-pre code">' + result.message + '</pre>';

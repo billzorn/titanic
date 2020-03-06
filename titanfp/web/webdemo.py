@@ -281,6 +281,8 @@ def run_eval(data):
             if state.img is not None:
                 named_args[0][1] = 'image'
 
+            # reset the interpreter to avoid counting evals from arguments
+            backend_interpreter = backend()
             e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
@@ -291,12 +293,14 @@ def run_eval(data):
             pre_val = backend_interpreter.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
-
+            
         result = {
             'success': 1,
             'args': named_args,
             'e_val': str(e_val),
             'pre_val': str(pre_val),
+            'eval_count': str(backend_interpreter.evals),
+            'bits_count': str(backend_interpreter.bits_computed),
         }
 
         if state.img is not None:

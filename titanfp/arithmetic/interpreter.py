@@ -169,10 +169,12 @@ class Evaluator(object):
 
     _evaluator_cache = utils.ImmutableDict()
 
-    # this is the sort of things that should be tracked in an instance
-    # rather than implemented directly in the class...
-    # evals = 0
 
+    def __init__(self):
+        self.evals = 0
+        self.bits_computed = 0
+
+    
     def evaluate(self, e, ctx):
         try:
             method = self._evaluator_cache[type(e)]
@@ -193,21 +195,22 @@ class Evaluator(object):
                 raise EvaluatorError('Evaluator: unable to dispatch for expression {} with mro {}'
                                      .format(repr(e), repr(ecls.__mro__)))
 
-        # self.evals += 1
-        # if self.evals & 0xfffff == 0xfffff:
-        #     print(',', end='', flush=True)
+        self.evals += 1
+        if self.evals & 0xfffff == 0xfffff:
+            print(',', end='', flush=True)
 
 
-        # result = method(e, ctx)
+        result = method(e, ctx)
         # print(repr(method))
         # print(str(e))
         # print(str(ctx.bindings))
         # print(' ->', str(result))
         # print()
 
-        # return result
-
-        return method(e, ctx)
+        if hasattr(result, 'ctx'):
+            self.bits_computed += result.ctx.nbits
+        
+        return result
 
 
 class BaseInterpreter(Evaluator):
@@ -224,6 +227,7 @@ class BaseInterpreter(Evaluator):
     }
 
     def __init__(self):
+        super().__init__()
         self.cores = {}
 
     def arg_to_digital(x, ctx):
