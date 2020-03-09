@@ -4,6 +4,7 @@
 from ..titanic import digital
 from ..titanic import gmpmath
 from ..fpbench import fpcast as ast
+from ..titanic.ops import OP
 
 from . import evalctx
 from . import mpnum
