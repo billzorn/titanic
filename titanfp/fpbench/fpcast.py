@@ -4,7 +4,7 @@ import typing
 
 
 def sexp_to_string(e):
-    if isinstance(e, list):
+    if isinstance(e, list) or isinstance(e, tuple):
         return '(' + ' '.join((sexp_to_string(x) for x in e)) + ')'
     else:
         return str(e)
@@ -44,9 +44,13 @@ class Data(Expr):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
     def __eq__(self, other):
-        if not isinstance(other, Data):
-            return False
-        return self.value == other.value
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
 
     def is_number(self):
         return isinstance(self.value, Val) and not isinstance(self.value, Constant)
@@ -107,11 +111,6 @@ class NaryExpr(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
 
-    def __eq__(self, other):
-        if not isinstance(other, NaryExpr):
-            return False
-        return self.name == other.name and self.children == other.children
-
 class UnknownOperator(NaryExpr):
     name: str = 'UnknownOperator'
 
@@ -158,9 +157,13 @@ class ValueExpr(Expr):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
     def __eq__(self, other):
-        if not isinstance(other, ValueExpr):
-            return False
-        return self.name == other.name and self.value == other.value
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
 
 class Var(ValueExpr):
     name: str = 'Var'
@@ -187,11 +190,6 @@ class Integer(Val):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.i) + ')'
 
-    def __eq__(self, other):
-        if not isinstance(other, Integer):
-            return False
-        return self.i == other.i
-
 class Rational(Val):
     name: str = 'Rational'
 
@@ -203,33 +201,52 @@ class Rational(Val):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.p) + ', ' + repr(self.q) + ')'
 
-    def __eq__(self, other):
-        if not isinstance(other, Rational):
-            return False
-        return self.p == other.p and self.q == other.q
-
 class Digits(Val):
     name: str = 'digits'
 
     def __init__(self, m: int, e: int, b: int) -> None:
-        super().__init__(str(m) + ' ' + str(e) + ' ' + str(b))
+        super().__init__('(' + self.name + ' ' + str(m) + ' ' + str(e) + ' ' + str(b) + ')')
         self.m: int = m
         self.e: int = e
         self.b: int = b
 
-    def __str__(self):
-        return '(' + self.name + ' ' + self.m + ' ' + self.e + ' ' + self.b + ')'
-
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
 
-    def __eq__(self, other):
-        if not isinstance(other, Digits):
-            return False
-        return self.m == other.m and self.e == other.e and self.b == other.b
-
 class String(ValueExpr):
     name: str = 'String'
+
+class TensorLit(ValueExpr):
+    name: str = 'data'
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def __str__(self):
+        return '(' + self.name + sexp_to_string(self.value) + ')'
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.value) + ')'
+
+    def __eq__(self, other):
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def is_list(self):
+        return isinstance(self.value, tuple)
+
+    def as_list(self, strict=False):
+        if isinstance(self.value, tuple):
+            return self.value
+        elif strict:
+            raise TypeError('data is not a list')
+        else:
+            return None
 
 
 # rounding contexts
@@ -249,15 +266,87 @@ class Ctx(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
 
-    def __eq__(self, other):
-        if not isinstance(other, Ctx):
-            return False
-        return self.props == other.props and self.body == other.body
 
+# control flow and tensors
 
-# tensors
+class ControlExpr(Expr):
+    name: str = 'ControlExpr'
 
-class Tensor(Expr):
+class If(ControlExpr):
+    name: str = 'if'
+
+    def __init__(self, cond: Expr, then_body: Expr, else_body: Expr) -> None:
+        self.cond: Expr = cond
+        self.then_body: Expr = then_body
+        self.else_body: Expr = else_body
+
+    def __str__(self):
+        return '(' + self.name + ' ' + str(self.cond) + ' ' + str(self.then_body) + ' ' + str(self.else_body) + ')'
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
+
+class Let(ControlExpr):
+    name: str = 'let'
+
+    def __init__(self, let_bindings: typing.List[typing.Tuple[str, Expr]], body: Expr) -> None:
+        self.let_bindings: typing.List[typing.Tuple[str, Expr]] = let_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        return ('(' + self.name
+                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.let_bindings)) + ') '
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.let_bindings) + ', ' + repr(self.body) + ')'
+
+class LetStar(Let):
+    name: str = 'let*'
+
+class While(ControlExpr):
+    name: str = 'while'
+
+    def __init__(self, cond: Expr, while_bindings: typing.List[typing.Tuple[str, Expr, Expr]], body: Expr) -> None:
+        self.cond: Expr = cond
+        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        return ('(' + self.name + ' ' + str(self.cond)
+                + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+class WhileStar(While):
+    name: str = 'while*'
+
+class For(ControlExpr):
+    name: str = 'for'
+
+    def __init__(self,
+                 dim_bindings: typing.List[typing.Tuple[str, Expr]],
+                 while_bindings: typing.List[typing.Tuple[str, Expr, Expr]],
+                 body: Expr) -> None:
+        self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
+        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
+        self.body: Expr = body
+
+    def __str__(self):
+        return ('(' + self.name
+                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ')'
+                + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
+                + str(self.body) + ')')
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+class ForStar(For):
+    name: str = 'for*'
+
+class Tensor(ControlExpr):
     name: str = 'tensor'
 
     def __init__(self, dim_bindings: typing.List[typing.Tuple[str, Expr]], body: Expr) -> None:
@@ -271,11 +360,6 @@ class Tensor(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.body) + ')'
-
-    def __eq__(self, other):
-        if not isinstance(other, Tensor):
-            return False
-        return self.dim_bindings == other.dim_bindings and self.body == other.body
 
 class TensorStar(Tensor):
     name: str = 'tensor*'
@@ -298,7 +382,7 @@ class TensorStar(Tensor):
             while_str = ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ')'
         else:
             while_str = ''
-            
+
         return ('(' + self.name
                 + ident_str
                 + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ')'
@@ -311,126 +395,6 @@ class TensorStar(Tensor):
                 + repr(self.dim_bindings) + ', '
                 + repr(self.while_bindings) + ', '
                 + repr(self.body) + ')')
-
-    def __eq__(self, other):
-        if not isinstance(other, ForStar):
-            return False
-        return (self.ident == other.ident
-                and self.dim_bindings == other.dim_bindings
-                and self.while_bindings == other.while_bindings
-                and self.body == other.body)
-
-
-# control flow
-
-class If(Expr):
-    name: str = 'if'
-
-    def __init__(self, cond: Expr, then_body: Expr, else_body: Expr) -> None:
-        self.cond: Expr = cond
-        self.then_body: Expr = then_body
-        self.else_body: Expr = else_body
-
-    def __str__(self):
-        return '(' + self.name + ' ' + str(self.cond) + ' ' + str(self.then_body) + ' ' + str(self.else_body) + ')'
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
-
-    def __eq__(self, other):
-        if not isinstance(other, If):
-            return False
-        return self.cond == other.cond and self.else_body == other.else_body and self.then_body == other.then_body
-
-class Let(Expr):
-    name: str = 'let'
-
-    def __init__(self, let_bindings: typing.List[typing.Tuple[str, Expr]], body: Expr) -> None:
-        self.let_bindings: typing.List[typing.Tuple[str, Expr]] = let_bindings
-        self.body: Expr = body
-
-    def __str__(self):
-        return ('(' + self.name
-                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.let_bindings)) + ') '
-                + str(self.body) + ')')
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.let_bindings) + ', ' + repr(self.body) + ')'
-
-    def __eq__(self, other):
-        if not isinstance(other, Let):
-            return False
-        return self.let_bindings == other.let_bindings and self.body == other.body
-
-class LetStar(Let):
-    name: str = 'let*'
-
-    def __eq__(self, other):
-        if not isinstance(other, LetStar):
-            return False
-        return self.let_bindings == other.let_bindings and self.body == other.body
-
-class While(Expr):
-    name: str = 'while'
-
-    def __init__(self, cond: Expr, while_bindings: typing.List[typing.Tuple[str, Expr, Expr]], body: Expr) -> None:
-        self.cond: Expr = cond
-        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
-        self.body: Expr = body
-
-    def __str__(self):
-        return ('(' + self.name + ' ' + str(self.cond)
-                + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
-                + str(self.body) + ')')
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
-
-    def __eq__(self, other):
-        if not isinstance(other, While):
-            return False
-        return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
-
-class WhileStar(While):
-    name: str = 'while*'
-
-    def __eq__(self, other):
-        if not isinstance(other, WhileStar):
-            return False
-        return self.cond == other.cond and self.while_bindings == other.while_bindings and self.body == other.body
-
-class For(Expr):
-    name: str = 'for'
-
-    def __init__(self,
-                 dim_bindings: typing.List[typing.Tuple[str, Expr]],
-                 while_bindings: typing.List[typing.Tuple[str, Expr, Expr]],
-                 body: Expr) -> None:
-        self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
-        self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
-        self.body: Expr = body
-
-    def __str__(self):
-        return ('(' + self.name
-                + ' (' + ' '.join(('[' + x + ' ' + str(e) + ']' for x, e in self.dim_bindings)) + ')'
-                + ' (' + ' '.join(('[' + x + ' ' + str(e0) + ' ' + str(e) + ']' for x, e0, e in self.while_bindings)) + ') '
-                + str(self.body) + ')')
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
-
-    def __eq__(self, other):
-        if not isinstance(other, For):
-            return False
-        return self.dim_bindings == other.dim_bindings and self.while_bindings == other.while_bindings and self.body == other.body
-
-class ForStar(For):
-    name: str = 'for*'
-
-    def __eq__(self, other):
-        if not isinstance(other, ForStar):
-            return False
-        return self.dim_bindings == other.dim_bindings and self.while_bindings == other.while_bindings and self.body == other.body    
 
 
 # cast is the identity function, used for repeated rounding

@@ -397,7 +397,7 @@ class Visitor(FPCoreVisitor):
         )
 
     def visitExprData(self, ctx) -> ast.Expr:
-        return ast.Data(ctx.d.accept(self))
+        return ast.TensorLit(ctx.d.accept(self))
 
     def visitExprSugarInt(self, ctx) -> ast.Expr:
         # TODO unify these

@@ -29,6 +29,9 @@ class Evaluator(object):
     def _eval_expr(self, e, ctx):
         raise EvaluatorUnimplementedError('expr {}: unimplemented'.format(str(e)))
 
+    def _eval_data(self, e, ctx):
+        raise EvaluatorUnimplementedError('data {}: unimplemented'.format(str(e)))
+
     def _eval_value(self, e, ctx):
         raise EvaluatorUnimplementedError('value {}: unimplemented'.format(str(e)))
 
@@ -43,19 +46,7 @@ class Evaluator(object):
         # not be changed.
         return self.evaluate(e.body, ctx.let(props=e.props))
 
-    def _eval_tensor(self, e, ctx):
-        raise EvaluatorUnimplementedError('tensor {}: unimplemented'.format(str(e)))
-
-    def _eval_if(self, e, ctx):
-        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
-
-    def _eval_let(self, e, ctx):
-        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
-
-    def _eval_while(self, e, ctx):
-        raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
-
-    def _eval_for(self, e, ctx):
+    def _eval_control(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
 
     def _eval_op(self, e, ctx):
@@ -67,10 +58,10 @@ class Evaluator(object):
     _evaluator_dispatch = {
         # catch-all for otherwise unimplemented AST nodes
         ast.Expr: '_eval_expr',
+        # structured data, which usually will only occur in properties
+        ast.Data: '_eval_data',
         # the parent value class represents interned data that should be returned exactly
         ast.ValueExpr: '_eval_value',
-        # structured data, which represents a tensor literal (unless it's malformed)
-        ast.Data: '_eval_data',
         # variables are their own thing
         ast.Var: '_eval_var',
         # catch-all for all constant-valued expressions
@@ -84,12 +75,12 @@ class Evaluator(object):
         ast.Digits: '_eval_digits',
         # strings are special ValueExprs (not Vals) that won't normally be evaluated
         ast.String: '_eval_string',
+        # tensor literals are like data, but occur as expressions
+        ast.TensorLit: '_eval_tensorlit',
         # rounding contexts
         ast.Ctx: '_eval_ctx',
-        # Tensors
-        ast.Tensor: '_eval_tensor',
-        ast.TensorStar: '_eval_tensorstar',
-        # control flow
+        # control flow and tensors
+        ast.ControlExpr: '_eval_control',
         ast.If: '_eval_if',
         ast.Let: '_eval_let',
         ast.LetStar: '_eval_letstar',
@@ -97,9 +88,11 @@ class Evaluator(object):
         ast.WhileStar: '_eval_whilestar',
         ast.For: '_eval_for',
         ast.ForStar: '_eval_forstar',
+        ast.Tensor: '_eval_tensor',
+        ast.TensorStar: '_eval_tensorstar',
         # catch-all for operations with some number of arguments
         ast.NaryExpr: '_eval_op',
-        # catch-all for operations not recognized by the compiler
+        # unknown operations are treated as function calls
         ast.UnknownOperator: '_eval_unknown',
         # specific operations
         ast.Cast: '_eval_cast',
@@ -176,7 +169,7 @@ class Evaluator(object):
         self.bits_computed = 0
         self.eval_map = {}
 
-    
+
     def evaluate(self, e, ctx):
         try:
             method = self._evaluator_cache[type(e)]
@@ -264,7 +257,7 @@ class BaseInterpreter(Evaluator):
         except KeyError as exn:
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
-    def _eval_data(self, e, ctx):
+    def _eval_tensorlit(self, e, ctx):
         try:
             data, shape = ndarray.flatten_shaped_list(e.as_list())
             rounded_data = [self.evaluate(d, ctx) for d in data]
