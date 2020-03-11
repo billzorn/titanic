@@ -173,6 +173,7 @@ class Evaluator(object):
     def __init__(self):
         self.evals = 0
         self.bits_computed = 0
+        self.eval_map = {}
 
     
     def evaluate(self, e, ctx):
@@ -209,7 +210,12 @@ class Evaluator(object):
 
         if hasattr(result, 'ctx'):
             self.bits_computed += result.ctx.nbits
-        
+
+        if id(e) in self.eval_map:
+            self.eval_map[id(e)] += 1
+        else:
+            self.eval_map[id(e)] = 1
+
         return result
 
 

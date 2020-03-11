@@ -293,6 +293,9 @@ def run_eval(data):
             pre_val = backend_interpreter.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
+
+        for k in sorted(backend_interpreter.eval_map):
+            print('   ', str(k), str(backend_interpreter.eval_map[k]))
             
         result = {
             'success': 1,
