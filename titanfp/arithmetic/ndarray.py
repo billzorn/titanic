@@ -4,7 +4,7 @@ import random
 
 
 def flatten_shaped_list(a):
-    if isinstance(a, list):
+    if isinstance(a, list) or isinstance(a, tuple):
         size = len(a)
         lit = []
         shape = False

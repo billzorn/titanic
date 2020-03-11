@@ -82,10 +82,10 @@ class Data(Expr):
             return None
 
     def is_list(self):
-        return isinstance(self.value, list)
+        return isinstance(self.value, tuple)
 
     def as_list(self, strict=False):
-        if isinstance(self.value, list):
+        if isinstance(self.value, tuple):
             return self.value
         elif strict:
             raise TypeError('data is not a list')

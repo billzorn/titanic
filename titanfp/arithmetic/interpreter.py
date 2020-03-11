@@ -2,6 +2,7 @@
 
 
 import itertools
+import traceback
 
 from ..titanic import utils, digital
 from ..fpbench import fpcast as ast

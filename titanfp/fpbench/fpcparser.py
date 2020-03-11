@@ -451,8 +451,8 @@ class Visitor(FPCoreVisitor):
             self._str_literals[k] = v
             return v
 
-    def visitDatumList(self, ctx) -> typing.List[ast.Expr]:
-        return [d.accept(self) for d in ctx.data]
+    def visitDatumList(self, ctx) -> typing.Tuple[ast.Expr]:
+        return tuple(d.accept(self) for d in ctx.data)
 
 
 class LogErrorListener(antlr4.error.ErrorListener.ErrorListener):
