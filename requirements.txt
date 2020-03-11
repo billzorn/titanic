@@ -14,3 +14,6 @@ antlr4-python3-runtime ~= 4.7.2
 # softfloat libs
 sfpy
 softposit
+
+# webdemo
+Pillow
