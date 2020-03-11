@@ -168,6 +168,7 @@ class Evaluator(object):
         self.evals = 0
         self.bits_computed = 0
         self.eval_map = {}
+        self.max_evals = 0
 
 
     def evaluate(self, e, ctx):
@@ -193,7 +194,9 @@ class Evaluator(object):
         self.evals += 1
         if self.evals & 0xfffff == 0xfffff:
             print(',', end='', flush=True)
-
+        if self.max_evals and self.evals > self.max_evals:
+            raise EvaluatorError('Evaluation limit {} reached on expression {}'
+                                 .format(str(self.max_evals), str(e)))
 
         result = method(e, ctx)
         # print(repr(method))

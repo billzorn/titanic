@@ -232,6 +232,7 @@ def run_eval(data):
         if state.backend in webdemo_eval_backends:
             backend = webdemo_eval_backends[state.backend]
             backend_interpreter = backend()
+            backend_interpreter.max_evals = 1000000
         else:
             raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
         if state.cores is None or len(state.cores) < 1:
@@ -283,6 +284,7 @@ def run_eval(data):
 
             # reset the interpreter to avoid counting evals from arguments
             backend_interpreter = backend()
+            backend_interpreter.max_evals = 5000000
             e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
@@ -296,7 +298,7 @@ def run_eval(data):
 
         for k in sorted(backend_interpreter.eval_map):
             print('   ', str(k), str(backend_interpreter.eval_map[k]))
-            
+
         result = {
             'success': 1,
             'args': named_args,
