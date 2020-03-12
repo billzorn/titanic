@@ -385,6 +385,7 @@ fixed_snbits.update((k, (0, 8)) for k in int8_synonyms)
 fixed_snbits.update((k, (0, 16)) for k in int16_synonyms)
 fixed_snbits.update((k, (0, 32)) for k in int32_synonyms)
 fixed_snbits.update((k, (0, 64)) for k in int64_synonyms)
+fixed_snbits.update((k, (0, 64)) for k in ['integer'])
 
 fixed_of = {}
 fixed_of.update((k, OF.INFINITY) for k in infinity_synonyms)

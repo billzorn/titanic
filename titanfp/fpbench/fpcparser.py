@@ -408,7 +408,7 @@ class Visitor(FPCoreVisitor):
 
     def visitExprSugarInt(self, ctx) -> ast.Expr:
         return ast.Ctx(
-            [('precision', ast.Data(self._intern_symbol('integer')))],
+            {'precision': ast.Data(self._intern_symbol('integer'))},
             ctx.body.accept(self),
         )
 
