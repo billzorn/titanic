@@ -19,6 +19,12 @@ class EvaluatorUnboundError(EvaluatorError, LookupError):
     """Unbound variable encountered during evaluation."""
 
 
+def bitcost(r):
+    if hasattr(r, 'ctx'):
+        return r.ctx.nbits
+    else:
+        return 0
+
 class Evaluator(object):
     """FPCore evaluator.
     Dispatches on type of expressions in the AST.
@@ -166,10 +172,13 @@ class Evaluator(object):
 
     def __init__(self):
         self.evals = 0
-        self.bits_computed = 0
-        self.eval_map = {}
         self.max_evals = 0
-
+        self.bits_constant = 0
+        self.bits_requested = 0 # not yet
+        self.bits_computed = 0
+        self.bits_referenced = 0
+        self.bits_quantized = 0 # not yet
+        self.eval_map = {}
 
     def evaluate(self, e, ctx):
         try:
@@ -199,19 +208,27 @@ class Evaluator(object):
                                  .format(str(self.max_evals), str(e)))
 
         result = method(e, ctx)
-        # print(repr(method))
-        # print(str(e))
-        # print(str(ctx.bindings))
-        # print(' ->', str(result))
-        # print()
 
-        if hasattr(result, 'ctx'):
-            self.bits_computed += result.ctx.nbits
-
-        if id(e) in self.eval_map:
-            self.eval_map[id(e)] += 1
+        if isinstance(e, ast.NaryExpr):
+            if isinstance(e, ast.Dim) or isinstance(e, ast.Size):
+                pass
+            elif isinstance(e, ast.Ref):
+                self.bits_referenced += bitcost(result)
+            elif isinstance(e, ast.Cast):
+                pass # can't look at input
+            else:
+                self.bits_computed += bitcost(result)
+        elif isinstance(e, ast.ValueExpr):
+            self.bits_constant += bitcost(result)
+        elif isinstance(e, ast.ControlExpr):
+            pass
         else:
-            self.eval_map[id(e)] = 1
+            pass
+
+        if e in self.eval_map:
+            self.eval_map[e] += 1
+        else:
+            self.eval_map[e] = 1
 
         return result
 

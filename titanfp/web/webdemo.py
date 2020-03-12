@@ -296,7 +296,7 @@ def run_eval(data):
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
 
-        for k in sorted(backend_interpreter.eval_map):
+        for k in backend_interpreter.eval_map:
             print('   ', str(k), str(backend_interpreter.eval_map[k]))
 
         result = {
