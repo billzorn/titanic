@@ -31,22 +31,26 @@ def _neg_or_sub(a, b=None):
 reserved_constructs = {
     # reserved
     'FPCore' : None,
-    # annotations
+    # annotations and special syntax
     '!' : None,
+    '#' : None,
     'cast' : ast.Cast,
-    # tensor operations
-    'tensor' : None,
-    'dim' : ast.Dim,
-    'size' : ast.Size,
-    'ref' : ast.Ref,
+    'digits' : None,
     # control flow (these asts are assembled directly in the visitor)
     'if' : None,
     'let' : None,
     'let*' : None,
     'while' : None,
     'while*' : None,
-    'digits' : None,
+    'for' : None,
+    'for*' : None,
+    'tensor' : None,
+    'tensor*' : None,
 
+    # tensor operations
+    'dim' : ast.Dim,
+    'size' : ast.Size,
+    'ref' : ast.Ref,
     # IEEE 754 required arithmetic (negation is a special case of subtraction)
     '+' : ast.Add,
     '-' : _neg_or_sub,
@@ -164,10 +168,41 @@ class Visitor(FPCoreVisitor):
         else:
             return None
 
+    def _intern_simple_number(self, k, cls):
+        if k in self._num_literals:
+            return self._num_literals[k]
+        else:
+            i = read_int(k)
+            if i is not None:
+                v = ast.Integer(i)
+            else:
+                v = cls(k)
+            self._num_literals[k] = v
+            return v
+
+    def _intern_symbol(self, k):
+        if k in self._sym_literals:
+            return self._sym_literals[k]
+        else:
+            if k in reserved_constants:
+                v = reserved_constants[k]
+            else:
+                v = ast.Var(k)
+            self._sym_literals[k] = v
+            return v
+
+    def _intern_string(self, k):
+        if k in self._str_literals:
+            return self._str_literals[k]
+        else:
+            v = ast.String(k)
+            self._str_literals[k] = v
+            return v
+
     def __init__(self):
         super().__init__()
-        self._val_literals = {}
-        self._var_literals = {}
+        self._num_literals = {}
+        self._sym_literals = {}
         self._str_literals = {}
 
     def visitParse_fpcore(self, ctx) -> typing.List[ast.FPCore]:
@@ -240,39 +275,19 @@ class Visitor(FPCoreVisitor):
         return ctx.name.text, self._parse_props(ctx.props), self._parse_shape(ctx.shape)
 
     def visitNumberDec(self, ctx) -> ast.Expr:
-        k = ctx.n.text
-        if k in self._val_literals:
-            return self._val_literals[k]
-        else:
-            i = read_int(k)
-            if i is not None:
-                v = ast.Integer(i)
-            else:
-                v = ast.Decnum(k)
-            self._val_literals[k] = v
-            return v
+        return self._intern_simple_number(ctx.n.text, ast.Decnum)
 
     def visitNumberHex(self, ctx) -> ast.Expr:
-        k = ctx.n.text
-        if k in self._val_literals:
-            return self._val_literals[k]
-        else:
-            i = read_int(k)
-            if i is not None:
-                v = ast.Integer(i)
-            else:
-                v = ast.Hexnum(k)
-            self._val_literals[k] = v
-            return v
+        return self._intern_simple_number(ctx.n.text, ast.Hexnum)
 
     def visitNumberRational(self, ctx) -> ast.Expr:
         p, q = ctx.n.text.split('/')
         k = int(p), int(q)
-        if k in self._val_literals:
-            return self._val_literals[k]
+        if k in self._num_literals:
+            return self._num_literals[k]
         else:
             v = ast.Rational(*k)
-            self._val_literals[k] = v
+            self._num_literals[k] = v
             return v
 
     def visitNumberDigits(self, ctx) -> ast.Expr:
@@ -281,28 +296,20 @@ class Visitor(FPCoreVisitor):
         except ValueError:
             raise FPCoreParserError('digits: m, e, b must be integers, got {}, {}, {}'
                              .format(repr(ctx.m.text), repr(ctx.e.text), repr(ctx.b.text)))
-        if k in self._val_literals:
-            return self._val_literals[k]
+        if k in self._num_literals:
+            return self._num_literals[k]
         else:
             if k[2] < 2:
                 raise FPCoreParserError('digits: base must be >= 2, got {}'.format(repr(ctx.b.text)))
             v = ast.Digits(*k)
-            self._val_literals[k] = v
+            self._num_literals[k] = v
             return v
 
     def visitExprNum(self, ctx) -> ast.Expr:
         return ctx.n.accept(self)
 
     def visitExprSym(self, ctx) -> ast.Expr:
-        k = ctx.x.text
-        if k in reserved_constants:
-            return reserved_constants[k]
-        elif k in self._var_literals:
-            return self._var_literals[k]
-        else:
-            v = ast.Var(k)
-            self._var_literals[k] = v
-            return v
+        return self._intern_symbol(ctx.x.text)
 
     def visitExprCtx(self, ctx) -> ast.Expr:
         return ast.Ctx(
@@ -400,16 +407,8 @@ class Visitor(FPCoreVisitor):
         return ast.TensorLit(ctx.d.accept(self))
 
     def visitExprSugarInt(self, ctx) -> ast.Expr:
-        # TODO unify these
-        k = 'integer'
-        if k in self._var_literals:
-            v = self._var_literals[k]
-        else:
-            v = ast.Var(k)
-            self._var_literals[k] = v
-
         return ast.Ctx(
-            [('precision', ast.Data(v))],
+            [('precision', ast.Data(self._intern_symbol('integer')))],
             ctx.body.accept(self),
         )
 
@@ -432,24 +431,10 @@ class Visitor(FPCoreVisitor):
         return ctx.n.accept(self)
 
     def visitDatumSym(self, ctx) -> ast.Expr:
-        k = ctx.x.text
-        if k in reserved_constants:
-            return reserved_constants[k]
-        elif k in self._var_literals:
-            return self._var_literals[k]
-        else:
-            v = ast.Var(k)
-            self._var_literals[k] = v
-            return v
+        return self._intern_symbol(ctx.x.text)
 
     def visitDatumStr(self, ctx) -> ast.Expr:
-        k = ctx.s.text[1:-1]
-        if k in self._str_literals:
-            return self._str_literals[k]
-        else:
-            v = ast.String(k)
-            self._str_literals[k] = v
-            return v
+        return self._intern_symbol(ctx.s.text[1:-1])
 
     def visitDatumList(self, ctx) -> typing.Tuple[ast.Expr]:
         return tuple(d.accept(self) for d in ctx.data)
