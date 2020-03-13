@@ -50,7 +50,7 @@ class Evaluator(object):
     def _eval_ctx(self, e, ctx):
         # Note that let creates a new context, so the old one will
         # not be changed.
-        return self.evaluate(e.body, ctx.let(props=e.props))
+        return None, self.evaluate(e.body, ctx.let(props=e.props))
 
     def _eval_control(self, e, ctx):
         raise EvaluatorUnimplementedError('control {}: unimplemented'.format(str(e)))
@@ -207,7 +207,7 @@ class Evaluator(object):
             raise EvaluatorError('Evaluation limit {} reached on expression {}'
                                  .format(str(self.max_evals), str(e)))
 
-        result = method(e, ctx)
+        inputs, result = method(e, ctx)
 
         if isinstance(e, ast.NaryExpr):
             if isinstance(e, ast.Dim) or isinstance(e, ast.Size):
@@ -260,20 +260,20 @@ class BaseInterpreter(Evaluator):
     # values
 
     def _eval_value(self, e, ctx):
-        return e.value
+        return None, e.value
 
     def _eval_var(self, e, ctx):
         try:
-            return ctx.bindings[e.value]
+            return None, ctx.bindings[e.value]
         except KeyError as exn:
             raise EvaluatorUnboundError(exn.args[0])
 
     def _eval_val(self, e, ctx):
-        return self.arg_to_digital(e.value, ctx)
+        return None, self.arg_to_digital(e.value, ctx)
 
     def _eval_constant(self, e, ctx):
         try:
-            return self.constants[e.value]
+            return None, self.constants[e.value]
         except KeyError as exn:
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
@@ -281,7 +281,7 @@ class BaseInterpreter(Evaluator):
         try:
             data, shape = ndarray.flatten_shaped_list(e.as_list())
             rounded_data = [self.evaluate(d, ctx) for d in data]
-            return ndarray.NDArray(shape, rounded_data)
+            return None, ndarray.NDArray(shape, rounded_data)
         except Exception:
             traceback.print_exc()
             raise EvaluatorError('expecting a well-formed tensor literal, got:\n{}'.format(str(e)))
@@ -293,7 +293,7 @@ class BaseInterpreter(Evaluator):
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get its dimension'.format(repr(nd)))
         #return digital.Digital(m=len(nd.shape), exp=0)
-        return self.arg_to_digital(len(nd.shape), ctx=ctx)
+        return None, self.arg_to_digital(len(nd.shape), ctx=ctx)
 
     def _eval_size(self, e, ctx):
         nd = self.evaluate(e.children[0], ctx)
@@ -302,33 +302,37 @@ class BaseInterpreter(Evaluator):
         idx = self.evaluate(e.children[1], ctx)
         if not idx.is_integer():
             raise EvaluatorError('computed shape index {} must be an integer'.format(repr(idx)))
-        i = int(idx.m * (2**idx.exp))
+        i = int(idx)
         #return digital.Digital(m=nd.shape[i], exp=0)
-        return self.arg_to_digital(nd.shape[i], ctx=ctx)
+        return None, self.arg_to_digital(nd.shape[i], ctx=ctx)
 
     def _eval_ref(self, e, ctx):
         nd = self.evaluate(e.children[0], ctx)
         if not isinstance(nd, ndarray.NDArray):
             raise EvaluatorError('{} must be a tensor to get an element'.format(repr(nd)))
+        inputs = []
         pos = []
         for child in e.children[1:]:
             idx = self.evaluate(child, ctx)
             if not idx.is_integer():
                 raise EvaluatorError('computed index {} must be an integer'.format(repr(idx)))
-            pos.append(int(idx.m * (2**idx.exp)))
+            inputs.append(idx)
+            pos.append(int(idx))
         result = nd[pos]
         if result is None:
             raise EvaluatorError('index {} has not been computed'.format(repr(pos)))
         else:
-            return result
+            return inputs, result
 
     def _eval_tensor(self, e, ctx):
+        inputs = []
         shape = []
         names = []
         for name, expr in e.dim_bindings:
             size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            inputs.append(size)
             shape.append(int(size))
             names.append(name)
 
@@ -336,15 +340,17 @@ class BaseInterpreter(Evaluator):
         data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.shape_size(shape))]
-        return ndarray.NDArray(shape=shape, data=data)
+        return inputs, ndarray.NDArray(shape=shape, data=data)
 
     def _eval_tensorstar(self, e, ctx):
+        inputs = []
         shape = []
         names = []
         for name, expr in e.dim_bindings:
             size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            inputs.append(size)
             shape.append(int(size))
             names.append(name)
 
@@ -367,33 +373,27 @@ class BaseInterpreter(Evaluator):
                 ctx = ctx.let(bindings=[new_binding])
             nd[pos] = self.evaluate(e.body, ctx)
 
-        return nd
+        return inputs, nd
 
 
     # control flow
 
     def _eval_if(self, e, ctx):
         if self.evaluate(e.cond, ctx):
-            return self.evaluate(e.then_body, ctx)
+            result = self.evaluate(e.then_body, ctx)
         else:
-            return self.evaluate(e.else_body, ctx)
+            result = self.evaluate(e.else_body, ctx)
+        return None, result
 
     def _eval_let(self, e, ctx):
         bindings = [(name, self.evaluate(expr, ctx)) for name, expr in e.let_bindings]
-        return self.evaluate(e.body, ctx.let(bindings=bindings))
-
-    # def _eval_letstar(self, e, ctx):
-    #     bindings = []
-    #     for name, expr in e.let_bindings:
-    #         local_ctx = ctx.let(bindings=bindings)
-    #         bindings.append((name, self.evaluate(expr, local_ctx)))
-    #     return self.evaluate(e.body, ctx.let(bindings=bindings))
+        return None, self.evaluate(e.body, ctx.let(bindings=bindings))
 
     def _eval_letstar(self, e, ctx):
         for name, expr in e.let_bindings:
             new_binding = (name, self.evaluate(expr, ctx))
             ctx = ctx.let(bindings=[new_binding])
-        return self.evaluate(e.body, ctx)
+        return None, self.evaluate(e.body, ctx)
 
     def _eval_while(self, e, ctx):
         bindings = [(name, self.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
@@ -401,7 +401,7 @@ class BaseInterpreter(Evaluator):
         while self.evaluate(e.cond, ctx):
             bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
-        return self.evaluate(e.body, ctx)
+        return None, self.evaluate(e.body, ctx)
 
     def _eval_whilestar(self, e, ctx):
         for name, init_expr, update_expr in e.while_bindings:
@@ -411,15 +411,17 @@ class BaseInterpreter(Evaluator):
             for name, init_expr, update_expr in e.while_bindings:
                 new_binding = (name, self.evaluate(update_expr, ctx))
                 ctx = ctx.let(bindings=[new_binding])
-        return self.evaluate(e.body, ctx)
+        return None, self.evaluate(e.body, ctx)
 
     def _eval_for(self, e, ctx):
+        inputs = []
         shape = []
         names = []
         for name, expr in e.dim_bindings:
             size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            inputs.append(size)
             shape.append(int(size))
             names.append(name)
 
@@ -433,15 +435,17 @@ class BaseInterpreter(Evaluator):
             bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
 
-        return self.evaluate(e.body, ctx)
+        return inputs, self.evaluate(e.body, ctx)
 
     def _eval_forstar(self, e, ctx):
+        inputs = []
         shape = []
         names = []
         for name, expr in e.dim_bindings:
             size = self.evaluate(expr, ctx)
             if not size.is_integer():
                 raise EvaluatorError('dimension size {} must be an integer'.format(repr(size)))
+            inputs.append(size)
             shape.append(int(size))
             names.append(name)
 
@@ -457,7 +461,7 @@ class BaseInterpreter(Evaluator):
                 new_binding = (name, self.evaluate(update_expr, ctx))
                 ctx = ctx.let(bindings=[new_binding])
 
-        return self.evaluate(e.body, ctx)
+        return inputs, self.evaluate(e.body, ctx)
 
     def _eval_unknown(self, e, ctx):
         ident = e.name
@@ -466,10 +470,12 @@ class BaseInterpreter(Evaluator):
         else:
             raise EvaluatorError('unknown function {}'.format(e.name))
 
-        # wrap in Value, to avoid rounding the inputs again
-        args = [ast.ValueExpr(self.evaluate(child, ctx)) for child in e.children]
+        inputs = [self.evaluate(child, ctx) for child in e.children]
 
-        return self.interpret(function_core, args, ctx=ctx, override=False)
+        # wrap in Value, to avoid rounding the inputs again
+        args = [ast.ValueExpr(v) for v in inputs]
+
+        return inputs, self.interpret(function_core, args, ctx=ctx, override=False)
 
     # interpreter interface
 
@@ -549,117 +555,162 @@ class SimpleInterpreter(BaseInterpreter):
     """
 
     def _eval_cast(self, e, ctx):
-        return self.round_to_context(self.evaluate(e.children[0], ctx), ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], self.round_to_context(in0, ctx)
 
     def _eval_add(self, e, ctx):
-        return self.evaluate(e.children[0], ctx) + self.evaluate(e.children[1], ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0 + in1
 
     def _eval_sub(self, e, ctx):
-        return self.evaluate(e.children[0], ctx) - self.evaluate(e.children[1], ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0 - in1
 
     def _eval_mul(self, e, ctx):
-        return self.evaluate(e.children[0], ctx) * self.evaluate(e.children[1], ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0 * in1
 
     # Division may need to be overwritten for types that raise an exception on
     # division by 0 (such as Python floats).
 
     def _eval_div(self, e, ctx):
-        return self.evaluate(e.children[0], ctx) / self.evaluate(e.children[1], ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0 / in1
 
     def _eval_neg(self, e, ctx):
-        return -self.evaluate(e.children[0], ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], -in0
 
     def _eval_fabs(self, e, ctx):
-        return abs(self.evaluate(e.children[0], ctx))
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], abs(in0)
 
     # In the common case where nan isn't ordered, it will probably be necessary
     # to override these functions so that they do the right thing.
 
     def _eval_fmax(self, e, ctx):
-        return max(self.evaluate(e.children[0], ctx), self.evaluate(e.children[1], ctx))
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], max(in0, in1)
 
     def _eval_fmin(self, e, ctx):
-        return min(self.evaluate(e.children[0], ctx), self.evaluate(e.children[1], ctx))
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], min(in0, in1)
 
     # This ugly code is designed to cause comparison operators to short-circuit.
     # A more elegant implementation:
-    #    children = [self.evaluate(child, ctx) for child in e.children]
-    #    for x, y in zip(children, children[1:]):
+    #    inputs = [self.evaluate(child, ctx) for child in e.children]
+    #    for x, y in zip(inputs, inputs[1:]):
     #        if not x < y:
-    #            return False
-    #    return True
+    #            return inputs, False
+    #    return inputs, True
     # does not short-circuit, which is inconsistent with the behavior of
     # _eval_and and _eval_or, which use the short-circuiting all and any builtins.
 
+    # Note that comparisons report only the arguments they evaluated
+    # as their inputs, due to short-circuiting.
+    # This will be 0 (for a nullary / unary comparison) or 2+.
+    # Logical operations do not report their inputs, as they are all boolean.
+
     def _eval_lt(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) < self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 < in1
         elif len(e.children) < 2:
-            return True
+            return [], True
         else:
+            inputs = []
             a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
             for child in e.children[1:]:
                 b = self.evaluate(child, ctx)
+                inputs.append(b)
                 if not a < b:
-                    return False
+                    return inputs, False
                 a = b
-            return True
+            return inputs, True
 
     def _eval_gt(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) > self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 > in1
         elif len(e.children) < 2:
             return True
         else:
+            inputs = []
             a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
             for child in e.children[1:]:
                 b = self.evaluate(child, ctx)
+                inputs.append(b)
                 if not a > b:
-                    return False
+                    return inputs, False
                 a = b
-            return True
+            return inputs, True
 
     def _eval_leq(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) <= self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 <= in1
         elif len(e.children) < 2:
-            return True
+            return [], True
         else:
+            inputs = []
             a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
             for child in e.children[1:]:
                 b = self.evaluate(child, ctx)
+                inputs.append(b)
                 if not a <= b:
-                    return False
+                    return inputs, False
                 a = b
-            return True
+            return inputs, True
 
     def _eval_geq(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) >= self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 >= in1
         elif len(e.children) < 2:
-            return True
+            return [], True
         else:
+            inputs = []
             a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
             for child in e.children[1:]:
                 b = self.evaluate(child, ctx)
+                inputs.append(b)
                 if not a >= b:
-                    return False
+                    return inputs, False
                 a = b
-            return True
+            return inputs, True
 
     def _eval_eq(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) == self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 == in1
         elif len(e.children) < 2:
-            return True
+            return [], True
         else:
+            inputs = []
             a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
             for child in e.children[1:]:
                 b = self.evaluate(child, ctx)
+                inputs.append(b)
                 if not a == b:
-                    return False
+                    return inputs, False
                 a = b
-            return True
+            return inputs, True
 
     # This is particularly complicated, because we need to try every combination
     # to ensure that each element is distinct. To short-circuit but avoid recomputation,
@@ -669,11 +720,14 @@ class SimpleInterpreter(BaseInterpreter):
 
     def _eval_neq(self, e, ctx):
         if len(e.children) == 2:
-            return self.evaluate(e.children[0], ctx) != self.evaluate(e.children[1], ctx)
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0 != in1
         elif len(e.children) < 2:
-            return True
+            return [], True
         else:
             nchildren = len(e.children)
+            inputs = []
             cached = [False] * nchildren
             cache = [None] * nchildren
             for i1, i2 in itertools.combinations(range(nchildren), 2):
@@ -681,26 +735,28 @@ class SimpleInterpreter(BaseInterpreter):
                     a = cache[i1]
                 else:
                     a = self.evaluate(e.children[i1], ctx)
+                    inputs.append(a)
                     cache[i1] = a
                     cached[i1] = True
                 if cached[i2]:
                     b = cache[i2]
                 else:
                     b = self.evaluate(e.children[i2], ctx)
+                    inputs.append(b)
                     cache[i2] = b
                     cached[i2] = True
                 if not a != b:
-                    return False
-            return True
+                    return inputs, False
+            return inputs, True
 
     def _eval_and(self, e, ctx):
-        return all(self.evaluate(child, ctx) for child in e.children)
+        return None, all(self.evaluate(child, ctx) for child in e.children)
 
     def _eval_or(self, e, ctx):
-        return any(self.evaluate(child, ctx) for child in e.children)
+        return None, any(self.evaluate(child, ctx) for child in e.children)
 
     def _eval_not(self, e, ctx):
-        return not self.evaluate(e.children[0], ctx)
+        return None, not self.evaluate(e.children[0], ctx)
 
 
 class StandardInterpreter(SimpleInterpreter):
@@ -711,154 +767,220 @@ class StandardInterpreter(SimpleInterpreter):
     """
 
     def _eval_add(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).add(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.add(in1, ctx=ctx)
 
     def _eval_sub(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).sub(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.sub(in1, ctx=ctx)
 
     def _eval_mul(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).mul(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.mul(in1, ctx=ctx)
 
     def _eval_div(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).div(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.div(in1, ctx=ctx)
 
     def _eval_sqrt(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).sqrt(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.sqrt(ctx=ctx)
 
     def _eval_fma(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fma(self.evaluate(e.children[1], ctx), self.evaluate(e.children[2], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        in2 = self.evaluate(e.children[2], ctx)
+        return [in0, in1, in2], in0.fma(in1, in2, ctx=ctx)
 
     def _eval_neg(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).neg(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.neg(ctx=ctx)
 
     def _eval_copysign(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).copysign(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.copysign(in1, ctx=ctx)
 
     def _eval_fabs(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fabs(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.fabs(ctx=ctx)
 
     def _eval_fdim(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fdim(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.fdim(in1, ctx=ctx)
 
     def _eval_fmax(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fmax(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.fmax(in1, ctx=ctx)
 
     def _eval_fmin(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fmin(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.fmin(in1, ctx=ctx)
 
     def _eval_fmod(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).fmod(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.fmod(in1, ctx=ctx)
 
     def _eval_remainder(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).remainder(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.remainder(in1, ctx=ctx)
 
     def _eval_ceil(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).ceil(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.ceil(ctx=ctx)
 
     def _eval_floor(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).floor(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.floor(ctx=ctx)
 
     def _eval_nearbyint(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).nearbyint(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.nearbyint(ctx=ctx)
 
     def _eval_round(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).round(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.round(ctx=ctx)
 
     def _eval_trunc(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).trunc(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.trunc(ctx=ctx)
 
     def _eval_acos(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).acos(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.acos(ctx=ctx)
 
     def _eval_acosh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).acosh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.acosh(ctx=ctx)
 
     def _eval_asin(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).asin(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.asin(ctx=ctx)
 
     def _eval_asinh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).asinh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.asinh(ctx=ctx)
 
     def _eval_atan(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).atan(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.atan(ctx=ctx)
 
     def _eval_atan2(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).atan2(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.atan2(in1, ctx=ctx)
 
     def _eval_atanh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).atanh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.atanh(ctx=ctx)
 
     def _eval_cos(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).cos(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.cos(ctx=ctx)
 
     def _eval_cosh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).cosh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.cosh(ctx=ctx)
 
     def _eval_sin(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).sin(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.sin(ctx=ctx)
 
     def _eval_sinh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).sinh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.sinh(ctx=ctx)
 
     def _eval_tan(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).tan(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.tan(ctx=ctx)
 
     def _eval_tanh(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).tanh(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.tanh(ctx=ctx)
 
     def _eval_exp(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).exp_(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.exp(ctx=ctx)
 
     def _eval_exp2(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).exp2(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.exp2(ctx=ctx)
 
     def _eval_expm1(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).expm1(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.expm1(ctx=ctx)
 
     def _eval_log(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).log(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.log(ctx=ctx)
 
     def _eval_log10(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).log10(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.log10(ctx=ctx)
 
     def _eval_log1p(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).log1p(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.log1p(ctx=ctx)
 
     def _eval_log2(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).log2(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.log2(ctx=ctx)
 
     def _eval_cbrt(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).cbrt(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.cbrt(ctx=ctx)
 
     def _eval_hypot(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).hypot(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.hypot(in1, ctx=ctx)
 
     def _eval_pow(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).pow(self.evaluate(e.children[1], ctx), ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        in1 = self.evaluate(e.children[1], ctx)
+        return [in0, in1], in0.pow(in1, ctx=ctx)
 
     def _eval_erf(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).erf(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.erf(ctx=ctx)
 
     def _eval_erfc(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).erfc(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.erfc(ctx=ctx)
 
     def _eval_lgamma(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).lgamma(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.lgamma(ctx=ctx)
 
     def _eval_tgamma(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).tgamma(ctx=ctx)
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.tgamma(ctx=ctx)
 
     def _eval_isfinite(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).isfinite()
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.isfinite()
 
     def _eval_isinf(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).isinf
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.isinf
 
     def _eval_isnan(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).isnan
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.isnan
 
     def _eval_isnormal(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).isnormal()
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.isnormal()
 
     def _eval_signbit(self, e, ctx):
-        return self.evaluate(e.children[0], ctx).signbit()
+        in0 = self.evaluate(e.children[0], ctx)
+        return [in0], in0.signbit()
