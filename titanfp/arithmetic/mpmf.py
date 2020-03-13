@@ -137,7 +137,10 @@ class Interpreter(interpreter.StandardInterpreter):
         return self.dtype(x, ctx=ctx)
 
     def _eval_constant(self, e, ctx):
-        return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
+        try:
+            return None, self.constants[e.value]
+        except KeyError:
+            return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
 
     # unfortunately, interpreting these values efficiently requries info from the context,
     # so it has to be implemented per interpreter...
@@ -206,11 +209,13 @@ class Interpreter(interpreter.StandardInterpreter):
                 argval = self.arg_to_digital(arg, local_ctx)
 
             if isinstance(argval, ndarray.NDArray):
+                if not shape:
+                    raise interpreter.EvaluatorError('not expecting a tensor, got shape {}'.format(repr(argval.shape)))
                 if len(shape) != len(argval.shape):
-                    raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
+                    raise interpreter.EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                 for dim, argdim in zip(shape, argval.shape):
                     if isinstance(dim, int) and dim != argdim:
-                        raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
+                        raise interpreter.EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                     elif isinstance(dim, str):
                         arg_bindings.append((dim, self.arg_to_digital(argdim, local_ctx)))
 

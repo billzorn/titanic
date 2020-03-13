@@ -297,7 +297,7 @@ def run_eval(data):
             pre_val = str(e)
 
         for k in backend_interpreter.eval_map:
-            print('   ', str(k), str(backend_interpreter.eval_map[k]))
+            print('   ', k.name, str(backend_interpreter.eval_map[k]))
 
         result = {
             'success': 1,
@@ -305,7 +305,8 @@ def run_eval(data):
             'e_val': str(e_val),
             'pre_val': str(pre_val),
             'eval_count': str(backend_interpreter.evals),
-            'bits_count': str(backend_interpreter.bits_computed),
+            'bits_computed': str(backend_interpreter.bits_computed),
+            'bits_requested': str(backend_interpreter.bits_requested),
         }
 
         if state.img is not None:

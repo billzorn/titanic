@@ -174,10 +174,10 @@ class Evaluator(object):
         self.evals = 0
         self.max_evals = 0
         self.bits_constant = 0
-        self.bits_requested = 0 # not yet
+        self.bits_requested = 0
         self.bits_computed = 0
         self.bits_referenced = 0
-        self.bits_quantized = 0 # not yet
+        self.bits_quantized = 0
         self.eval_map = {}
 
     def evaluate(self, e, ctx):
@@ -215,8 +215,14 @@ class Evaluator(object):
             elif isinstance(e, ast.Ref):
                 self.bits_referenced += bitcost(result)
             elif isinstance(e, ast.Cast):
-                pass # can't look at input
+                inbits = bitcost(inputs[0])
+                outbits = bitcost(result)
+                if inbits != 0 and outbits != 0:
+                    quantized += (outbits - inbits)
             else:
+                if inputs:
+                    for arg in inputs:
+                        self.bits_requested += bitcost(arg)
                 self.bits_computed += bitcost(result)
         elif isinstance(e, ast.ValueExpr):
             self.bits_constant += bitcost(result)
@@ -520,6 +526,8 @@ class BaseInterpreter(Evaluator):
                 argval = self.arg_to_digital(arg, local_ctx)
 
             if isinstance(argval, ndarray.NDArray):
+                if not shape:
+                    raise EvaluatorError('not expecting a tensor, got shape {}'.format(repr(argval.shape)))
                 if len(shape) != len(argval.shape):
                     raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                 for dim, argdim in zip(shape, argval.shape):

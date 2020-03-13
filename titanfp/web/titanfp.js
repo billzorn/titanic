@@ -198,7 +198,7 @@ function eval_result(result, id_name) {
             body += '</div>';
         }
         body += '<div class="output-row">';
-        body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated, ' + result.bits_count + ' total bits computed)</pre>';
+        body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated, ' + result.bits_requested + ' bits requested, ' + result.bits_computed + ' bits computed)</pre>';
         body += '</div>';
     } else {
         if (result.message) {

@@ -244,7 +244,10 @@ class Interpreter(interpreter.StandardInterpreter):
         return self.dtype(x, ctx=ctx)
 
     def _eval_constant(self, e, ctx):
-        return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.nbits), ctx=ctx)
+        try:
+            return None, self.constants[e.value]
+        except KeyError:
+            return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.nbits), ctx=ctx)
 
     # unfortunately, interpreting these values efficiently requries info from the context,
     # so it has to be implemented per interpreter...
