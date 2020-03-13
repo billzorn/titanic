@@ -221,35 +221,29 @@ class Interpreter(interpreter.StandardInterpreter):
     dtype = Sink
     ctype = IEEECtx
 
-    @classmethod
-    def arg_to_digital(cls, x, ctx):
-        return cls.dtype(x, ctx=ctx)
+    def arg_to_digital(self, x, ctx):
+        return self.dtype(x, ctx=ctx)
 
-    @classmethod
-    def _eval_constant(cls, e, ctx):
-        return cls.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
+    def _eval_constant(self, e, ctx):
+        return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
 
     # unfortunately, interpreting these values efficiently requries info from the context,
     # so it has to be implemented per interpreter...
 
-    @classmethod
-    def _eval_integer(cls, e, ctx):
+    def _eval_integer(self, e, ctx):
         x = digital.Digital(m=e.i, exp=0, inexact=False)
-        return cls.round_to_context(x, ctx=ctx)
+        return None, self.round_to_context(x, ctx=ctx)
 
-    @classmethod
-    def _eval_rational(cls, e, ctx):
+    def _eval_rational(self, e, ctx):
         p = digital.Digital(m=e.p, exp=0, inexact=False)
         q = digital.Digital(m=e.q, exp=0, inexact=False)
         x = gmpmath.compute(OP.div, p, q, prec=ctx.p)
-        return cls.round_to_context(x, ctx=ctx)
+        return None, self.round_to_context(x, ctx=ctx)
 
-    @classmethod
-    def _eval_digits(cls, e, ctx):
+    def _eval_digits(self, e, ctx):
         x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
-        return cls.round_to_context(x, ctx=ctx)
+        return None, self.round_to_context(x, ctx=ctx)
 
-    @classmethod
-    def round_to_context(cls, x, ctx):
+    def round_to_context(self, x, ctx):
         """Not actually used?"""
-        return cls.dtype._round_to_context(x, ctx=ctx, strict=False)
+        return self.dtype._round_to_context(x, ctx=ctx, strict=False)
