@@ -23,6 +23,11 @@ def flatten_shaped_list(a):
     else:
         return [a], None
 
+def str_shaped_list(a):
+    if isinstance(a, list) or isinstance(a, tuple):
+        return '[' + ', '.join((str_shaped_list(elt) for elt in a)) + ']'
+    else:
+        return str(a)
 
 def locate(shape, pos):
     idx = 0
@@ -114,7 +119,7 @@ class NDArray(object):
         return tuple(list(self))
 
     def __str__(self):
-        return str(self.to_list())
+        return str_shaped_list(self.to_list())
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.shape) + ', data=' + repr(self.data) + ')'
