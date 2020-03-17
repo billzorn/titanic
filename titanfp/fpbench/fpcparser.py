@@ -169,38 +169,81 @@ class Visitor(FPCoreVisitor):
             return None
 
     def _intern_simple_number(self, k, cls):
-        if k in self._num_literals:
-            return self._num_literals[k]
+        if self.intern_values:
+            if k in self._num_literals:
+                return self._num_literals[k]
+            else:
+                i = read_int(k)
+                if i is not None:
+                    v = ast.Integer(i)
+                else:
+                    v = cls(k)
+                self._num_literals[k] = v
+                return v
         else:
             i = read_int(k)
             if i is not None:
-                v = ast.Integer(i)
+                return ast.Integer(i)
             else:
-                v = cls(k)
-            self._num_literals[k] = v
-            return v
+                return cls(k)
+
+    def _intern_rational(self, k):
+        if self.intern_values:
+            if k in self._num_literals:
+                return self._num_literals[k]
+            else:
+                v = ast.Rational(*k)
+                self._num_literals[k] = v
+                return v
+        else:
+            return ast.Rational(*k)
+
+    def _intern_digits(self, k):
+        if self.intern_values:
+            if k in self._num_literals:
+                return self._num_literals[k]
+            else:
+                if k[2] < 2:
+                    raise FPCoreParserError('digits: base must be >= 2, got {}'.format(repr(ctx.b.text)))
+                v = ast.Digits(*k)
+                self._num_literals[k] = v
+                return v
+        else:
+            if k[2] < 2:
+                raise FPCoreParserError('digits: base must be >= 2, got {}'.format(repr(ctx.b.text)))
+            return ast.Digits(*k)
 
     def _intern_symbol(self, k):
-        if k in self._sym_literals:
-            return self._sym_literals[k]
+        if self.intern_values:
+            if k in self._sym_literals:
+                return self._sym_literals[k]
+            else:
+                if k in reserved_constants:
+                    v = reserved_constants[k]
+                else:
+                    v = ast.Var(k)
+                self._sym_literals[k] = v
+                return v
         else:
             if k in reserved_constants:
-                v = reserved_constants[k]
+                return ast.Constant(k)
             else:
-                v = ast.Var(k)
-            self._sym_literals[k] = v
-            return v
+                return ast.Var(k)
 
     def _intern_string(self, k):
-        if k in self._str_literals:
-            return self._str_literals[k]
+        if self.intern_values:
+            if k in self._str_literals:
+                return self._str_literals[k]
+            else:
+                v = ast.String(k)
+                self._str_literals[k] = v
+                return v
         else:
-            v = ast.String(k)
-            self._str_literals[k] = v
-            return v
+            return ast.String(k)
 
     def __init__(self):
         super().__init__()
+        self.intern_values = False
         self._num_literals = {}
         self._sym_literals = {}
         self._str_literals = {}
@@ -283,12 +326,7 @@ class Visitor(FPCoreVisitor):
     def visitNumberRational(self, ctx) -> ast.Expr:
         p, q = ctx.n.text.split('/')
         k = int(p), int(q)
-        if k in self._num_literals:
-            return self._num_literals[k]
-        else:
-            v = ast.Rational(*k)
-            self._num_literals[k] = v
-            return v
+        return self._intern_rational(k)
 
     def visitNumberDigits(self, ctx) -> ast.Expr:
         try:
@@ -296,14 +334,7 @@ class Visitor(FPCoreVisitor):
         except ValueError:
             raise FPCoreParserError('digits: m, e, b must be integers, got {}, {}, {}'
                              .format(repr(ctx.m.text), repr(ctx.e.text), repr(ctx.b.text)))
-        if k in self._num_literals:
-            return self._num_literals[k]
-        else:
-            if k[2] < 2:
-                raise FPCoreParserError('digits: base must be >= 2, got {}'.format(repr(ctx.b.text)))
-            v = ast.Digits(*k)
-            self._num_literals[k] = v
-            return v
+        return self._intern_digits(k)
 
     def visitExprNum(self, ctx) -> ast.Expr:
         return ctx.n.accept(self)
