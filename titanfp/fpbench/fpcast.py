@@ -156,6 +156,9 @@ class ValueExpr(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
+class Var(ValueExpr):
+    name: str = 'Var'
+
     def __eq__(self, other):
         try:
             return self.value == other.value
@@ -165,11 +168,17 @@ class ValueExpr(Expr):
     def __hash__(self):
         return hash(self.value)
 
-class Var(ValueExpr):
-    name: str = 'Var'
-
 class Val(ValueExpr):
     name: str = 'Val'
+
+    def __eq__(self, other):
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
 
 class Constant(Val):
     name: str = 'Constant'
@@ -215,6 +224,15 @@ class Digits(Val):
 
 class String(ValueExpr):
     name: str = 'String'
+
+    def __eq__(self, other):
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
 
 class TensorLit(ValueExpr):
     name: str = 'data'

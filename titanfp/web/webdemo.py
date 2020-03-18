@@ -285,6 +285,8 @@ def run_eval(data):
             # reset the interpreter to avoid counting evals from arguments
             backend_interpreter = backend()
             backend_interpreter.max_evals = 5000000
+            for core in state.cores:
+                backend_interpreter.register_function(core)
             e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
