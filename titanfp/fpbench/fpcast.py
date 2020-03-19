@@ -82,6 +82,14 @@ class Expr(object):
         exprs = [[e.canonicalize_annotations(global_props) for e in es] for es in self.subexprs()]
         return self.replace_subexprs(exprs)
 
+    def merge_annotations(self, annotations, local_props=None):
+        new_props = update_props(local_props, annotations.get(id(self)))
+        exprs = [[e.merge_annotations(annotations, None) for e in es] for es in self.subexprs()]
+        if new_props:
+            return Ctx(new_props, self.replace_subexprs(exprs))
+        else:
+            return self.replace_subexprs(exprs)
+
 
 # arbitrary s-expression data (usually from properties)
 
@@ -388,6 +396,10 @@ class Ctx(Expr):
     def canonicalize_annotations(self, global_props=None):
         all_props = update_props(global_props, self.props)
         return self.body.canonicalize_annotations(all_props)
+
+    def merge_annotations(self, annotations, local_props=None):
+        new_props = update_props(local_props, self.props)
+        return self.body.merge_annotations(annotations, new_props)
 
 
 # control flow and tensors
