@@ -28,6 +28,17 @@ def annotation_to_string(e, props, shape=None):
 class Expr(object):
     name: str = 'Expr'
 
+    def subexprs(self):
+        raise NotImplementedError()
+
+    def replace_subexprs(self, exprs):
+        raise NotImplementedError()
+
+    def copy(self):
+        exprs = self.subexprs()
+        copied = [[e.copy() for e in es] for es in exprs]
+        return self.replace_subexprs(copied)
+
 
 # arbitrary s-expression data (usually from properties)
 
@@ -51,6 +62,12 @@ class Data(Expr):
 
     def __hash__(self):
         return hash(self.value)
+
+    def subexprs(self):
+        return []
+
+    def replace_subexprs(self, exprs):
+        return type(self)(self.value)
 
     def is_number(self):
         return isinstance(self.value, Val) and not isinstance(self.value, Constant)
@@ -111,6 +128,14 @@ class NaryExpr(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
 
+    def subexprs(self):
+        return [self.children]
+
+    def replace_subexprs(self, exprs):
+        (children,) = exprs
+        return type(self)(*children)
+
+
 class UnknownOperator(NaryExpr):
     name: str = 'UnknownOperator'
 
@@ -156,6 +181,12 @@ class ValueExpr(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
+    def subexprs(self):
+        return []
+
+    def replace_subexprs(self, exprs):
+        return type(self)(self.value)
+
 class Var(ValueExpr):
     name: str = 'Var'
 
@@ -199,6 +230,9 @@ class Integer(Val):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.i) + ')'
 
+    def replace_subexprs(self, exprs):
+        return type(self)(self.i)
+
 class Rational(Val):
     name: str = 'Rational'
 
@@ -209,6 +243,9 @@ class Rational(Val):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.p) + ', ' + repr(self.q) + ')'
+
+    def replace_subexprs(self, exprs):
+        return type(self)(self.p, self.q)
 
 class Digits(Val):
     name: str = 'digits'
@@ -221,6 +258,9 @@ class Digits(Val):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
+
+    def replace_subexprs(self, exprs):
+        return type(self)(self.m, self.e, self.b)
 
 class String(ValueExpr):
     name: str = 'String'
@@ -284,6 +324,13 @@ class Ctx(Expr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.props) + ', ' + repr(self.body) + ')'
 
+    def subexprs(self):
+        return [[self.body]]
+
+    def replace_subexprs(self, exprs):
+        ((body,),) = exprs
+        return type(self)(self.props, body)
+
 
 # control flow and tensors
 
@@ -304,6 +351,13 @@ class If(ControlExpr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.then_body) + ', ' + repr(self.else_body) + ')'
 
+    def subexprs(self):
+        return [[self.cond, self.then_body, self.else_body]]
+
+    def replace_subexprs(self, exprs):
+        ((cond, then_body, else_body,),) = exprs
+        return type(self)(cond, then_body, else_body)
+
 class Let(ControlExpr):
     name: str = 'let'
 
@@ -318,6 +372,15 @@ class Let(ControlExpr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.let_bindings) + ', ' + repr(self.body) + ')'
+
+    def subexprs(self):
+        let_vars, let_exprs = zip(*self.let_bindings)
+        return [let_exprs, [self.body]]
+
+    def replace_subexprs(self, exprs):
+        (let_exprs, (body,),) = exprs
+        let_bindings = [(x, e,) for ((x, _,), e,) in zip(self.let_bindings, let_exprs)]
+        return type(self)(let_bindings, body)
 
 class LetStar(Let):
     name: str = 'let*'
@@ -337,6 +400,15 @@ class While(ControlExpr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.cond) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
+
+    def subexprs(self):
+        while_vars, while_inits, while_updates = zip(*self.while_bindings)
+        return [[self.cond], while_inits, while_updates, [self.body]]
+
+    def replace_subexprs(self, exprs):
+        ((cond,), while_inits, while_updates, (body,),) = exprs
+        while_bindings = [(x, e0, e,) for ((x, _, _,), e0, e,) in zip(self.while_bindings, while_inits, while_updates)]
+        return type(self)(cond, while_bindings, body)
 
 class WhileStar(While):
     name: str = 'while*'
@@ -361,6 +433,17 @@ class For(ControlExpr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.while_bindings) + ', ' + repr(self.body) + ')'
 
+    def subexprs(self):
+        dim_vars, dim_exprs = zip(*self.dim_bindings)
+        while_vars, while_inits, while_updates = zip(*self.while_bindings)
+        return [dim_exprs, while_inits, while_updates, [self.body]]
+
+    def replace_subexprs(self, exprs):
+        (dim_exprs, while_inits, while_updates, (body,),) = exprs
+        dim_bindings = [(x, e,) for ((x, _,), e,) in zip(self.dim_bindings, dim_exprs)]
+        while_bindings = [(x, e0, e,) for ((x, _, _,), e0, e,) in zip(self.while_bindings, while_inits, while_updates)]
+        return type(self)(dim_bindings, while_bindings, body)
+
 class ForStar(For):
     name: str = 'for*'
 
@@ -379,12 +462,24 @@ class Tensor(ControlExpr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.dim_bindings) + ', ' + repr(self.body) + ')'
 
+    def subexprs(self):
+        dim_vars, dim_exprs = zip(*self.dim_bindings)
+        return [dim_exprs, [self.body]]
+
+    def replace_subexprs(self, exprs):
+        (dim_exprs, (body,),) = exprs
+        dim_bindings = [(x, e,) for ((x, _,), e,) in zip(self.dim_bindings, dim_exprs)]
+        return type(self)(dim_bindings, body)
+
+
 class TensorStar(Tensor):
     name: str = 'tensor*'
 
-    def __init__(self, ident='', dim_bindings=[], while_bindings=[], body=None) -> None:
-        if body is None:
-            raise ValueError('must specify a body for TensorStar')
+    def __init__(self,
+                 ident: str,
+                 dim_bindings: typing.List[typing.Tuple[str, Expr]],
+                 while_bindings: typing.List[typing.Tuple[str, Expr, Expr]],
+                 body: Expr) -> None:
         self.ident: str = ident
         self.dim_bindings: typing.List[typing.Tuple[str, Expr]] = dim_bindings
         self.while_bindings: typing.List[typing.Tuple[str, Expr, Expr]] = while_bindings
@@ -413,6 +508,17 @@ class TensorStar(Tensor):
                 + repr(self.dim_bindings) + ', '
                 + repr(self.while_bindings) + ', '
                 + repr(self.body) + ')')
+
+    def subexprs(self):
+        dim_vars, dim_exprs = zip(*self.dim_bindings)
+        while_vars, while_inits, while_updates = zip(*self.while_bindings)
+        return [dim_exprs, while_inits, while_updates, [self.body]]
+
+    def replace_subexprs(self, exprs):
+        (dim_exprs, while_inits, while_updates, (body,),) = exprs
+        dim_bindings = [(x, e,) for ((x, _,), e,) in zip(self.dim_bindings, dim_exprs)]
+        while_bindings = [(x, e0, e,) for ((x, _, _,), e0, e,) in zip(self.while_bindings, while_inits, while_updates)]
+        return type(self)(self.ident, dim_bindings, while_bindings, body)
 
 
 # cast is the identity function, used for repeated rounding
