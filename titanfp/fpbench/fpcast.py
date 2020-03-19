@@ -22,6 +22,34 @@ def annotation_to_string(e, props, shape=None):
         else:
             return str(e)
 
+def diff_props(global_props, local_props):
+    if global_props is None:
+        if local_props is None:
+            return {}, {}
+        else:
+            return local_props, local_props
+    else:
+        if local_props is None:
+            return global_props, {}
+        else:
+            all_props = {}
+            all_props.update(global_props)
+            all_props.update(local_props)
+            new_props = {k:v for k, v in local_props.items() if k not in global_props or global_props[k] != v}
+            return all_props, new_props
+
+def update_props(old_props, new_props):
+    if old_props:
+        if new_props:
+            updated_props = {}
+            updated_props.update(old_props)
+            updated_props.update(new_props)
+            return updated_props
+        else:
+            return old_props
+    else:
+        return new_props
+
 
 # base ast class
 
@@ -35,9 +63,24 @@ class Expr(object):
         raise NotImplementedError()
 
     def copy(self):
-        exprs = self.subexprs()
-        copied = [[e.copy() for e in es] for es in exprs]
-        return self.replace_subexprs(copied)
+        exprs = [[e.copy() for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
+
+    def remove_annotations(self):
+        exprs = [[e.remove_annotations() for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
+
+    def condense_annotations(self, global_props=None, local_props=None):
+        all_props, new_props = diff_props(global_props, local_props)
+        exprs = [[e.condense_annotations(all_props, None) for e in es] for es in self.subexprs()]
+        if new_props:
+            return Ctx(new_props, self.replace_subexprs(exprs))
+        else:
+            return self.replace_subexprs(exprs)
+
+    def canonicalize_annotations(self, global_props=None):
+        exprs = [[e.canonicalize_annotations(global_props) for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
 
 
 # arbitrary s-expression data (usually from properties)
@@ -135,6 +178,12 @@ class NaryExpr(Expr):
         (children,) = exprs
         return type(self)(*children)
 
+    def canonicalize_annotations(self, global_props=None):
+        result = super().canonicalize_annotations(global_props)
+        if global_props:
+            return Ctx(global_props, result)
+        else:
+            return result
 
 class UnknownOperator(NaryExpr):
     name: str = 'UnknownOperator'
@@ -211,6 +260,13 @@ class Val(ValueExpr):
     def __hash__(self):
         return hash(self.value)
 
+    def canonicalize_annotations(self, global_props=None):
+        result = super().canonicalize_annotations(global_props)
+        if global_props:
+            return Ctx(global_props, result)
+        else:
+            return result
+
 class Constant(Val):
     name: str = 'Constant'
 
@@ -262,19 +318,7 @@ class Digits(Val):
     def replace_subexprs(self, exprs):
         return type(self)(self.m, self.e, self.b)
 
-class String(ValueExpr):
-    name: str = 'String'
-
-    def __eq__(self, other):
-        try:
-            return self.value == other.value
-        except AttributeError:
-            return self.value == other
-
-    def __hash__(self):
-        return hash(self.value)
-
-class TensorLit(ValueExpr):
+class TensorLit(Val):
     name: str = 'data'
 
     def __init__(self, value) -> None:
@@ -286,15 +330,6 @@ class TensorLit(ValueExpr):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
 
-    def __eq__(self, other):
-        try:
-            return self.value == other.value
-        except AttributeError:
-            return self.value == other
-
-    def __hash__(self):
-        return hash(self.value)
-
     def is_list(self):
         return isinstance(self.value, tuple)
 
@@ -305,6 +340,18 @@ class TensorLit(ValueExpr):
             raise TypeError('data is not a list')
         else:
             return None
+
+class String(ValueExpr):
+    name: str = 'String'
+
+    def __eq__(self, other):
+        try:
+            return self.value == other.value
+        except AttributeError:
+            return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
 
 
 # rounding contexts
@@ -330,6 +377,17 @@ class Ctx(Expr):
     def replace_subexprs(self, exprs):
         ((body,),) = exprs
         return type(self)(self.props, body)
+
+    def remove_annotations(self):
+        return self.body.remove_annotations()
+
+    def condense_annotations(self, global_props=None, local_props=None):
+        new_props = update_props(local_props, self.props)
+        return self.body.condense_annotations(global_props, new_props)
+
+    def canonicalize_annotations(self, global_props=None):
+        all_props = update_props(global_props, self.props)
+        return self.body.canonicalize_annotations(all_props)
 
 
 # control flow and tensors
