@@ -79,10 +79,10 @@ class Evaluator(object):
         ast.Integer: '_eval_integer',
         ast.Rational: '_eval_rational',
         ast.Digits: '_eval_digits',
-        # strings are special ValueExprs (not Vals) that won't normally be evaluated
-        ast.String: '_eval_string',
         # tensor literals are like data, but occur as expressions
         ast.TensorLit: '_eval_tensorlit',
+        # strings are special ValueExprs (not Vals) that won't normally be evaluated
+        ast.String: '_eval_string',
         # rounding contexts
         ast.Ctx: '_eval_ctx',
         # control flow and tensors

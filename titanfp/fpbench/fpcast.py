@@ -165,63 +165,6 @@ class Data(Expr):
             return None
 
 
-# operations
-
-class NaryExpr(Expr):
-    name: str = 'NaryExpr'
-
-    def __init__(self, *children: Expr) -> None:
-        self.children: typing.List[Expr] = children
-
-    def __str__(self):
-        return '(' + self.name + ''.join((' ' + str(child) for child in self.children)) + ')'
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
-
-    def subexprs(self):
-        return [self.children]
-
-    def replace_subexprs(self, exprs):
-        (children,) = exprs
-        return type(self)(*children)
-
-    def canonicalize_annotations(self, global_props=None):
-        result = super().canonicalize_annotations(global_props)
-        if global_props:
-            return Ctx(global_props, result)
-        else:
-            return result
-
-class UnknownOperator(NaryExpr):
-    name: str = 'UnknownOperator'
-
-    def __init__(self, *children: Expr, name='UnknownOperator') -> None:
-        super().__init__(*children)
-        self.name = name
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children)) + 'name=' + repr(self.name) + ')'
-
-class UnaryExpr(NaryExpr):
-    name: str = 'UnaryExpr'
-
-    def __init__(self, child0: Expr) -> None:
-        super().__init__(child0)
-
-class BinaryExpr(NaryExpr):
-    name: str = 'BinaryExpr'
-
-    def __init__(self, child0: Expr, child1: Expr) -> None:
-        super().__init__(child0, child1)
-
-class TernaryExpr(NaryExpr):
-    name: str = 'TernaryExpr'
-
-    def __init__(self, child0: Expr, child1: Expr, child2: Expr) -> None:
-        super().__init__(child0, child1, child2)
-
-
 # values
 
 class ValueExpr(Expr):
@@ -589,6 +532,63 @@ class TensorStar(Tensor):
         dim_bindings = [(x, e,) for ((x, _,), e,) in zip(self.dim_bindings, dim_exprs)]
         while_bindings = [(x, e0, e,) for ((x, _, _,), e0, e,) in zip(self.while_bindings, while_inits, while_updates)]
         return type(self)(self.ident, dim_bindings, while_bindings, body)
+
+
+# operations
+
+class NaryExpr(Expr):
+    name: str = 'NaryExpr'
+
+    def __init__(self, *children: Expr) -> None:
+        self.children: typing.List[Expr] = children
+
+    def __str__(self):
+        return '(' + self.name + ''.join((' ' + str(child) for child in self.children)) + ')'
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ', '.join((repr(child) for child in self.children)) + ')'
+
+    def subexprs(self):
+        return [self.children]
+
+    def replace_subexprs(self, exprs):
+        (children,) = exprs
+        return type(self)(*children)
+
+    def canonicalize_annotations(self, global_props=None):
+        result = super().canonicalize_annotations(global_props)
+        if global_props:
+            return Ctx(global_props, result)
+        else:
+            return result
+
+class UnknownOperator(NaryExpr):
+    name: str = 'UnknownOperator'
+
+    def __init__(self, *children: Expr, name='UnknownOperator') -> None:
+        super().__init__(*children)
+        self.name = name
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children)) + 'name=' + repr(self.name) + ')'
+
+class UnaryExpr(NaryExpr):
+    name: str = 'UnaryExpr'
+
+    def __init__(self, child0: Expr) -> None:
+        super().__init__(child0)
+
+class BinaryExpr(NaryExpr):
+    name: str = 'BinaryExpr'
+
+    def __init__(self, child0: Expr, child1: Expr) -> None:
+        super().__init__(child0, child1)
+
+class TernaryExpr(NaryExpr):
+    name: str = 'TernaryExpr'
+
+    def __init__(self, child0: Expr, child1: Expr, child2: Expr) -> None:
+        super().__init__(child0, child1, child2)
 
 
 # cast is the identity function, used for repeated rounding
