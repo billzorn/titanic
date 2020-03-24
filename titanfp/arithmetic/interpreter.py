@@ -173,12 +173,9 @@ class Evaluator(object):
     def __init__(self):
         self.evals = 0
         self.max_evals = 0
-        self.bits_constant = 0
-        self.bits_requested = 0
-        self.bits_computed = 0
-        self.bits_referenced = 0
-        self.bits_quantized = 0
-        self.eval_map = {}
+        self.notify_evals = 0xfffff
+        self.enable_analysis = True
+        self.analyses = []
 
     def evaluate(self, e, ctx):
         try:
@@ -200,41 +197,17 @@ class Evaluator(object):
                 raise EvaluatorError('Evaluator: unable to dispatch for expression {} with mro {}'
                                      .format(repr(e), repr(ecls.__mro__)))
 
-        self.evals += 1
-        if self.evals & 0xfffff == 0xfffff:
-            print(',', end='', flush=True)
-        if self.max_evals and self.evals > self.max_evals:
-            raise EvaluatorError('Evaluation limit {} reached on expression {}'
-                                 .format(str(self.max_evals), str(e)))
-
         inputs, result = method(e, ctx)
 
-        if isinstance(e, ast.NaryExpr):
-            if isinstance(e, ast.Dim) or isinstance(e, ast.Size):
-                pass
-            elif isinstance(e, ast.Ref):
-                self.bits_referenced += bitcost(result)
-            elif isinstance(e, ast.Cast):
-                inbits = bitcost(inputs[0])
-                outbits = bitcost(result)
-                if inbits != 0 and outbits != 0:
-                    quantized += (outbits - inbits)
-            else:
-                if inputs:
-                    for arg in inputs:
-                        self.bits_requested += bitcost(arg)
-                self.bits_computed += bitcost(result)
-        elif isinstance(e, ast.ValueExpr):
-            self.bits_constant += bitcost(result)
-        elif isinstance(e, ast.ControlExpr):
-            pass
-        else:
-            pass
-
-        if e in self.eval_map:
-            self.eval_map[e] += 1
-        else:
-            self.eval_map[e] = 1
+        if self.enable_analysis:
+            self.evals += 1
+            if self.evals & self.notify_evals == self.notify_evals:
+                print(',', end='', flush=True)
+            for analysis in self.analyses:
+                analysis.track(e, ctx, inputs, result)
+            if self.max_evals and self.evals > self.max_evals:
+                raise EvaluatorError('Evaluation limit {} reached on expression {}'
+                                     .format(str(self.max_evals), str(e)))
 
         return result
 

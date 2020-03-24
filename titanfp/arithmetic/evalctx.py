@@ -34,6 +34,21 @@ prefer_float = {'binary', 'float', 'quad', 'half', 'single', 'double', 'extended
 prefer_posit = {'posit'}
 prefer_fixed = {'fixed', 'int', 'char', 'short', 'long'}
 
+rm_names = {
+    RM.RNE : 'nearestEven',
+    RM.RNA : 'nearestAway',
+    RM.RTP : 'toPositive',
+    RM.RTN : 'toNegative',
+    RM.RTZ : 'toZero',
+    RM.RAZ : 'awayZero',
+}
+
+of_names = {
+    OF.INF : 'infinity',
+    OF.CLAMP : 'clamp',
+    OF.WRAP : 'wrap',
+}
+
 
 class EvalCtx(object):
     """Generic context for holding variable bindings and properties."""
@@ -262,6 +277,13 @@ class IEEECtx(EvalCtx):
         args += ['es=' + repr(self.es), 'nbits=' + repr(self.nbits), 'rm=' + str(self.rm)]
         return '{}({})'.format(type(self).__name__, ', '.join(args))
 
+    _skip_str_props = {'precision', 'round'}
+
+    def propstr(self):
+        s = ':precision (float {:d} {:d}) :round {:s}'.format(self.es, self.nbits, rm_names[self.rm])
+        other_props = [' :' + str(k) +  ' ' + str(v) for k, v in self.props.items() if k not in self._skip_str_props]
+        return s + ''.join(other_props)
+
 
 posit_esnbits = {}
 posit_esnbits.update((k, (0, 8)) for k in binary8_synonyms)
@@ -378,6 +400,13 @@ class PositCtx(EvalCtx):
             args.append('props=' + repr(self.props))
         args += ['es=' + repr(self.es), 'nbits=' + repr(self.nbits)]
         return '{}({})'.format(type(self).__name__, ', '.join(args))
+
+    _skip_str_props = {'precision'}
+
+    def propstr(self):
+        s = ':precision (posit {:d} {:d})'.format(self.es, self.nbits)
+        other_props = [' :' + str(k) +  ' ' + str(v) for k, v in self.props.items() if k not in self._skip_str_props]
+        return s + ''.join(other_props)
 
 
 fixed_snbits = {}
@@ -528,6 +557,15 @@ class FixedCtx(EvalCtx):
             args.append('props=' + repr(self.props))
         args += ['scale=' + repr(self.scale), 'nbits=' + repr(self.nbits), 'rm=' + repr(self.rm), 'of=' + repr(self.of)]
         return '{}({})'.format(type(self).__name__, ', '.join(args))
+
+    _skip_str_props = {'precision'}
+
+    def propstr(self):
+        s = ':precision (fixed {:d} {:d}) :round {:s} :overflow {:s}'.format(self.scale, self.nbits,
+                                                                             rm_names[self.rm],
+                                                                             of_names[self.of])
+        other_props = [' :' + str(k) +  ' ' + str(v) for k, v in self.props.items() if k not in self._skip_str_props]
+        return s + ''.join(other_props)
 
 
 ctx_type_re = re.compile(r'^\s*[(]?\s*(?:(' +

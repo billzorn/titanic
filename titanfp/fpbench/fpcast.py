@@ -66,6 +66,13 @@ class Expr(object):
         exprs = [[e.copy() for e in es] for es in self.subexprs()]
         return self.replace_subexprs(exprs)
 
+    def depth_limit(self, n):
+        if n > 0:
+            exprs = [[e.depth_limit(n-1) for e in es] for es in self.subexprs()]
+            return self.replace_subexprs(exprs)
+        else:
+            return EmptyExpr()
+
     def remove_annotations(self):
         exprs = [[e.remove_annotations() for e in es] for es in self.subexprs()]
         return self.replace_subexprs(exprs)
@@ -89,6 +96,21 @@ class Expr(object):
             return Ctx(new_props, self.replace_subexprs(exprs))
         else:
             return self.replace_subexprs(exprs)
+
+class EmptyExpr(Expr):
+    name: str = 'EmptyExpr'
+
+    def subexprs(self):
+        return []
+
+    def replace_subexprs(self, exprs):
+        return EmptyExpr()
+
+    def __str__(self):
+        return '...'
+
+    def __repr__(self):
+        return type(self).__name__ + '()'
 
 
 # arbitrary s-expression data (usually from properties)
@@ -186,6 +208,11 @@ class ValueExpr(Expr):
 
     def replace_subexprs(self, exprs):
         return type(self)(self.value)
+
+    def depth_limit(self, n):
+        # always return the whole value
+        exprs = [[e.depth_limit(n-1) for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
 
 class Var(ValueExpr):
     name: str = 'Var'
@@ -571,6 +598,10 @@ class UnknownOperator(NaryExpr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + ''.join((repr(child) + ', ' for child in self.children)) + 'name=' + repr(self.name) + ')'
+
+    def replace_subexprs(self, exprs):
+        (children,) = exprs
+        return type(self)(*children, name=self.name)
 
 class UnaryExpr(NaryExpr):
     name: str = 'UnaryExpr'

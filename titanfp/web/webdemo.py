@@ -17,7 +17,7 @@ from . import fserver
 
 from ..fpbench import fpcparser, fpcast as ast
 from ..titanic import digital
-from ..arithmetic import interpreter
+from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
@@ -285,6 +285,8 @@ def run_eval(data):
             # reset the interpreter to avoid counting evals from arguments
             backend_interpreter = backend()
             backend_interpreter.max_evals = 5000000
+            als, bc_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis()
+            backend_interpreter.analyses = [als, bc_als]
             for core in state.cores:
                 backend_interpreter.register_function(core)
             e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
@@ -298,8 +300,8 @@ def run_eval(data):
         except interpreter.EvaluatorError as e:
             pre_val = str(e)
 
-        for k in backend_interpreter.eval_map:
-            print('   ', k.name, str(backend_interpreter.eval_map[k]))
+        for eid, record in als.node_map.items():
+            print('  ', eid, record.e.depth_limit(3), record.evals)
 
         result = {
             'success': 1,
@@ -307,8 +309,8 @@ def run_eval(data):
             'e_val': str(e_val),
             'pre_val': str(pre_val),
             'eval_count': str(backend_interpreter.evals),
-            'bits_computed': str(backend_interpreter.bits_computed),
-            'bits_requested': str(backend_interpreter.bits_requested),
+            'bits_computed': str(bc_als.bits_computed),
+            'bits_requested': str(bc_als.bits_requested),
         }
 
         if state.img is not None:

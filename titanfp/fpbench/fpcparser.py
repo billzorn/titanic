@@ -351,7 +351,6 @@ class Visitor(FPCoreVisitor):
     def visitExprTensor(self, ctx) -> ast.Expr:
         return ast.Tensor(
             [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
-
             ctx.body.accept(self),
         )
 

@@ -6,6 +6,12 @@ parse_fpcore : fpcore* EOF ;
 // secondary entrypoint for parsing arguments, preconditions, etc.
 parse_exprs : expr* EOF ;
 
+// secondary entrypoint for parsing lists of properties
+parse_props : prop* EOF ;
+
+// secondary entrypoint for parsing data
+parse_data : datum* EOF ;
+
 
 // FPCore grammar, implementing the standard from fpbench.org
 

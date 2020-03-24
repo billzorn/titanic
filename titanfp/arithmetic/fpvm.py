@@ -82,7 +82,7 @@ core = fpcparser.compile1(
  textbook
  :pre
  (!= x 0)
- (- (/ 1 (+ x 1)) (/ 1 x)))
+ (- (/ 1 (+ x 1)) (! :precision binary32 (/ 1 x))))
 """)
 
 preorder(core.e)
@@ -90,3 +90,20 @@ print()
 postorder(core.e)
 print()
 p2(core.e)
+
+print()
+print(core)
+print(core.e)
+e2 = core.e.copy()
+
+e3 = core.e.canonicalize_annotations()
+print(e3)
+
+e4 = core.e.canonicalize_annotations({'precision': 'binary64'})
+print(e4)
+
+e5 = e4.condense_annotations()
+print(e5)
+
+e6 = e4.remove_annotations()
+print(e6)
