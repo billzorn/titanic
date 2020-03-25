@@ -302,7 +302,10 @@ def run_eval(data):
 
         for eid, record in als.node_map.items():
             print('  ', eid, record.e.depth_limit(3), record.evals)
-            record.to_props()
+
+        annotated = core.e.merge_annotations({eid:record.to_props() for eid, record in als.node_map.items()})
+        print(annotated)
+        print(annotated.remove_annotations())
 
         result = {
             'success': 1,

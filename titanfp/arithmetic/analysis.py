@@ -51,9 +51,9 @@ class DefaultRecord(object):
         self.evals += 1
 
     def to_props(self):
-        for propstr, count in self.ctxs.items():
-            props = fpcparser.read_props(propstr)
-            print(propstr, count, props)
+        ctx_counts = ['(({:s}) {:d})'.format(propstr, count) for propstr, count in self.ctxs.items()]
+        s = ':titanic-eval-count {:d} :titanic-eval-ctxs ({:s})'.format(self.evals, ' '.join(ctx_counts))
+        return fpcparser.read_props(s)
 
 
 class BitcostAnalysis(object):
