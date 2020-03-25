@@ -254,6 +254,12 @@ class Visitor(FPCoreVisitor):
     def visitParse_exprs(self, ctx) -> typing.List[ast.Expr]:
         return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
 
+    def visitParse_props(self, ctx):
+        return self._parse_props(ctx.props)
+
+    def visitParse_data(self, ctx):
+        return [x for x in (child.accept(self) for child in ctx.getChildren()) if x]
+
     def visitFpcore(self, ctx) -> ast.FPCore:
         if ctx.ident is None:
             ident = None
@@ -512,6 +518,38 @@ def parse_exprs(s):
     else:
         return tree
 
+def parse_props(s):
+    input_stream = antlr4.InputStream(s)
+    lexer = FPCoreLexer(input_stream)
+    token_stream = antlr4.CommonTokenStream(lexer)
+    parser = FPCoreParser(token_stream)
+    err_listener = LogErrorListener()
+    parser.removeErrorListeners()
+    parser.addErrorListener(err_listener)
+    tree = parser.parse_props()
+    errors = err_listener.syntax_errors
+    if len(errors) > 0:
+        err_text = ''.join('  ' + str(err) for err in errors)
+        raise FPCoreParserError('unable to parse properties:\n' + err_text)
+    else:
+        return tree
+
+def parse_data(s):
+    input_stream = antlr4.InputStream(s)
+    lexer = FPCoreLexer(input_stream)
+    token_stream = antlr4.CommonTokenStream(lexer)
+    parser = FPCoreParser(token_stream)
+    err_listener = LogErrorListener()
+    parser.removeErrorListeners()
+    parser.addErrorListener(err_listener)
+    tree = parser.parse_data()
+    errors = err_listener.syntax_errors
+    if len(errors) > 0:
+        err_text = ''.join('  ' + str(err) for err in errors)
+        raise FPCoreParserError('unable to parse data:\n' + err_text)
+    else:
+        return tree
+
 
 def compile(s):
     tree = parse(s)
@@ -559,3 +597,13 @@ def data_as_expr(d, strict=False):
         raise FPCoreParserError('data is not exactly one expression')
     else:
         return None
+
+def read_props(s):
+    tree = parse_props(s)
+    visitor = Visitor()
+    return visitor.visit(tree)
+
+def read_data(s):
+    tree = parse_data(s)
+    visitor = Visitor()
+    return visitor.visit(tree)

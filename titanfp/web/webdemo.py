@@ -302,6 +302,7 @@ def run_eval(data):
 
         for eid, record in als.node_map.items():
             print('  ', eid, record.e.depth_limit(3), record.evals)
+            record.to_props()
 
         result = {
             'success': 1,

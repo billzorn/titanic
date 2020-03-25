@@ -7,7 +7,7 @@ parse_fpcore : fpcore* EOF ;
 parse_exprs : expr* EOF ;
 
 // secondary entrypoint for parsing lists of properties
-parse_props : prop* EOF ;
+parse_props : (props+=prop)* EOF ;
 
 // secondary entrypoint for parsing data
 parse_data : datum* EOF ;

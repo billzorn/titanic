@@ -3,6 +3,7 @@
 
 from ..titanic import utils
 from ..fpbench import fpcast as ast
+from ..fpbench import fpcparser
 
 
 class AnalysisError(utils.TitanicError):
@@ -50,7 +51,9 @@ class DefaultRecord(object):
         self.evals += 1
 
     def to_props(self):
-        pass
+        for propstr, count in self.ctxs.items():
+            props = fpcparser.read_props(propstr)
+            print(propstr, count, props)
 
 
 class BitcostAnalysis(object):
