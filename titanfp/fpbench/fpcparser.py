@@ -463,14 +463,17 @@ class Visitor(FPCoreVisitor):
         else:
             raise FPCoreParserError('invalid keyword {} in FPCore property'.format(name))
 
-    def visitDatumNum(self, ctx) -> ast.Expr:
-        return ctx.n.accept(self)
+    # def visitDatumNum(self, ctx) -> ast.Expr:
+    #     return ctx.n.accept(self)
 
-    def visitDatumSym(self, ctx) -> ast.Expr:
-        return self._intern_symbol(ctx.x.text)
+    # def visitDatumSym(self, ctx) -> ast.Expr:
+    #     return self._intern_symbol(ctx.x.text)
+
+    def visitDatumExpr(self, ctx) -> ast.Expr:
+        return ctx.e.accept(self)
 
     def visitDatumStr(self, ctx) -> ast.Expr:
-        return self._intern_symbol(ctx.s.text[1:-1])
+        return self._intern_string(ctx.s.text[1:-1])
 
     def visitDatumList(self, ctx) -> typing.Tuple[ast.Expr]:
         return tuple(d.accept(self) for d in ctx.data)
@@ -582,7 +585,7 @@ def read_exprs(s):
     return visitor.visit(tree)
 
 def data_as_expr(d, strict=False):
-    if d.as_string() is None:
+    if d.is_list():
         try:
             es = read_exprs(str(d))
         except FPCoreParserError:
@@ -592,11 +595,18 @@ def data_as_expr(d, strict=False):
                 return None
         if len(es) == 1:
             return es[0]
-    # all other cases
-    if strict:
-        raise FPCoreParserError('data is not exactly one expression')
+        else:
+            if strict:
+                raise FPCoreParserError('data is not exactly one expression')
+            else:
+                return None
+    elif d.is_string():
+        if strict:
+            raise FPCoreParserError('data is not exactly one expression')
+        else:
+            return None
     else:
-        return None
+        return d.value
 
 def read_props(s):
     tree = parse_props(s)

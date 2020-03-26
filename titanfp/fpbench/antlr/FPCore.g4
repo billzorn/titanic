@@ -62,8 +62,9 @@ number
 prop : name=SYMBOL d=datum ;
 
 datum
-    : n=number # DatumNum
-    | x=SYMBOL # DatumSym
+    // : n=number # DatumNum
+    // | x=SYMBOL # DatumSym
+    : e=expr # DatumExpr
     | s=STRING # DatumStr
     | OPEN (data+=datum)* CLOSE # DatumList
     ;
