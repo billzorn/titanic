@@ -79,7 +79,7 @@ HEXNUM : [+-]? '0' [xX] ([0-9a-fA-F]+ ('.' [0-9a-fA-F]+)? | '.' [0-9a-fA-F]+) ([
 RATIONAL : [+-]? [0-9]+ '/' [0-9]* [1-9] [0-9]* ;
 
 SYMBOL : [a-zA-Z~!@$%^&*_\-+=<>.?/:] [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]* ;
-STRING : '"' ([\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [bfnrtv\u0022\u005c])* '"' ;
+STRING : '"' ([\u0008-\u000d\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [bfnrtv\u0022\u005c])* '"' ;
 
 WS : [ \t\n\r]+ -> skip ;
 // Racket allows block comments to be nested; that may not work here.
