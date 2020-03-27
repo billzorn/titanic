@@ -276,11 +276,14 @@ def run_eval(data):
 
         try:
             arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
-            named_args = [[str(k), 'data' if shape else str(arg_ctx.bindings[k])] for k, props, shape in core.inputs]
+            named_args = [[str(k), ('[' + 'x'.join(['{}'] * len(shape)) + ' tensor]').format(*arg_ctx.bindings[k].shape) if shape
+                           else str(arg_ctx.bindings[k])]
+                          for k, props, shape in core.inputs]
 
             # yuck
             if state.img is not None:
-                named_args[0][1] = 'image'
+                rows, cols, channels = state.img_tensor[0].shape
+                named_args[0][1] = '[{}x{} image]'.format(rows, cols)
 
             # reset the interpreter to avoid counting evals from arguments
             backend_interpreter = backend()
@@ -331,7 +334,8 @@ def run_eval(data):
         if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 2:
             ndstr = ndarray.NDArray(shape=e_val.shape, data=[str(d) for d in e_val.data])
             result['mat_2d'] = ndstr.to_list()
-            result['e_val'] = '2d matrix'
+            rows, cols = ndstr.shape
+            result['e_val'] = '{} by {} matrix:'.format(rows, cols)
 
     except WebtoolError as e:
         result = {
