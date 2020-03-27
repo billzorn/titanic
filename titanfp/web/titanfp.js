@@ -153,7 +153,7 @@ function register_result() {
     result_id += 1;
 
     const output_div = $('#output');
-    
+
     output_div.append(
         '<div id="' + result_id_name + '" class="output-item"></div>'
     );
@@ -166,11 +166,12 @@ function register_result() {
     return result_id_name;
 }
 
-function eval_result(result, id_name) {
+function eval_result(result, id_name, link_url) {
     let body = '';
 
     if (result.success) {
         body += '<div class="output-row">';
+        body += '<p class="code">(<a target="_blank" rel="noopener noreferrer" href="' + link_url + '">link</a>)</p>';
         for (let [k, v] of result.args) {
             body += '<p>' + k + ' = ' + v + '</p>';
         }
@@ -218,7 +219,15 @@ function submit_eval() {
     const data_object = get_webtool_state();
     const id_name = register_result();
 
-    $('#' + id_name).html('<div class="output-row><p class="code">Evaluating...</p></div>');
+    const u = new URL(window.location);
+    const s = new URLSearchParams(data_object);
+    u.search = s.toString();
+
+    const link_url = u.toString();
+
+    $('#' + id_name).html('<div class="output-row"><p class="code">'
+                          + '(<a target="_blank" rel="noopener noreferrer" href="' + link_url + '">link</a>) Evaluating...</p>'
+                          + '</div>');
 
     const output_div = $('#output');
     output_div.scrollTop(output_div.prop("scrollHeight"));
@@ -239,7 +248,7 @@ function submit_eval() {
                 url: 'eval',
                 data: payload,
                 contentType: 'application/json',
-                success: (result) => eval_result(result, id_name),
+                success: (result) => eval_result(result, id_name, link_url),
             });
         }
 
@@ -251,7 +260,7 @@ function submit_eval() {
             url: 'eval',
             data: payload,
             contentType: 'application/json',
-            success: (result) => eval_result(result, id_name),
+            success: (result) => eval_result(result, id_name, link_url),
         });
     }
 }
