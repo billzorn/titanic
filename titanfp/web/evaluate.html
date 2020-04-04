@@ -8,6 +8,17 @@
 
   <body>
 
+    <section id="overlay" style="display:none;">
+      <div class="analysis container code">
+        <div class="control-element">
+          <button id="analysis-up" class="text" onclick="">Analysis up</button>
+          <button id="analysis-right" class="text" onclick="">Analysis right</button>
+          <button id="analysis-down" class="text" onclick="">Analysis down</button>
+        </div>
+        <p>AND THIS IS SOME TEXT YEAH</p>
+      </div>
+    </section>
+
     <section id="webtool">
       <div id="editor" class="left container code"></div>
       <div class="right container">
@@ -21,6 +32,11 @@
           </div>
 
           <div class="control-element">
+            <button id="control-analysis-up" class="text" onclick="">Analysis up</button>
+            <button id="control-analysis-right" class="text" onclick="">Analysis right</button>
+          </div>
+
+          <div class="control-element">
             <select id="backend" class="text">
               <option selected value="mpmf">Multiple Precision, Multiple Format Evaluator</option>
               <option value="ieee754">Evaluate FPCore with IEEE 754 floating-point</option>
@@ -30,6 +46,8 @@
               <option value="sinking-point">Evaluate FPCore with Sinking-Point (EXPERIMENTAL)</option>
               <option value="sinking-posit">Evaluate FPCore with Sinking Posits (EXPERIMENTAL)</option>
             </select>
+            <label for="enable-analysis" class="text" style="padding-left:8px;padding-right:4px;" title="Enable dynamic analysis (slow)">enable analysis</label>
+            <input id="enable-analysis" type="checkbox" title="Enable dynamic analysis (slow)">
           </div>
 
           <div id="mpmf-opts" class="backend-opts control-element">

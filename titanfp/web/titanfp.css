@@ -39,8 +39,17 @@
 /* webtool in evaluate.html */
 
 #webtool {
+    position: absolute;
     width: 800px;
     height: 600px;
+    z-index: 0;
+}
+
+#overlay {
+    position: absolute;
+    width: 800px;
+    height: 600px;
+    z-index: 1;
 }
 
 .container {
@@ -67,6 +76,16 @@
     flex-direction: column;
     justify-content: flex-start;
     align-items: stretch;
+}
+
+.analysis {
+    top: 16px;
+    left: 16px;
+    width: 768px;
+    height: 568px;
+    min-height: 0;
+
+    background-color: #aaa;
 }
 
 .controls {

@@ -11,6 +11,7 @@ const min_height = 480;
 export function resize_webtool() {
     const vw = Math.max(window.innerWidth, min_width);
     const vh = Math.max(window.innerHeight, min_height);
+    const w_simple = vw - (border_px * 2);
     const w = (vw - (border_px * 3)) / 2;
     const h = vh - (border_px * 2);
 
@@ -18,19 +19,41 @@ export function resize_webtool() {
         width: vw + 'px',
         height: vh + 'px',
     });
+    $('#overlay').css({
+        width: vw + 'px',
+        height: vh + 'px',
+    });
     $('.left').css({
         // no left border; monaco can put line numbers over there
         width: (w + border_px) + 'px',
-        height:  h + 'px',
+        height: h + 'px',
         left: '0px',
         top: border_px + 'px',
     });
     $('.right').css({
-        width: w  + 'px',
-        height:  h + 'px',
+        width: w + 'px',
+        height: h + 'px',
         left: (w + (border_px * 2)) + 'px',
         top: border_px + 'px',
     });
+
+    if ($('#overlay').data('analysis_position') == 'up') {
+        $('.analysis').css({
+            width: w_simple + 'px',
+            height: h + 'px',
+            left: border_px + 'px',
+            top: border_px + 'px',
+        });
+    }
+
+    if ($('#overlay').data('analysis_position') == 'right') {
+        $('.analysis').css({
+            width: w + 'px',
+            height: h + 'px',
+            left: (w + (border_px * 2)) + 'px',
+            top: border_px + 'px',
+        });
+    }
 
     if (editor_box.length > 0) {
         editor_box[0].layout({width: w + border_px, height: h});
@@ -40,6 +63,51 @@ export function resize_webtool() {
 resize_webtool();
 
 $(window).on('resize', debounce(resize_webtool, 100));
+
+
+export function analysis_up() {
+    const vw = Math.max(window.innerWidth, min_width);
+    const vh = Math.max(window.innerHeight, min_height);
+    const w = vw - (border_px * 2);
+    const h = vh - (border_px * 2);
+
+    $('#overlay').css({
+        width: vw + 'px',
+        height: vh + 'px',
+        display: '',
+    });
+    $('#overlay').data('analysis_position', 'up');
+    $('.analysis').css({
+        width: w + 'px',
+        height: h + 'px',
+        left: border_px + 'px',
+        top: border_px + 'px',
+    });
+}
+
+export function analysis_right() {
+    const vw = Math.max(window.innerWidth, min_width);
+    const vh = Math.max(window.innerHeight, min_height);
+    const w = (vw - (border_px * 3)) / 2;
+    const h = vh - (border_px * 2);
+
+    $('#overlay').css({
+        width: vw + 'px',
+        height: vh + 'px',
+        display: '',
+    });
+    $('#overlay').data('analysis_position', 'right');
+    $('.analysis').css({
+        width: w + 'px',
+        height: h + 'px',
+        left: (w + (border_px * 2)) + 'px',
+        top: border_px + 'px',
+    });
+}
+
+export function analysis_down() {
+    $('#overlay').css('display', 'none');
+}
 
 
 function on_backend() {

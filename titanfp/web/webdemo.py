@@ -106,6 +106,8 @@ class WebtoolState(object):
     posit_override = False
     img = None
     img_tensor = None
+    enable_analysis = None
+    heatmap = None
 
     def __init__(self, data):
         try:
@@ -165,6 +167,9 @@ class WebtoolState(object):
                 print('', file=sys.stderr, flush=True)
         else:
             self.img_tensor = []
+
+        if 'enable_analysis' in payload:
+            self.enable_analysis = self._read_bool(payload['enable_analysis'], 'enable_analysis')
 
         if 'heatmap' in payload:
             self.heatmap = self._read_bool(payload['heatmap'], 'heatmap')

@@ -4,7 +4,8 @@ import $ from 'jquery';
 // import * as monaco from 'monaco-editor';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 
-import {editor_box, resize_webtool, do_layout} from './layout';
+import {editor_box, resize_webtool, do_layout,
+        analysis_up, analysis_right, analysis_down} from './layout';
 
 
 // import {smt2} from './monaco_smt2';
@@ -106,6 +107,7 @@ function get_webtool_state() {
         'es': $('#posit-es').val(),
         'nbits': $('#posit-nbits').val(),
         'posit_override': $('#posit-override').is(':checked'),
+        'enable_analysis': $('#enable-analysis').is(':checked'),
         'heatmap': $('#heatmap').is(':checked'),
     };
 }
@@ -137,6 +139,9 @@ function set_webtool_state(state) {
     }
     if (state.hasOwnProperty('posit_override')) {
         $('#posit-override').prop('checked', state.posit_override == 'true');
+    }
+    if (state.hasOwnProperty('enable_analysis')) {
+        $('#enable-analysis').prop('checked', state.enable_analysis == 'true');
     }
     if (state.hasOwnProperty('heatmap')) {
         $('#heatmap').prop('checked', state.heatmap == 'true');
@@ -266,6 +271,12 @@ function submit_eval() {
 }
 
 $('#evaluate').click(submit_eval);
+
+$('#control-analysis-up').click(analysis_up);
+$('#control-analysis-right').click(analysis_right);
+$('#analysis-up').click(analysis_up);
+$('#analysis-right').click(analysis_right);
+$('#analysis-down').click(analysis_down);
 
 
 // image input
