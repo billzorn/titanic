@@ -155,18 +155,12 @@ class WebtoolState(object):
                 decoded = base64.decodebytes(bytes(imgdata, 'ascii'))
                 self.img = Image.open(io.BytesIO(decoded))
 
-                self.img_tensor = [np_array_to_ndarray(np.array(self.img))]
-
-                # img_sexp = img_to_sexp(self.img)
-                # self.img_tensor = fpcparser.read_exprs('(data ' + img_sexp + ')')
+                self.img_tensor = np_array_to_ndarray(np.array(self.img))
 
             except Exception:
-                self.img_tensor = []
                 print('Exception decoding user image:', file=sys.stderr, flush=True)
                 traceback.print_exc()
                 print('', file=sys.stderr, flush=True)
-        else:
-            self.img_tensor = []
 
         if 'enable_analysis' in payload:
             self.enable_analysis = self._read_bool(payload['enable_analysis'], 'enable_analysis')
@@ -227,6 +221,11 @@ def b64_encode_image(e):
     return str(base64.encodebytes(buf.getvalue()), 'ascii')
 
 
+def create_analysis_report(interpreter):
+    report = 'Evaluated {:d} expressions'.format(interpreter.evals)
+    return report
+
+
 def run_eval(data):
     #print('Eval yo!')
     #print(repr(data))
@@ -268,14 +267,13 @@ def run_eval(data):
         ctx = backend.ctype(props=props)
 
         print(ctx)
-        print(state.heatmap)
 
         # hack?
         if state.backend in webdemo_mpmf_backends:
             ctx = None # use context from the FPCore
 
         if state.img is not None:
-            args_with_image = state.img_tensor + state.args
+            args_with_image = [state.img_tensor] + state.args
         else:
             args_with_image = state.args
 
@@ -287,33 +285,38 @@ def run_eval(data):
 
             # yuck
             if state.img is not None:
-                rows, cols, channels = state.img_tensor[0].shape
+                rows, cols, channels = state.img_tensor.shape
                 named_args[0][1] = '[{}x{} image]'.format(rows, cols)
 
             # reset the interpreter to avoid counting evals from arguments
             backend_interpreter = backend()
-            backend_interpreter.max_evals = 5000000
-            als, bc_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis()
-            backend_interpreter.analyses = [als, bc_als]
+
+            if state.enable_analysis:
+                backend_interpreter.max_evals = 1000000
+                als, bc_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis()
+                backend_interpreter.analyses = [als, bc_als]
+            else:
+                backend_interpreter.max_evals = 5000000
+
             for core in state.cores:
                 backend_interpreter.register_function(core)
+
+            try:
+                pre_val = backend_interpreter.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
+            except interpreter.EvaluatorError as e:
+                pre_val = str(e)
+
             e_val = backend_interpreter.interpret(core, args_with_image, ctx=ctx, override=state.override)
+
+            if state.enable_analysis:
+                analysis_report = create_analysis_report(backend_interpreter)
+            else:
+                analysis_report = ''
+
         except interpreter.EvaluatorUnboundError as e:
             raise WebtoolError('unbound variable {}'.format(str(e)))
         except interpreter.EvaluatorError as e:
             raise WebtoolError(str(e))
-
-        try:
-            pre_val = backend_interpreter.interpret_pre(core, args_with_image, ctx=ctx, override=state.override)
-        except interpreter.EvaluatorError as e:
-            pre_val = str(e)
-
-        for eid, record in als.node_map.items():
-            print('  ', eid, record.e.depth_limit(3), record.evals)
-
-        annotated = core.e.merge_annotations({eid:record.to_props() for eid, record in als.node_map.items()})
-        print(annotated)
-        print(annotated.remove_annotations())
 
         result = {
             'success': 1,
@@ -321,9 +324,10 @@ def run_eval(data):
             'e_val': str(e_val),
             'pre_val': str(pre_val),
             'eval_count': str(backend_interpreter.evals),
-            'bits_computed': str(bc_als.bits_computed),
-            'bits_requested': str(bc_als.bits_requested),
         }
+
+        if analysis_report:
+            result['report'] = analysis_report
 
         if state.img is not None:
             if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [3,4]:

@@ -10,12 +10,15 @@
 
     <section id="overlay" style="display:none;">
       <div class="analysis container code">
-        <div class="control-element">
-          <button id="analysis-up" class="text" onclick="">Analysis up</button>
-          <button id="analysis-right" class="text" onclick="">Analysis right</button>
-          <button id="analysis-down" class="text" onclick="">Analysis down</button>
+        <div class="control-standalone">
+          <button id="analysis-up" class="text" onclick="">Fullscreen</button>
+          <button id="analysis-right" class="text" onclick="">Right</button>
+          <button id="analysis-down" class="text" onclick="">Hide</button>
         </div>
-        <p>AND THIS IS SOME TEXT YEAH</p>
+        <div class="output">
+          <div id="overlay-result" class="output-item"></div>
+          <div id="overlay-report" class="output-item"></div>
+        </div>
       </div>
     </section>
 
@@ -31,10 +34,10 @@
             <a class="text" href="http://fpbench.org/benchmarks.html">browse benchmarks</a>
           </div>
 
-          <div class="control-element">
-            <button id="control-analysis-up" class="text" onclick="">Analysis up</button>
-            <button id="control-analysis-right" class="text" onclick="">Analysis right</button>
-          </div>
+          <!-- <div class="control-element"> -->
+          <!--   <button id="control-analysis-up" class="text" onclick="">Analysis up</button> -->
+          <!--   <button id="control-analysis-right" class="text" onclick="">Analysis right</button> -->
+          <!-- </div> -->
 
           <div class="control-element">
             <select id="backend" class="text">

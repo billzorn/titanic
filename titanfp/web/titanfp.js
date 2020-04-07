@@ -153,6 +153,18 @@ function set_webtool_state(state) {
 
 let result_id = 1;
 
+function scroll_output() {
+    const output_div = $('#output');
+    output_div.scrollTop(output_div.prop("scrollHeight"));
+}
+
+function show_report(result_body, report) {
+    $('#overlay-result').html(result_body);
+    const report_row = '<div class="output-row"> <pre class="output-pre code">' + report + '</pre></div>';
+    $('#overlay-report').html(report_row);
+    analysis_up();
+}
+
 function register_result() {
     const result_id_name = 'result-' + result_id;
     result_id += 1;
@@ -173,6 +185,7 @@ function register_result() {
 
 function eval_result(result, id_name, link_url) {
     let body = '';
+    let body_for_report = '';
 
     if (result.success) {
         body += '<div class="output-row">';
@@ -204,7 +217,17 @@ function eval_result(result, id_name, link_url) {
             body += '</div>';
         }
         body += '<div class="output-row">';
-        body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated, ' + result.bits_requested + ' bits requested, ' + result.bits_computed + ' bits computed)</pre>';
+        if ('report' in result) {
+            body_for_report += body;
+            body_for_report += '</div>';
+
+            const button_name = 'report-' + id_name;
+            body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated) ';
+            body += '<button id="' + button_name + '" class="text" onclick="">View report</button>';
+            body += '</pre>';
+        } else {
+            body += '<pre class="output-pre code">(' + result.eval_count + ' expressions evaluated)</pre>';
+        }
         body += '</div>';
     } else {
         if (result.message) {
@@ -216,8 +239,14 @@ function eval_result(result, id_name, link_url) {
 
     $('#' + id_name).html(body);
 
-    const output_div = $('#output');
-    output_div.scrollTop(output_div.prop("scrollHeight"));
+    // need to wait to create the body before we can register listeners on the button
+    if (result.success && 'report' in result) {
+        const button_name = 'report-' + id_name;
+        const report_html = result.report;
+        $('#' + button_name).click(() => show_report(body_for_report, report_html));
+    }
+
+    scroll_output();
 }
 
 function submit_eval() {
@@ -234,8 +263,7 @@ function submit_eval() {
                           + '(<a target="_blank" rel="noopener noreferrer" href="' + link_url + '">link</a>) Evaluating...</p>'
                           + '</div>');
 
-    const output_div = $('#output');
-    output_div.scrollTop(output_div.prop("scrollHeight"));
+    scroll_output();
 
     const img_input = $('#user_upload')[0];
     if (img_input.files && img_input.files[0]) {
@@ -272,8 +300,8 @@ function submit_eval() {
 
 $('#evaluate').click(submit_eval);
 
-$('#control-analysis-up').click(analysis_up);
-$('#control-analysis-right').click(analysis_right);
+// $('#control-analysis-up').click(analysis_up);
+// $('#control-analysis-right').click(analysis_right);
 $('#analysis-up').click(analysis_up);
 $('#analysis-right').click(analysis_right);
 $('#analysis-down').click(analysis_down);

@@ -85,7 +85,7 @@
     height: 568px;
     min-height: 0;
 
-    background-color: #aaa;
+    background-color: #fff;
 }
 
 .controls {
@@ -109,6 +109,13 @@
 .control-element {
     flex: initial;
     padding-top: 8px;
+
+    display: flex;
+}
+
+.control-standalone {
+    flex: initial;
+    padding-bottom: 8px;
 
     display: flex;
 }
