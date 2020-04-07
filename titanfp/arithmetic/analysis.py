@@ -37,7 +37,7 @@ class DefaultAnalysis(object):
     def report(self):
         s = 'Default titanic analysis:\n'
         lines = []
-        for k, record in self.node_map:
+        for k, record in self.node_map.items():
             line = '  ' + str(record.e.depth_limit(3)) + ' : ' + str(record.evals)
         return s + '\n'.join(lines)
 
