@@ -39,6 +39,7 @@ class DefaultAnalysis(object):
         lines = []
         for k, record in self.node_map.items():
             line = '  ' + str(record.e.depth_limit(3)) + ' : ' + str(record.evals)
+            lines.append(line)
         return s + '\n'.join(lines)
 
 class DefaultRecord(object):
