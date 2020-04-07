@@ -222,8 +222,9 @@ def b64_encode_image(e):
 
 
 def create_analysis_report(interpreter):
-    report = 'Evaluated {:d} expressions'.format(interpreter.evals)
-    return report
+    report = 'Evaluated {:d} expressions\n\n'.format(interpreter.evals)
+    reports = [als.report() for als in interpreter.analyses]
+    return report + '\n\n'.join(reports)
 
 
 def run_eval(data):
