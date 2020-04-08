@@ -19,10 +19,6 @@ export function resize_webtool() {
         width: vw + 'px',
         height: vh + 'px',
     });
-    $('#overlay').css({
-        width: vw + 'px',
-        height: vh + 'px',
-    });
     $('.left').css({
         // no left border; monaco can put line numbers over there
         width: (w + border_px) + 'px',
@@ -38,6 +34,11 @@ export function resize_webtool() {
     });
 
     if ($('#overlay').data('analysis_position') == 'up') {
+        $('#overlay').css({
+            width: vw + 'px',
+            height: vh + 'px',
+            left: '0px',
+        });
         $('.analysis').css({
             width: w_simple + 'px',
             height: h + 'px',
@@ -47,10 +48,15 @@ export function resize_webtool() {
     }
 
     if ($('#overlay').data('analysis_position') == 'right') {
+        $('#overlay').css({
+            width: (w + (border_px * 2)) + 'px',
+            height: vh + 'px',
+            left: (w + border_px) + 'px',
+        });
         $('.analysis').css({
             width: w + 'px',
             height: h + 'px',
-            left: (w + (border_px * 2)) + 'px',
+            left: border_px + 'px',
             top: border_px + 'px',
         });
     }
@@ -74,6 +80,7 @@ export function analysis_up() {
     $('#overlay').css({
         width: vw + 'px',
         height: vh + 'px',
+        left: '0px',
         display: '',
     });
     $('#overlay').data('analysis_position', 'up');
@@ -92,15 +99,16 @@ export function analysis_right() {
     const h = vh - (border_px * 2);
 
     $('#overlay').css({
-        width: vw + 'px',
+        width: (w + (border_px * 2)) + 'px',
         height: vh + 'px',
+        left: (w + border_px) + 'px',
         display: '',
     });
     $('#overlay').data('analysis_position', 'right');
     $('.analysis').css({
         width: w + 'px',
         height: h + 'px',
-        left: (w + (border_px * 2)) + 'px',
+        left: border_px + 'px',
         top: border_px + 'px',
     });
 }
