@@ -551,7 +551,10 @@ class TensorStar(Tensor):
 
     def subexprs(self):
         dim_vars, dim_exprs = zip(*self.dim_bindings)
-        while_vars, while_inits, while_updates = zip(*self.while_bindings)
+        if self.while_bindings:
+            while_vars, while_inits, while_updates = zip(*self.while_bindings)
+        else:
+            while_vars, while_inits, while_updates = [], [], []
         return [dim_exprs, while_inits, while_updates, [self.body]]
 
     def replace_subexprs(self, exprs):
