@@ -592,6 +592,9 @@ class NaryExpr(Expr):
         else:
             return result
 
+class Array(NaryExpr):
+    name: str = 'array'
+
 class UnknownOperator(NaryExpr):
     name: str = 'UnknownOperator'
 

@@ -47,6 +47,9 @@ reserved_constructs = {
     'tensor' : None,
     'tensor*' : None,
 
+    # arrays
+    'array' : ast.Array,
+
     # tensor operations
     'dim' : ast.Dim,
     'size' : ast.Size,
@@ -289,7 +292,6 @@ class Visitor(FPCoreVisitor):
                         else:
                             input_set.add(dim)
 
-
         props = self._parse_props(ctx.props)
         e = ctx.e.accept(self)
         name = props.get('name', None)
@@ -334,7 +336,13 @@ class Visitor(FPCoreVisitor):
         k = int(p), int(q)
         return self._intern_rational(k)
 
-    def visitNumberDigits(self, ctx) -> ast.Expr:
+    def visitExprSym(self, ctx) -> ast.Expr:
+        return self._intern_symbol(ctx.x.text)
+
+    def visitExprNum(self, ctx) -> ast.Expr:
+        return ctx.n.accept(self)
+
+    def visitExprDigits(self, ctx) -> ast.Expr:
         try:
             k = int(ctx.m.text), int(ctx.e.text), int(ctx.b.text)
         except ValueError:
@@ -342,37 +350,9 @@ class Visitor(FPCoreVisitor):
                              .format(repr(ctx.m.text), repr(ctx.e.text), repr(ctx.b.text)))
         return self._intern_digits(k)
 
-    def visitExprNum(self, ctx) -> ast.Expr:
-        return ctx.n.accept(self)
-
-    def visitExprSym(self, ctx) -> ast.Expr:
-        return self._intern_symbol(ctx.x.text)
-
     def visitExprCtx(self, ctx) -> ast.Expr:
         return ast.Ctx(
             self._parse_props(ctx.props),
-            ctx.body.accept(self),
-        )
-
-    def visitExprTensor(self, ctx) -> ast.Expr:
-        return ast.Tensor(
-            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
-            ctx.body.accept(self),
-        )
-
-    def visitExprTensorStar(self, ctx) -> ast.Expr:
-        if ctx.name is None:
-            ident = ''
-        else:
-            ident = ctx.name.text
-        return ast.TensorStar(
-            ident,
-            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
-            [*zip(
-                (x.text for x in ctx.while_xs),
-                (e0.accept(self) for e0 in ctx.while_e0s),
-                (e.accept(self) for e in ctx.while_es),
-            )],
             ctx.body.accept(self),
         )
 
@@ -439,8 +419,27 @@ class Visitor(FPCoreVisitor):
             ctx.body.accept(self),
         )
 
-    def visitExprData(self, ctx) -> ast.Expr:
-        return ast.TensorLit(ctx.d.accept(self))
+    def visitExprTensor(self, ctx) -> ast.Expr:
+        return ast.Tensor(
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            ctx.body.accept(self),
+        )
+
+    def visitExprTensorStar(self, ctx) -> ast.Expr:
+        if ctx.name is None:
+            ident = ''
+        else:
+            ident = ctx.name.text
+        return ast.TensorStar(
+            ident,
+            [*zip((x.text for x in ctx.xs), (e.accept(self) for e in ctx.es))],
+            [*zip(
+                (x.text for x in ctx.while_xs),
+                (e0.accept(self) for e0 in ctx.while_e0s),
+                (e.accept(self) for e in ctx.while_es),
+            )],
+            ctx.body.accept(self),
+        )
 
     def visitExprSugarInt(self, ctx) -> ast.Expr:
         return ast.Ctx(
@@ -463,20 +462,20 @@ class Visitor(FPCoreVisitor):
         else:
             raise FPCoreParserError('invalid keyword {} in FPCore property'.format(name))
 
-    # def visitDatumNum(self, ctx) -> ast.Expr:
-    #     return ctx.n.accept(self)
+    def visitDatumNum(self, ctx) -> ast.Expr:
+        return ctx.n.accept(self)
 
-    # def visitDatumSym(self, ctx) -> ast.Expr:
-    #     return self._intern_symbol(ctx.x.text)
-
-    def visitDatumExpr(self, ctx) -> ast.Expr:
-        return ctx.e.accept(self)
+    def visitDatumSym(self, ctx) -> ast.Expr:
+        return ctx.x.accept(self)
 
     def visitDatumStr(self, ctx) -> ast.Expr:
         return self._intern_string(ctx.s.text[1:-1])
 
     def visitDatumList(self, ctx) -> typing.Tuple[ast.Expr]:
         return tuple(d.accept(self) for d in ctx.data)
+
+    def visitSymbolic(self, ctx) -> ast.Expr:
+        return self._intern_symbol(ctx.x.text)
 
 
 class LogErrorListener(antlr4.error.ErrorListener.ErrorListener):
