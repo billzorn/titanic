@@ -8,6 +8,28 @@ class ShapeError(ValueError):
     """Invalid shape."""
 
 
+class Shaped(object):
+    """A multi-dimensional sequence, which records the size of each dimension."""
+
+    @property
+    def data(self):
+        raise NotImplementedError()
+    
+    @property
+    def shape(self):
+        raise NotImplementedError()
+
+    # ???
+    
+    @property
+    def strides(self):
+        raise NotImplementedError()
+
+    @property
+    def size(self):
+        raise NotImplementedError()
+
+
 def reshape(a, recshape=None):
     """Convert a nested, non-string iterable into a flat generator and its shape.
     Raggedly shaped data will be processed recursively by calling recshape.
@@ -258,6 +280,45 @@ def check_offset(data, shape, start, strides):
                          .format(repr(shape), repr(strides), repr(start + min_offset), repr(start + max_offset),
                                  repr(len(data))))
 
+def combine_lookups(lookup1, lookup2):
+    """Perform lookup1, then lookup2."""
+    new_lookup = []
+    it1 = iter(lookup1)
+    it2 = iter(lookup2)
+    q1 = next(it1, None)
+    q2 = next(it2, None)
+
+
+    while q1 is not None and q2 is not None:
+        if isinstance(q1, int):
+            new_lookup.append(q1)
+            q1 = next(it1, None)
+        elif isinstance(q1, slice):
+            if isinstance(q2, int):
+                raise NotImplementedError()
+                # we can't actually combine here, because without being able to call q1.indices,
+                # we have no idea if this lookup is actually in range _for the slice_
+                # even if it isn't out of range for the backing array
+            elif isinstance(q2, slice):
+                raise NotImplementedError()
+                # this involves complicated slice arithmetic, but it should be possible
+                # to make it work
+            else:
+                raise TypeError('index must be int or slice, got {}'.format(repr(q2)))
+            q1 = next(it1, None)
+            q2 = next(it2, None)
+        else:
+            raise TypeError('index must be int or slice, got {}'.format(repr(q1)))
+
+    if q1 is None:
+        if q2 is None:
+            return tuple(new_lookup)
+        else: # q2 is not None
+            return (*new_lookup, q2, *it2)
+    else: # q1 is not None, but q2 must be None to have exited the loop
+        return (*new_lookup, q1, *it1)
+
+
 
 
 class NDSeq(Sequence):
@@ -454,6 +515,9 @@ class NDSeqView(NDSeq):
     def _fixup_size(self):
         self._size = shape_size(self._shape)
 
+    def reify(self):
+        raise NotImplementedError()
+
     def __init__(self, data, shape, start=0, strides=None):
         self._data = data
         self._shape = shape
@@ -468,23 +532,6 @@ class NDSeqView(NDSeq):
 
         # might want to remove to improve performance if the check isn't needed
         check_offset(self._data, self._shape, self._start, self._strides)
-
-    def __iter__(self):
-        shape = self.shape
-        if len(shape) > 1:
-            dim, *subshape = shape
-            stride, *substrides = self.strides
-            return (NDSeqView(self.data, subshape, start=self.start + (i*stride), strides=substrides) for i in range(dim))
-        elif len(shape) == 1:
-            start = self.start
-            length, = shape
-            step, = self.strides
-            if start == 0 and step == 1:
-                return iter(self.data)
-            else:
-                return (self.data[start + (i*step)] for i in range(length))
-        else:
-            return iter([])
 
 
 
