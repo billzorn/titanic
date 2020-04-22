@@ -7,28 +7,241 @@ from collections.abc import Iterable, Sequence, MutableSequence
 class ShapeError(ValueError):
     """Invalid shape."""
 
-
 class Shaped(object):
     """A multi-dimensional sequence, which records the size of each dimension."""
 
     @property
     def data(self):
         raise NotImplementedError()
-    
+
     @property
     def shape(self):
         raise NotImplementedError()
 
-    # ???
+class View(object):
+    """A view of another data structure, which can reify()
+    to reconstruct an explicit backing.
+    """
+
+    def reify(self):
+        raise NotImplementedError()
+
+
+class Sliceref(object):
+    """A more powerful slice object, which can combine multiple slices and lookups."""
+
+    def __init__(self, s, i):
+        self.s = s
+        self.i = i
+
+    def ref(self, length):
+        start, stop, stride = self.s.indices(length)
+        i = self.i
+
+        # # Full, straightening implementation, organized by index direction.
+
+        # if 0 <= i:
+        #     if 0 <= stride:
+        #         # just compute the index
+        #         i = start + (i * stride)
+        #     else: # stride < 0
+        #         # straighten
+        #         start, stop = stop+1, start+1
+
+        #         # straightened, so need to compute index from other side
+        #         i = (stop - 1) + (i * stride)
+        # else: # i < 0
+        #     if 0 <= stride:
+        #         # the sliced sequence will be aligned based on where we started;
+        #         # compute the offset to index from the other end
+        #         slen = stop - start
+        #         srem = slen % stride
+        #         if srem == 0:
+        #             srem = stride
+
+        #         # given the offset, we take abs(i) - 1 actual steps;
+        #         # this can be simulated by adding 1 to i but keeping its sign
+        #         i = (stop - srem) + ((i + 1) * stride)
+        #     else: # stride < 0
+        #         # straighten
+        #         start, stop = stop+1, start+1
+
+        #         # sequence length is not affected by straightening (except in size)
+        #         slen = stop - start
+        #         # we need to invert stride so modulus gives us the rigth answer
+        #         srem = slen % -stride
+        #         if srem == 0:
+        #             srem = -stride
+
+        #         # compute index for other side, noting the opposite sign of srem here
+        #         i = ((start - 1) + srem) + ((i + 1) * stride)
+
+        # if start <= i < stop:
+        #     return i
+        # else:
+        #     raise IndexError('index {} out of range for deferred {} of length {}'
+        #                      .format(repr(self.i), repr(self.s), repr(length)))
+
+        # Non-straightening implementation, logically the same as straightening.
+
+        if 0 <= i:
+            i = start + (i * stride)
+        else:
+            r = (stop - start) % stride
+            if r == 0:
+                r = stride
+            i = (stop - r) + ((i + 1) * stride)
+
+        if 0 <= stride:
+            if start <= i < stop:
+                return i
+        else:
+            if stop < i <= start:
+                return i
+
+        raise IndexError('index {} out of range for deferred {} of length {}'
+                         .format(repr(self.i), repr(self.s), repr(length)))
+
+    @classmethod
+    def combine(cls, s1, s2):
+        if isinstance(s2, int):
+            return cls(s1, s2)
+        elif isinstance(s2, slice):
+            stride1 = 1 if s1.step is None else s1.step
+            stride2 = 1 if s2.step is None else s2.step
+            if stride1 < 0:
+                start1 = -1 if s1.start is None else s1.start
+            else:
+                start1 = 0 if s1.start is None else s1.start
+            if stride2 < 0:
+                start2 = -1 if s2.start is None else s2.start
+            else:
+                start2 = 0 if s2.start is None else s2.start
+            # can't filter out these Nones
+            stop1 = s1.stop
+            stop2 = s2.stop
+
+            if 0 <= start2:
+                start = start1 + (start2 * stride1)
+            else:
+                pass
+
+            #Never mind - you can't do this. Not without a length.
+
+            # Consider the case wher you try to negative index in teh second slice.
+            # i.e. start2 is negative.
+
+            # this is computed against the end of the first slice,
+            # which requires knowing the index of the last element in the first slice,
+            # which requires knowing teh alignment adjustment
+            # based on the remainder of the length of the first slice.
+
+            # Without a concrete length for the first slice, there's no way to get that remainder,
+            # and hence no way to write down a starting offset for the combined slice.
+                
+            
+
+            
+                
+        else:
+            raise TypeError('Sliceref can only combine slice with int or slice, got {}'
+                            .format(repr(s2)))
+
+def testref(sr, ll, verbose=False):
+    result1 = None
+    result2 = None
+
+    try:
+        idx = sr.ref(len(ll))
+        result1 = ll[idx]
+    except IndexError as e:
+        idx = e
+    except NotImplementedError:
+        if verbose:
+            print('  skipped')
+        return -1
+
+    try:
+        result2 = ll[sr.s][sr.i]
+    except IndexError:
+        pass
+
+    if result1 != result2:
+        print('  failed: sr {} [{}] -> {}, {} vs {} of {}'
+              .format(sr.s, sr.i, idx, repr(result1), repr(result2), ll))
+        return 1
+    else:
+        if verbose:
+            print('  pass, got {}'.format(repr(result1)))
+        return 0
+
+
+import itertools
+def mk_all_indices(n):
+    return range(-(n+2), n+2)
+def mk_all_slices(n):
+    idxs = [None, *range(-(n+2), n+2)]
+    steps = [x for x in idxs if x is not 0]
+    return (slice(*args) for args in itertools.product(idxs, idxs, steps))
+
+def testall(n):
+    print('testing up to length {}'.format(n))
+    tests = 0
+    fails = 0
+    skips = 0
+    for i in range(n):
+        ll = [*range(i)]
+        for s in mk_all_slices(i):
+            for x in mk_all_indices(i):
+                tests += 1
+                sr = Sliceref(s, x)
+                result = testref(sr, ll)
+                if result > 0:
+                    fails += result
+                else:
+                    skips -= result
+    print('{} tests, {} cases skipped, {} fails, done'.format(tests, skips, fails))
+
+
+
+def samesl(s1, ll):
+    step = s1.step or 1
+    if step < 0:
+        start = -1 if s1.start is None else s1.start
+    else:
+        start = 0 if s1.start is None else s1.start
+    # hmmm
+    stop = s1.stop
+
+    s2 = slice(start, stop, step)
+
+    result1 = None
+    result2 = None
+
+    try:
+        result1 = ll[s1]
+    except IndexError:
+        pass
+    try:
+        result2 = ll[s2]
+    except IndexError:
+        pass
+
+    if result1 != result2:
+        print('oops! {} {} {}'.format(repr(s1), result1, result2))
+        return 1
+    else:
+        return 0
+
+def testsame(n):
+    fails = 0
+    for i in range(n):
+        ll = [*range(i)]
+        for s in mk_all_slices(i):
+            fails += samesl(s, ll)
+    print(fails)
+
     
-    @property
-    def strides(self):
-        raise NotImplementedError()
-
-    @property
-    def size(self):
-        raise NotImplementedError()
-
 
 def reshape(a, recshape=None):
     """Convert a nested, non-string iterable into a flat generator and its shape.
@@ -317,6 +530,21 @@ def combine_lookups(lookup1, lookup2):
             return (*new_lookup, q2, *it2)
     else: # q1 is not None, but q2 must be None to have exited the loop
         return (*new_lookup, q1, *it1)
+
+
+
+# TODO notes
+# shape cannot be empty
+# where are class divisions for shaped / view? Where do methods come from?
+# need new class for sliceref
+# -- store a slice and an index
+# -- combine two slices (factory function?)
+
+# how many implementations of reshape?
+# Special cases for shaped / view?
+
+# write __getitem__ and __iter__ in terms of _data, not data property
+# accessing data property of a view causes reification
 
 
 
