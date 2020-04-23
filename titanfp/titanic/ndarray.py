@@ -27,229 +27,15 @@ class View(object):
         raise NotImplementedError()
 
 
-class Sliceref(object):
-    """A more powerful slice object, which can combine multiple slices and lookups."""
-
-    def __init__(self, s, i):
-        self.s = s
-        self.i = i
-
-    def ref(self, length):
-        start, stop, stride = self.s.indices(length)
-        i = self.i
-
-        # # Full, straightening implementation, organized by index direction.
-
-        # if 0 <= i:
-        #     if 0 <= stride:
-        #         # just compute the index
-        #         i = start + (i * stride)
-        #     else: # stride < 0
-        #         # straighten
-        #         start, stop = stop+1, start+1
-
-        #         # straightened, so need to compute index from other side
-        #         i = (stop - 1) + (i * stride)
-        # else: # i < 0
-        #     if 0 <= stride:
-        #         # the sliced sequence will be aligned based on where we started;
-        #         # compute the offset to index from the other end
-        #         slen = stop - start
-        #         srem = slen % stride
-        #         if srem == 0:
-        #             srem = stride
-
-        #         # given the offset, we take abs(i) - 1 actual steps;
-        #         # this can be simulated by adding 1 to i but keeping its sign
-        #         i = (stop - srem) + ((i + 1) * stride)
-        #     else: # stride < 0
-        #         # straighten
-        #         start, stop = stop+1, start+1
-
-        #         # sequence length is not affected by straightening (except in size)
-        #         slen = stop - start
-        #         # we need to invert stride so modulus gives us the rigth answer
-        #         srem = slen % -stride
-        #         if srem == 0:
-        #             srem = -stride
-
-        #         # compute index for other side, noting the opposite sign of srem here
-        #         i = ((start - 1) + srem) + ((i + 1) * stride)
-
-        # if start <= i < stop:
-        #     return i
-        # else:
-        #     raise IndexError('index {} out of range for deferred {} of length {}'
-        #                      .format(repr(self.i), repr(self.s), repr(length)))
-
-        # Non-straightening implementation, logically the same as straightening.
-
-        if 0 <= i:
-            i = start + (i * stride)
-        else:
-            r = (stop - start) % stride
-            if r == 0:
-                r = stride
-            i = (stop - r) + ((i + 1) * stride)
-
-        if 0 <= stride:
-            if start <= i < stop:
-                return i
-        else:
-            if stop < i <= start:
-                return i
-
-        raise IndexError('index {} out of range for deferred {} of length {}'
-                         .format(repr(self.i), repr(self.s), repr(length)))
-
-    @classmethod
-    def combine(cls, s1, s2):
-        if isinstance(s2, int):
-            return cls(s1, s2)
-        elif isinstance(s2, slice):
-            stride1 = 1 if s1.step is None else s1.step
-            stride2 = 1 if s2.step is None else s2.step
-            if stride1 < 0:
-                start1 = -1 if s1.start is None else s1.start
-            else:
-                start1 = 0 if s1.start is None else s1.start
-            if stride2 < 0:
-                start2 = -1 if s2.start is None else s2.start
-            else:
-                start2 = 0 if s2.start is None else s2.start
-            # can't filter out these Nones
-            stop1 = s1.stop
-            stop2 = s2.stop
-
-            if 0 <= start2:
-                start = start1 + (start2 * stride1)
-            else:
-                pass
-
-            #Never mind - you can't do this. Not without a length.
-
-            # Consider the case wher you try to negative index in teh second slice.
-            # i.e. start2 is negative.
-
-            # this is computed against the end of the first slice,
-            # which requires knowing the index of the last element in the first slice,
-            # which requires knowing teh alignment adjustment
-            # based on the remainder of the length of the first slice.
-
-            # Without a concrete length for the first slice, there's no way to get that remainder,
-            # and hence no way to write down a starting offset for the combined slice.
-                
-            
-
-            
-                
-        else:
-            raise TypeError('Sliceref can only combine slice with int or slice, got {}'
-                            .format(repr(s2)))
-
-def testref(sr, ll, verbose=False):
-    result1 = None
-    result2 = None
-
-    try:
-        idx = sr.ref(len(ll))
-        result1 = ll[idx]
-    except IndexError as e:
-        idx = e
-    except NotImplementedError:
-        if verbose:
-            print('  skipped')
-        return -1
-
-    try:
-        result2 = ll[sr.s][sr.i]
-    except IndexError:
-        pass
-
-    if result1 != result2:
-        print('  failed: sr {} [{}] -> {}, {} vs {} of {}'
-              .format(sr.s, sr.i, idx, repr(result1), repr(result2), ll))
-        return 1
-    else:
-        if verbose:
-            print('  pass, got {}'.format(repr(result1)))
-        return 0
-
-
-import itertools
-def mk_all_indices(n):
-    return range(-(n+2), n+2)
-def mk_all_slices(n):
-    idxs = [None, *range(-(n+2), n+2)]
-    steps = [x for x in idxs if x is not 0]
-    return (slice(*args) for args in itertools.product(idxs, idxs, steps))
-
-def testall(n):
-    print('testing up to length {}'.format(n))
-    tests = 0
-    fails = 0
-    skips = 0
-    for i in range(n):
-        ll = [*range(i)]
-        for s in mk_all_slices(i):
-            for x in mk_all_indices(i):
-                tests += 1
-                sr = Sliceref(s, x)
-                result = testref(sr, ll)
-                if result > 0:
-                    fails += result
-                else:
-                    skips -= result
-    print('{} tests, {} cases skipped, {} fails, done'.format(tests, skips, fails))
-
-
-
-def samesl(s1, ll):
-    step = s1.step or 1
-    if step < 0:
-        start = -1 if s1.start is None else s1.start
-    else:
-        start = 0 if s1.start is None else s1.start
-    # hmmm
-    stop = s1.stop
-
-    s2 = slice(start, stop, step)
-
-    result1 = None
-    result2 = None
-
-    try:
-        result1 = ll[s1]
-    except IndexError:
-        pass
-    try:
-        result2 = ll[s2]
-    except IndexError:
-        pass
-
-    if result1 != result2:
-        print('oops! {} {} {}'.format(repr(s1), result1, result2))
-        return 1
-    else:
-        return 0
-
-def testsame(n):
-    fails = 0
-    for i in range(n):
-        ll = [*range(i)]
-        for s in mk_all_slices(i):
-            fails += samesl(s, ll)
-    print(fails)
-
-    
-
 def reshape(a, recshape=None):
     """Convert a nested, non-string iterable into a flat generator and its shape.
     Raggedly shaped data will be processed recursively by calling recshape.
     If recshape is None, then ragged data wil raise ShapeError.
     To leave ragged data unshaped, pass recshape=unshape.
     """
-    if isinstance(a, Iterable) and not isinstance(a, str):
+    if isinstance(a, Shaped) and not isinstance(a, View):
+        return a.data, a.shape
+    elif isinstance(a, Iterable) and not isinstance(a, str):
         data = []
         shape = False
         ragged = False
@@ -277,7 +63,7 @@ def reshape(a, recshape=None):
     else:
         return a, ()
 
-def unshape(data, shape):
+def unshape_tuple(data, shape):
     """Expand a flat iterable and its shape into a nested tuple.
     """
     a = data
@@ -291,6 +77,14 @@ def unshape_list(data, shape):
     a = data
     for dim in reversed(shape[1:]):
         a = [a[chunk * dim:(chunk + 1) * dim] for chunk in range(len(a) // dim)]
+    return a
+
+def unshape_gen(data, shape):
+    """Expand a flat list and its shape into a nested generator.
+    """
+    a = data
+    for dim in reversed(shape[1:]):
+        a = (a[chunk * dim:(chunk + 1) * dim] for chunk in range(len(a) // dim))
     return a
 
 def describe(data, shape=None, descr=repr, sep=', ', lparen='(', rparen=')'):
@@ -443,7 +237,7 @@ def calc_strides(shape):
 
 def calc_offset(shape, strides, lookup):
     """Given a shape with strides and a lookup, calculate a start offset and new strides.
-    Returns the new shape, the start offset, the new strides, and the rest of the lookup.
+    Returns the start offset, the new shape, the new strides, and the rest of the lookup.
     """
     new_shape = []
     new_strides = []
@@ -463,14 +257,14 @@ def calc_offset(shape, strides, lookup):
             extent = q_stop - q_start
             new_shape.append(max(0, extent // q_stride))
             new_strides.append(stride * q_stride)
-            start += stride * q_start
+            start += q_start * stride
         else:
             raise TypeError('index must be int or slice, got {}'.format(repr(query)))
         fused += 1
 
     return (
-        (*new_shape, *shape[fused:]),
         start,
+        (*new_shape, *shape[fused:]),
         (*new_strides, *strides[fused:]),
         tuple(lookup[fused:]),
     )
@@ -492,44 +286,6 @@ def check_offset(data, shape, start, strides):
         raise ShapeError('shape {} with strides {} extends from {} to {}, out of bounds for data with length {}'
                          .format(repr(shape), repr(strides), repr(start + min_offset), repr(start + max_offset),
                                  repr(len(data))))
-
-def combine_lookups(lookup1, lookup2):
-    """Perform lookup1, then lookup2."""
-    new_lookup = []
-    it1 = iter(lookup1)
-    it2 = iter(lookup2)
-    q1 = next(it1, None)
-    q2 = next(it2, None)
-
-
-    while q1 is not None and q2 is not None:
-        if isinstance(q1, int):
-            new_lookup.append(q1)
-            q1 = next(it1, None)
-        elif isinstance(q1, slice):
-            if isinstance(q2, int):
-                raise NotImplementedError()
-                # we can't actually combine here, because without being able to call q1.indices,
-                # we have no idea if this lookup is actually in range _for the slice_
-                # even if it isn't out of range for the backing array
-            elif isinstance(q2, slice):
-                raise NotImplementedError()
-                # this involves complicated slice arithmetic, but it should be possible
-                # to make it work
-            else:
-                raise TypeError('index must be int or slice, got {}'.format(repr(q2)))
-            q1 = next(it1, None)
-            q2 = next(it2, None)
-        else:
-            raise TypeError('index must be int or slice, got {}'.format(repr(q1)))
-
-    if q1 is None:
-        if q2 is None:
-            return tuple(new_lookup)
-        else: # q2 is not None
-            return (*new_lookup, q2, *it2)
-    else: # q1 is not None, but q2 must be None to have exited the loop
-        return (*new_lookup, q1, *it1)
 
 
 
@@ -557,6 +313,11 @@ class NDSeq(Sequence):
     @property
     def data(self):
         return self._data
+
+    # To allow implementations of methods to work in View subclasses,
+    # it is important for those methods to access data directly through _data
+    # rather than calling the property, as accessing the data property from a view
+    # will call reify().
 
     @property
     def shape(self):
@@ -617,8 +378,7 @@ class NDSeq(Sequence):
                 self._data = [None]*size
                 self._shape = shape
             else:
-                self._data = []
-                self._shape = ()
+                raise ValueError('shape cannot be empty')
 
     # From the point of view of the sequence interface,
     # an NDSeq behaves like a sequence of other NDSeqs,
@@ -637,60 +397,45 @@ class NDSeq(Sequence):
     #         return iter(self.data)
 
     def __iter__(self):
-        if len(self.shape) > 1:
-            dim, *subshape = self.shape
-            stride, *substrides = self.strides
-            return (NDSeqView(self.data, subshape, start=self.start + (i*stride), strides=substrides) for i in range(dim))
-        elif len(self.shape) == 1:
-            length, = self.shape
-            step, = self.strides
-            if self.start == 0 and step == 1:
-                return iter(self.data)
-            else:
-                return (self.data[self.start + (i*step)] for i in range(length))
+        dim, *subshape = self._shape
+        stride, *substrides = self.strides
+        start = self.start
+        if subshape:
+            return (NDSeqView(self._data, subshape, start=start + (i*stride), strides=substrides) for i in range(dim))
         else:
-            return iter([])
+            return (self._data[start + (i*stride)] for i in range(dim))
 
     # def __reversed__(self):
     #     raise NotImplementedError()
 
     def __len__(self):
-        if self.shape:
-            return self.shape[0]
-        else:
-            return 0
+        return self._shape[0]
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            if self.shape:
-                dim, *shape = self.shape
-                stride, *strides = self.strides
-                if key < 0:
-                    key = dim - key
-                if key < 0 or dim <= key:
-                    raise IndexError('lookup {} out of range for dimension {} of shape {}'
-                                     .format(repr(key), repr(shape)))
-                start = stride * key
+            dim, *subshape = self._shape
+            stride, *substrides = self.strides
+            if key < 0:
+                key = dim + key
+            if 0 <= key < dim:
+                offset = stride * key
                 lookup = ()
             else:
-                raise IndexError('too many indices, got ({},) for shape {}'
-                                 .format(repr(key), repr(self.shape)))
+                raise IndexError('lookup {} out of range for dimension {} of shape {}'
+                                 .format(repr(key), repr(shape)))
         elif isinstance(key, slice):
-            if self.shape:
-                dim, *shape = self.shape
-                stride, *strides = self.strides
-                k_start, k_stop, k_stride = key.indices(dim)
-                extent = k_stop - k_start
-                shape = (max(0, extent // k_stride), *shape)
-                strides = (stride * k_stride, *strides)
-                start = stride * k_start
-                lookup = ()
-            else:
-                raise IndexError('too many indices, got ({},) for shape {}'
-                                 .format(repr(key), repr(self.shape)))
+            dim, *subshape = self._shape
+            stride, *substrides = self.strides
+            k_start, k_stop, k_stride = key.indices(dim)
+            extent = k_stop - k_start
+            subshape = (max(0, extent // k_stride), *subshape)
+            substrides = (stride * k_stride, *substrides)
+            offset = k_start * stride
+            lookup = ()
         else:
-            shape, start, strides, lookup = calc_offset(self.shape, self.strides, key)
+            offset, subshape, substrides, lookup = calc_offset(self._shape, self.strides, key)
 
+        substart = self.start + offset
         if shape:
             if lookup:
                 # needs to reify
@@ -698,12 +443,12 @@ class NDSeq(Sequence):
                 # alternatively, we could keep lookups around and have a lookup merge logic
                 raise NotImplementedError()
             else:
-                return NDSeqView(self.data, shape, start=self.start + start, strides=strides)
+                return NDSeqView(self._data, subshape, start=substart, strides=substrides)
         else:
             if lookup:
-                return self.data[self.start + start][lookup]
+                return self._data[substart][lookup]
             else:
-                return self.data[self.start + start]
+                return self._data[substart]
 
     def index(self, x, start=None, stop=None):
         raise NotImplementedError()
@@ -711,6 +456,9 @@ class NDSeq(Sequence):
     def count(self, x):
         raise NotImplementedError()
 
+    def totuple(self):
+        return unshape_tuple(self.data, self.shape)
+    
     def tolist(self):
         return unshape_list(self.data, self.shape)
 
