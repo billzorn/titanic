@@ -1,6 +1,8 @@
 """N-dimensional arrays and utilities."""
 
 
+# NOTE TODO: see https://rszalski.github.io/magicmethods/
+
 from collections.abc import Iterable, Sequence, MutableSequence
 
 
@@ -87,20 +89,47 @@ def unshape_gen(data, shape):
         a = (a[chunk * dim:(chunk + 1) * dim] for chunk in range(len(a) // dim))
     return a
 
-def describe(data, shape=None, descr=repr, sep=', ', lparen='(', rparen=')'):
-    """Convert a shaped or unshaped iterable into a string, using the provided printing method and separators.
+def describe(a, descr=repr, sep=', ', lparen='(', rparen=')'):
+    """Convert a shaped or unshaped iterable into a one-line string,
+    using the provided printing method and separators.
     """
-    a = data
-    if shape and len(shape) > 1:
-        dim = shape[-1]
-        shape = shape[:-1]
-        a = zip(*[iter(a)]*dim)
-
     if isinstance(a,  Iterable) and not isinstance(a, str):
-        return lparen + sep.join(describe(elt, shape=shape, descr=descr,
-                                          sep=sep, lparen=lparen, rparen=rparen) for elt in a) + rparen
+        return ''.join([
+            lparen,
+            sep.join(describe(elt, descr=descr, sep=sep, lparen=lparen, rparen=rparen) for elt in a),
+            rparen,
+        ])
     else:
         return descr(a)
+
+def dimsep_array(depth, height, lparen, rparen):
+    if height <= 1:
+        return ', '
+    elif height <=3 :
+        indent = ' ' * (len(lparen) * (depth+1))
+        return ',{}{}'.format('\n' * (height-1), indent)
+    else:
+        indent = ' ' * (len(lparen) * (depth+1))
+        return ',\n\n{}## {:d} ##\n\n{}'.format(indent, depth, indent)
+
+def describe_nd(a, descr=repr, dimsep=dimsep_array, lparen='(', rparen=')', depth=0):
+    """Convert a shaped or unshaped iterable into a string and a count of dimensions,
+    using the provided printing method and separators.
+    dimsep is a function that computes the separator given a logical depth and height
+    from the top and bottom of the data structure, and the parentheses.
+    """
+    if isinstance(a, Iterable) and not isinstance(a, str):
+        rows, heights = zip(*(describe_nd(elt, descr=descr, dimsep=dimsep,
+                                          lparen=lparen, rparen=rparen, depth=depth+1) for elt in a))
+        height = max(heights) + 1
+        sep = dimsep(depth, height, lparen, rparen)
+        return ''.join([
+            lparen,
+            sep.join(rows),
+            rparen,
+        ]), height
+    else:
+        return descr(a), 0
 
 def locate(shape, pos):
     """Given a shape and a position vector, return the index of that position in the flat array.
@@ -305,7 +334,7 @@ def check_offset(data, shape, start, strides):
 
 
 
-class NDSeq(Sequence):
+class NDSeq(Sequence, Shaped):
     """N-dimensional immutable sequence."""
 
     # core properties
@@ -314,10 +343,9 @@ class NDSeq(Sequence):
     def data(self):
         return self._data
 
-    # To allow implementations of methods to work in View subclasses,
-    # it is important for those methods to access data directly through _data
-    # rather than calling the property, as accessing the data property from a view
-    # will call reify().
+    # Accessing the data property of a view object will immediately reify(),
+    # so methods with an implementation that doesn't require reification
+    # can avoid unnecessary work by accessign _data directly.
 
     @property
     def shape(self):
@@ -380,6 +408,19 @@ class NDSeq(Sequence):
             else:
                 raise ValueError('shape cannot be empty')
 
+    def __repr__(self):
+        data = self.data
+        shape = self.shape
+        return '{}({}, {})'.format(type(self).__name__, repr(data), repr(shape))
+
+    def __str__(self):
+        s, height = describe_nd(self, descr=str)
+        # data = self.data
+        # shape = self.shape
+        # unshaped = unshape_tuple(data, shape)
+        # s, height = describe_nd(unshaped, descr=str)
+        return s
+
     # From the point of view of the sequence interface,
     # an NDSeq behaves like a sequence of other NDSeqs,
     # which are implemented as views of the same data.
@@ -436,7 +477,7 @@ class NDSeq(Sequence):
             offset, subshape, substrides, lookup = calc_offset(self._shape, self.strides, key)
 
         substart = self.start + offset
-        if shape:
+        if subshape:
             if lookup:
                 # needs to reify
                 # also, can actually coalesce
@@ -458,18 +499,23 @@ class NDSeq(Sequence):
 
     def totuple(self):
         return unshape_tuple(self.data, self.shape)
-    
+
     def tolist(self):
         return unshape_list(self.data, self.shape)
 
-    def tostring(self, descr=repr, sep=', ', lparen='(', rparen=')'):
-        return describe(self.data, self.shape, descr=descr, sep=sep, lparen=lparen, rparen=rparen)
+    def tostr(self, descr=repr, sep=', ', lparen='(', rparen=')'):
+        return describe(self, descr=descr, sep=sep, lparen=lparen, rparen=rparen)
 
 
-class NDSeqView(NDSeq):
+class NDSeqView(NDSeq, View):
     """An offset view of an n-dimensional sequence."""
 
     # core properties
+
+    @property
+    def data(self):
+        self.reify()
+        return self._data
 
     @property
     def start(self):
@@ -490,9 +536,16 @@ class NDSeqView(NDSeq):
 
     def _fixup_size(self):
         self._size = shape_size(self._shape)
+        self._dirty_size = False
 
     def reify(self):
-        raise NotImplementedError()
+        data_gen, shape = reshape(self, recshape=NDSeq)
+        self._data = list(data_gen)
+        self._shape = shape
+        self._dirty_strides = True
+        self._dirty_size = True
+        del self._start
+        self.__class__ = NDSeq
 
     def __init__(self, data, shape, start=0, strides=None):
         self._data = data
@@ -508,7 +561,6 @@ class NDSeqView(NDSeq):
 
         # might want to remove to improve performance if the check isn't needed
         check_offset(self._data, self._shape, self._start, self._strides)
-
 
 
 class NDArray(MutableSequence, NDSeq):
