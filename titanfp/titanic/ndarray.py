@@ -20,6 +20,14 @@ class Shaped(object):
     def shape(self):
         raise NotImplementedError()
 
+    @property
+    def size(self):
+        raise NotImplementedError()
+
+    @property
+    def strides(self):
+        raise NotImplementedError()
+
 class View(object):
     """A view of another data structure, which can reify()
     to reconstruct an explicit backing.
@@ -53,7 +61,8 @@ def reshape(a, recshape=None):
                 if recshape is None:
                     raise ShapeError('array has ragged shape: expecting {}, got {}'.format(repr(shape), repr(subshape)))
                 ragged = True
-                shapes = [shape] * len(data)
+                shapes = [shape] * (len(data) - 1)
+                shapes.append(subshape)
         if ragged:
             return (recshape(subtensor, subshape) if subshape else subtensor
                     for subtensor, subshape in zip(data, shapes)), (len(data),)
@@ -194,62 +203,6 @@ def check_size(data, shape):
     if len(data) != scale:
         raise ShapeError('shape {} should have total size {}, got {}'.format(repr(shape), repr(scale), repr(len(data))))
 
-def fuse_lookup_old(shape, lookup):
-    """Given a shape and a lookup, fuse concrete accesses at the beginning of the lookup.
-    """
-    strides, size = calc_strides_only(shape)
-
-    start = 0
-    fused = 0
-    for dim, stride, query in zip(shape, strides, lookup):
-        if isinstance(query, int):
-            if query < 0:
-                query = dim - query
-            if query < 0 or dim <= query:
-                raise IndexError('lookup {} out of range for dimension {} of shape {}'.format(repr(query), repr(fused), repr(shape)))
-            start += stride * query
-            fused += 1
-        else:
-            break
-
-    return shape[fused:], strides[fused:], start, lookup[fused:]
-    # size??
-
-def calc_offset_old(shape, lookup):
-    """Given a shape and a lookup, calculate explicit offsets for all slices in the lookup.
-    """
-    new_shape = []
-    strides = []
-    start = 0
-    offset = []
-
-    fused = list(zip(shape, lookup))
-    scale = 1
-    for dim in reversed(shape[len(lookup):]):
-        new_shape.append(dim)
-        strides.append(scale)
-        scale *= dim
-    for dim, query in reversed(fused):
-        if isinstance(query, int):
-            start += scale * query
-        elif isinstance(query, slice):
-            q_start, q_stop, q_stride = query.indices(dim)
-            extent = q_stop - q_start
-            new_shape.append(max(0, extent // q_stride))
-            strides.append(scale)
-            offset.append((q_start, q_stride))
-        else:
-            raise TypeError('index must be int or slice, got {}'.format(repr(query)))
-        scale *= dim
-
-    return (
-        tuple(reversed(new_shape)),
-        tuple(reversed(strides)),
-        start,
-        tuple(reversed(offset)),
-        tuple(lookup[len(shape):]),
-    )
-
 def calc_strides(shape):
     """Calculate stride values for a shape.
     Returns the computed strides, and the overall size of the shape.
@@ -319,64 +272,55 @@ def check_offset(data, shape, start, strides):
 
 
 # TODO notes
-# shape cannot be empty
-# where are class divisions for shaped / view? Where do methods come from?
-# need new class for sliceref
-# -- store a slice and an index
-# -- combine two slices (factory function?)
 
 # how many implementations of reshape?
 # Special cases for shaped / view?
 
-# write __getitem__ and __iter__ in terms of _data, not data property
-# accessing data property of a view causes reification
+# comparison
+# mutable sequences
 
+# it's very likely that the current calc_offset logic is subtly wrong for negative accesses
+
+
+# TODO in an ideal world with infinite time
+
+# hashing
+# size changing mutation
+# tests
+
+# Python package?
+# lazy sequences (including lookup chains, and size changing operations)
 
 
 
 class NDSeq(Sequence, Shaped):
     """N-dimensional immutable sequence."""
 
-    # core properties
+    # informally, accessing the data properties (except start)
+    # will cause a view to reify(), so methods that have a more efficient implementation
+    # that doesn't depend on reification should use the "raw" values _data etc.
 
     @property
     def data(self):
         return self._data
-
-    # Accessing the data property of a view object will immediately reify(),
-    # so methods with an implementation that doesn't require reification
-    # can avoid unnecessary work by accessign _data directly.
 
     @property
     def shape(self):
         return self._shape
 
     @property
-    def start(self):
-        return 0
-
-    # cached properties
+    def size(self):
+        return self._size
 
     @property
     def strides(self):
-        if self._dirty_strides:
-            self._fixup_strides_size()
         return self._strides
 
     @property
-    def size(self):
-        if self._dirty_size:
-            self._fixup_strides_size()
-        return self._size
-
-    def _fixup_strides_size(self):
-        self._strides, self._size = calc_strides(self._shape)
-        self._dirty_strides = False
-        self._dirty_size = False
+    def start(self):
+        return 0
 
     def __init__(self, data=None, shape=None, strict=False):
-        self._dirty_strides = True
-        self._dirty_size = True
         if data:
             if shape:
                 if isinstance(data, NDSeq):
@@ -384,13 +328,15 @@ class NDSeq(Sequence, Shaped):
                 else:
                     self._data = list(data)
                 self._shape = shape
-                if self.size != len(self.data):
+                self._strides, self._size = calc_strides(self._shape)
+                if self._size != len(self._data):
                     raise ShapeError('data for shape {} should have size {}, got {}'
                                      .format(repr(shape), repr(self.size), repr(len(self.data))))
             else: # not shape
                 if isinstance(data, NDSeq):
                     self._data = list(data.data)
                     self._shape = data.shape
+                    self._strides, self._size = calc_strides(self._shape)
                 else:
                     if strict:
                         recshape = None
@@ -400,10 +346,11 @@ class NDSeq(Sequence, Shaped):
                     data_gen, shape = reshape(data, recshape=recshape)
                     self._data = list(data_gen)
                     self._shape = shape
+                    self._strides, self._size = calc_strides(self._shape)
         else: # not data
             if shape:
-                strides, size = calc_strides(shape)
-                self._data = [None]*size
+                self._strides, self._size = calc_strides(shape)
+                self._data = [None]*self._size
                 self._shape = shape
             else:
                 raise ValueError('shape cannot be empty')
@@ -439,7 +386,7 @@ class NDSeq(Sequence, Shaped):
 
     def __iter__(self):
         dim, *subshape = self._shape
-        stride, *substrides = self.strides
+        stride, *substrides = self._strides
         start = self.start
         if subshape:
             return (NDSeqView(self._data, subshape, start=start + (i*stride), strides=substrides) for i in range(dim))
@@ -455,7 +402,7 @@ class NDSeq(Sequence, Shaped):
     def __getitem__(self, key):
         if isinstance(key, int):
             dim, *subshape = self._shape
-            stride, *substrides = self.strides
+            stride, *substrides = self._strides
             if key < 0:
                 key = dim + key
             if 0 <= key < dim:
@@ -466,7 +413,7 @@ class NDSeq(Sequence, Shaped):
                                  .format(repr(key), repr(shape)))
         elif isinstance(key, slice):
             dim, *subshape = self._shape
-            stride, *substrides = self.strides
+            stride, *substrides = self._strides
             k_start, k_stop, k_stride = key.indices(dim)
             extent = k_stop - k_start
             subshape = (max(0, extent // k_stride), *subshape)
@@ -474,17 +421,19 @@ class NDSeq(Sequence, Shaped):
             offset = k_start * stride
             lookup = ()
         else:
-            offset, subshape, substrides, lookup = calc_offset(self._shape, self.strides, key)
+            offset, subshape, substrides, lookup = calc_offset(self._shape, self._strides, key)
 
         substart = self.start + offset
         if subshape:
+            subseq = NDSeqView(self._data, subshape, start=substart, strides=substrides)
             if lookup:
-                # needs to reify
-                # also, can actually coalesce
-                # alternatively, we could keep lookups around and have a lookup merge logic
-                raise NotImplementedError()
+                # could we make this more efficient, by not actually constructing this backing array?
+                subdata = [elt[lookup] for elt in subseq.data]
+                # we construct a concrete backing list for a view of the lookups;
+                # because it's still a view, it can still try to reify to condense its shape.
+                return NDSeqView(subdata, subshape)
             else:
-                return NDSeqView(self._data, subshape, start=substart, strides=substrides)
+                return subseq
         else:
             if lookup:
                 return self._data[substart][lookup]
@@ -510,7 +459,7 @@ class NDSeq(Sequence, Shaped):
 class NDSeqView(NDSeq, View):
     """An offset view of an n-dimensional sequence."""
 
-    # core properties
+    real_cls = NDSeq
 
     @property
     def data(self):
@@ -518,34 +467,32 @@ class NDSeqView(NDSeq, View):
         return self._data
 
     @property
-    def start(self):
-        """The starting point of the data from the view, due to dereferenced dimensions.
-        """
-        return self._start
-
-    # cached properties
+    def shape(self):
+        self.reify()
+        return self._shape
 
     @property
     def size(self):
-        if self._dirty_size:
-            if self._dirty_strides:
-                self._fixup_strides_size()
-            else:
-                self._fixup_size()
+        self.reify()
         return self._size
 
-    def _fixup_size(self):
-        self._size = shape_size(self._shape)
-        self._dirty_size = False
+    @property
+    def strides(self):
+        self.reify()
+        return self._strides
+
+    @property
+    def start(self):
+        return self._start
 
     def reify(self):
-        data_gen, shape = reshape(self, recshape=NDSeq)
+        cls = self.real_cls
+        data_gen, shape = reshape(self, recshape=cls)
         self._data = list(data_gen)
         self._shape = shape
-        self._dirty_strides = True
-        self._dirty_size = True
+        self._strides, self._size = calc_strides(self._shape)
         del self._start
-        self.__class__ = NDSeq
+        self.__class__ = cls
 
     def __init__(self, data, shape, start=0, strides=None):
         self._data = data
@@ -553,11 +500,9 @@ class NDSeqView(NDSeq, View):
         self._start = start
         if strides:
             self._strides = strides
-            self._dirty_strides = False
-            self._dirty_size = True
+            self._size = shape_size(self._shape)
         else:
-            self._dirty_strides = True
-            self._dirty_size = True
+            self._strides, self._size = calc_strides(self._shape)
 
         # might want to remove to improve performance if the check isn't needed
         check_offset(self._data, self._shape, self._start, self._strides)
