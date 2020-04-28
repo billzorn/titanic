@@ -4,6 +4,7 @@
 # NOTE TODO: see https://rszalski.github.io/magicmethods/
 
 from collections.abc import Iterable, Sequence, MutableSequence
+import itertools
 
 
 class ShapeError(ValueError):
@@ -361,12 +362,40 @@ class NDSeq(Sequence, Shaped):
         return '{}({}, {})'.format(type(self).__name__, repr(data), repr(shape))
 
     def __str__(self):
-        s, height = describe_nd(self, descr=str)
-        # data = self.data
-        # shape = self.shape
-        # unshaped = unshape_tuple(data, shape)
-        # s, height = describe_nd(unshaped, descr=str)
+        s, height = describe_nd(self, descr=str, lparen='(', rparen=')')
         return s
+
+    def __eq__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = object()
+            return all(a == b for a, b in itertools.zip_longest(self, other, fillvalue=sentinel))
+        else:
+            return False
+
+    def __ne__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = object()
+            return any(a != b for a, b in itertools.zip_longest(self, other, fillvalue=sentinel))
+        else:
+            return True
+
+    def __lt__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = object()
+            for a, b in itertools.zip_longest(self, other, fillvalue=sentinel):
+                if a is sentinel:
+                    return True
+                elif b is sentinel:
+                    return False
+                elif a < b:
+                    return True
+                elif b < a:
+                    return False
+            return False
+        else:
+            raise TypeError("'<' not supported between instances of '{}' and '{}'"
+                            .format(type(self).__name__, type(other).__name__))
+
 
     # From the point of view of the sequence interface,
     # an NDSeq behaves like a sequence of other NDSeqs,
@@ -397,6 +426,9 @@ class NDSeq(Sequence, Shaped):
     #     raise NotImplementedError()
 
     def __len__(self):
+        # We don't actually know the shape, since the elements might be well-shaped subsequences
+        # that will reify into a new sequence with more dimensions;
+        # however, whatever happens, the size of the first dimension will never change.
         return self._shape[0]
 
     def __getitem__(self, key):
