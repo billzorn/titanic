@@ -38,6 +38,18 @@ class View(object):
         raise NotImplementedError()
 
 
+class _Missing(object):
+    """A sentinel for objects missing from a sequence during comparison.
+    Compares less than anything else, including itself.
+    """
+
+    def __lt__(self, other):
+        return True
+
+    def __gt__(self, other):
+        return False
+
+
 def reshape(a, recshape=None):
     """Convert a nested, non-string iterable into a flat generator and its shape.
     Raggedly shaped data will be processed recursively by calling recshape.
@@ -286,6 +298,8 @@ def check_offset(data, shape, start, strides):
 class NDSeq(Sequence, Shaped):
     """N-dimensional immutable sequence."""
 
+    backing_type = tuple
+
     # informally, accessing the data properties (except start)
     # will cause a view to reify(), so methods that have a more efficient implementation
     # that doesn't depend on reification should use the "raw" values _data etc.
@@ -314,9 +328,9 @@ class NDSeq(Sequence, Shaped):
         if data:
             if shape:
                 if isinstance(data, NDSeq):
-                    self._data = list(data.data)
+                    self._data = self.backing_type(data.data)
                 else:
-                    self._data = list(data)
+                    self._data = self.backing_type(data)
                 self._shape = shape
                 self._strides, self._size = calc_strides(self._shape)
                 if self._size != len(self._data):
@@ -324,7 +338,7 @@ class NDSeq(Sequence, Shaped):
                                      f'got {len(self._data)!s}')
             else: # not shape
                 if isinstance(data, NDSeq):
-                    self._data = list(data.data)
+                    self._data = self.backing_type(data.data)
                     self._shape = data.shape
                     self._strides, self._size = calc_strides(self._shape)
                 else:
@@ -334,13 +348,13 @@ class NDSeq(Sequence, Shaped):
                         # note that this depends on the default value for strict being false
                         recshape = type(self)
                     data_gen, shape = reshape(data, recshape=recshape)
-                    self._data = list(data_gen)
+                    self._data = self.backing_type(data_gen)
                     self._shape = shape
                     self._strides, self._size = calc_strides(self._shape)
         else: # not data
             if shape:
                 self._strides, self._size = calc_strides(shape)
-                self._data = [None]*self._size
+                self._data = self.backing_type(None for _ in range(self._size))
                 self._shape = shape
             else:
                 raise ValueError('shape cannot be empty')
@@ -353,6 +367,16 @@ class NDSeq(Sequence, Shaped):
     def __str__(self):
         s, height = describe_nd(self, descr=str, lparen='(', rparen=')')
         return s
+
+    def __hash__(self):
+        try:
+            return self._hash
+        except AttributeError:
+            data = self.data
+            shape = self.shape
+            hashvalue = hash((hash(data), hash(shape)))
+            self._hash = hashvalue
+            return hashvalue
 
     def __eq__(self, other):
         if isinstance(other, Iterable) and not isinstance(other, str):
@@ -370,23 +394,51 @@ class NDSeq(Sequence, Shaped):
 
     def __lt__(self, other):
         if isinstance(other, Iterable) and not isinstance(other, str):
-            sentinel = object()
+            sentinel = _Missing()
             for a, b in itertools.zip_longest(self, other, fillvalue=sentinel):
-                if a is sentinel:
-                    return True
-                elif b is sentinel:
-                    return False
-                elif a < b:
+                if a < b:
                     return True
                 elif b < a:
                     return False
             return False
         else:
             return NotImplemented
-            # raise NotImplementedError()
-            # raise TypeError(f"'<' not supported between instances of '{type(self).__name__}' "
-            #                 f"and '{type(other).__name__}'")
 
+    def __gt__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = _Missing()
+            for a, b in itertools.zip_longest(self, other, fillvalue=sentinel):
+                if a < b:
+                    return False
+                elif b < a:
+                    return True
+            return False
+        else:
+            return NotImplemented
+
+    def __le__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = _Missing()
+            for a, b in itertools.zip_longest(self, other, fillvalue=sentinel):
+                if a < b:
+                    return True
+                elif b < a:
+                    return False
+            return True
+        else:
+            return NotImplemented
+
+    def __ge__(self, other):
+        if isinstance(other, Iterable) and not isinstance(other, str):
+            sentinel = _Missing()
+            for a, b in itertools.zip_longest(self, other, fillvalue=sentinel):
+                if a < b:
+                    return False
+                elif b < a:
+                    return True
+            return True
+        else:
+            return NotImplemented
 
     # From the point of view of the sequence interface,
     # an NDSeq behaves like a sequence of other NDSeqs,
@@ -481,7 +533,7 @@ class NDSeq(Sequence, Shaped):
 class NDSeqView(NDSeq, View):
     """An offset view of an n-dimensional sequence."""
 
-    real_cls = NDSeq
+    real_type = NDSeq
 
     @property
     def data(self):
@@ -508,9 +560,9 @@ class NDSeqView(NDSeq, View):
         return self._start
 
     def reify(self):
-        cls = self.real_cls
+        cls = self.real_type
         data_gen, shape = reshape(self, recshape=cls)
-        self._data = list(data_gen)
+        self._data = self.backing_type(data_gen)
         self._shape = shape
         self._strides, self._size = calc_strides(self._shape)
         del self._start
