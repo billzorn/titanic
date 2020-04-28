@@ -60,7 +60,7 @@ def reshape(a, recshape=None):
                 shapes.append(subshape)
             elif shape != subshape:
                 if recshape is None:
-                    raise ShapeError('array has ragged shape: expecting {}, got {}'.format(repr(shape), repr(subshape)))
+                    raise ShapeError(f'array has ragged shape: expecting {shape!r}, got {subshape!r}')
                 ragged = True
                 shapes = [shape] * (len(data) - 1)
                 shapes.append(subshape)
@@ -117,10 +117,11 @@ def dimsep_array(depth, height, lparen, rparen):
         return ', '
     elif height <=3 :
         indent = ' ' * (len(lparen) * (depth+1))
-        return ',{}{}'.format('\n' * (height-1), indent)
+        newlines = '\n' * (height - 1)
+        return f',{newlines}{indent}'
     else:
         indent = ' ' * (len(lparen) * (depth+1))
-        return ',\n\n{}## {:d} ##\n\n{}'.format(indent, depth, indent)
+        return f',\n\n{indent}## {depth!s} ##\n\n{indent}'
 
 def describe_nd(a, descr=repr, dimsep=dimsep_array, lparen='(', rparen=')', depth=0):
     """Convert a shaped or unshaped iterable into a string and a count of dimensions,
@@ -167,19 +168,9 @@ def check_bounds(shape, pos):
     """
     for dim, coord in zip(shape, pos):
         if coord < 0 or dim <= coord:
-            raise IndexError('{} out of range for shape {}'.format(repr(pos), repr(shape)))
+            raise IndexError(f'{pos!r} out of range for shape {shape!r}')
 
-def strict_bounds(shape, pos, strict=False):
-    """Given a shape, check if a position vector is in bounds for that shape.
-    Raises IndexError if the position is out of bounds or has the wrong number of dimensions.
-    """
-    if strict and len(shape) != len(pos):
-        raise IndexError('{} has invalid shape, expecting {}'.format(repr(pos), repr(shape)))
-    for dim, coord in zip(shape, pos):
-        if coord < 0 or dim <= coord:
-            raise IndexError('{} out of range for shape {}'.format(repr(pos), repr(shape)))
-
-def shape_size(shape):
+def calc_size(shape):
     """Compute the size of a shape (the len of the backing flat array).
     """
     if shape:
@@ -202,7 +193,7 @@ def check_size(data, shape):
         scale = 0
 
     if len(data) != scale:
-        raise ShapeError('shape {} should have total size {}, got {}'.format(repr(shape), repr(scale), repr(len(data))))
+        raise ShapeError(f'shape {shape!r} should have total size {scale!s}, got {len(data)!s}')
 
 def calc_strides(shape):
     """Calculate stride values for a shape.
@@ -232,8 +223,7 @@ def calc_offset(shape, strides, lookup):
             if query < 0:
                 query = dim - query
             if query < 0 or dim <= query:
-                raise IndexError('lookup {} out of range for dimension {} of shape {}'
-                                 .format(repr(query), repr(fused), repr(shape)))
+                raise IndexError(f'index {query!r} out of range for dimension {fused!s} of shape {shape!r}')
             start += stride * query
         elif isinstance(query, slice):
             q_start, q_stop, q_stride = query.indices(dim)
@@ -242,7 +232,7 @@ def calc_offset(shape, strides, lookup):
             new_strides.append(stride * q_stride)
             start += q_start * stride
         else:
-            raise TypeError('index must be int or slice, got {}'.format(repr(query)))
+            raise TypeError(f'index for dimension {fused!s} must be integer or slice, got {query!r}')
         fused += 1
 
     return (
@@ -266,10 +256,9 @@ def check_offset(data, shape, start, strides):
         else:
             max_offset += offset
     if start + min_offset < 0 or len(data) <= start + max_offset:
-        raise ShapeError('shape {} with strides {} extends from {} to {}, out of bounds for data with length {}'
-                         .format(repr(shape), repr(strides), repr(start + min_offset), repr(start + max_offset),
-                                 repr(len(data))))
-
+        raise ShapeError(f'shape {shape!r} with strides {strides!r} '
+                         f'extends from {start + min_offset!s} to {start + max_offset!s}, '
+                         f'out of bounds for data with length {len(data)!s}')
 
 
 # TODO notes
@@ -331,8 +320,8 @@ class NDSeq(Sequence, Shaped):
                 self._shape = shape
                 self._strides, self._size = calc_strides(self._shape)
                 if self._size != len(self._data):
-                    raise ShapeError('data for shape {} should have size {}, got {}'
-                                     .format(repr(shape), repr(self.size), repr(len(self.data))))
+                    raise ShapeError(f'data for shape {self._shape!r} should have size {self._size!s}, '
+                                     f'got {len(self._data)!s}')
             else: # not shape
                 if isinstance(data, NDSeq):
                     self._data = list(data.data)
@@ -359,7 +348,7 @@ class NDSeq(Sequence, Shaped):
     def __repr__(self):
         data = self.data
         shape = self.shape
-        return '{}({}, {})'.format(type(self).__name__, repr(data), repr(shape))
+        return f'{type(self).__name__}({data!r}, {shape!r})'
 
     def __str__(self):
         s, height = describe_nd(self, descr=str, lparen='(', rparen=')')
@@ -393,8 +382,10 @@ class NDSeq(Sequence, Shaped):
                     return False
             return False
         else:
-            raise TypeError("'<' not supported between instances of '{}' and '{}'"
-                            .format(type(self).__name__, type(other).__name__))
+            return NotImplemented
+            # raise NotImplementedError()
+            # raise TypeError(f"'<' not supported between instances of '{type(self).__name__}' "
+            #                 f"and '{type(other).__name__}'")
 
 
     # From the point of view of the sequence interface,
@@ -441,8 +432,7 @@ class NDSeq(Sequence, Shaped):
                 offset = stride * key
                 lookup = ()
             else:
-                raise IndexError('lookup {} out of range for dimension {} of shape {}'
-                                 .format(repr(key), repr(shape)))
+                raise IndexError(f'index {key!r} out of range for dimension 0 of shape {shape!r}')
         elif isinstance(key, slice):
             dim, *subshape = self._shape
             stride, *substrides = self._strides
@@ -532,7 +522,7 @@ class NDSeqView(NDSeq, View):
         self._start = start
         if strides:
             self._strides = strides
-            self._size = shape_size(self._shape)
+            self._size = calc_size(self._shape)
         else:
             self._strides, self._size = calc_strides(self._shape)
 
