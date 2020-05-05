@@ -238,6 +238,7 @@ def calc_offset(shape, strides, lookup):
                 raise IndexError(f'index {query!r} out of range for dimension {fused!s} of shape {shape!r}')
             start += stride * query
         elif isinstance(query, slice):
+            raise NotImplementedError('slicing currently not supported')
             q_start, q_stop, q_stride = query.indices(dim)
             extent = q_stop - q_start
             new_shape.append(max(0, extent // q_stride))
@@ -293,6 +294,80 @@ def check_offset(data, shape, start, strides):
 # Python package?
 # lazy sequences (including lookup chains, and size changing operations)
 
+
+class ViewND(View, Shaped):
+    """An offset view of an n-dimensional sequence."""
+
+    # We want to inherit all of these things from a sequence type to determine what the view does.
+    # Note that we won't be able to define them in the body of the real_type itself,
+    # since the view won't be defined yet.
+    # To get around this, we can always monkey patch it in later.
+
+    # We also can't define any placeholder values here, as we want to overwrite the properties
+    # from the real_type, but not the inherited implementation types.
+
+    # backing_type = None
+    # real_type = None
+    # view_type = None
+
+    @property
+    def data(self):
+        self.reify()
+        return self._data
+
+    @property
+    def shape(self):
+        self.reify()
+        return self._shape
+
+    @property
+    def size(self):
+        self.reify()
+        return self._size
+
+    @property
+    def strides(self):
+        self.reify()
+        return self._strides
+
+    @property
+    def start(self):
+        return self._start
+
+    def reify(self):
+        cls = self.real_type
+        data_gen, shape = reshape(self, recshape=cls)
+        self._data = self.backing_type(data_gen)
+        self._shape = shape
+        self._strides, self._size = calc_strides(self._shape)
+        del self._start
+        self.__class__ = cls
+
+    def __init__(self, data, shape, start=0, strides=None):
+        self._data = data
+        self._shape = shape
+        self._start = start
+        if strides:
+            self._strides = strides
+            self._size = calc_size(self._shape)
+        else:
+            self._strides, self._size = calc_strides(self._shape)
+
+        # might want to remove to improve performance if the check isn't needed
+        check_offset(self._data, self._shape, self._start, self._strides)
+
+
+    _data_size_abs_threshold = 64
+    _data_size_rel_threshold = 0.5
+
+    def __repr__(self):
+        dlen = len(self._data)
+        if (dlen <= self._data_size_abs_threshold
+            or (self._size / dlen) >= _data_size_rel_threshold):
+            dstr = repr(self._data)
+        else:
+            dstr = f"'{type(self._data).__name__}' object of length {dlen!s}"
+        return f'{type(self).__name__}({dstr}, {self._shape!r}, start={self._start!s}, strides={self._strides!r})'
 
 
 class NDSeq(Sequence, Shaped):
@@ -447,21 +522,12 @@ class NDSeq(Sequence, Shaped):
     # def __contains__(self, item):
     #     raise NotImplementedError()
 
-    # # better to write general iter and getitem here and inherit
-    # def __iter__(self):
-    #     if len(self.shape) > 1:
-    #         dim, *subshape = self.shape
-    #         stride, *substrides = self.strides
-    #         return (NDSeqView(self.data, subshape, start=i*stride, strides=substrides) for i in range(dim))
-    #     else:
-    #         return iter(self.data)
-
     def __iter__(self):
         dim, *subshape = self._shape
         stride, *substrides = self._strides
         start = self.start
         if subshape:
-            return (NDSeqView(self._data, subshape, start=start + (i*stride), strides=substrides) for i in range(dim))
+            return (self.view_type(self._data, subshape, start=start + (i*stride), strides=substrides) for i in range(dim))
         else:
             return (self._data[start + (i*stride)] for i in range(dim))
 
@@ -486,6 +552,7 @@ class NDSeq(Sequence, Shaped):
             else:
                 raise IndexError(f'index {key!r} out of range for dimension 0 of shape {shape!r}')
         elif isinstance(key, slice):
+            raise NotImplementedError('slicing currently not supported')
             dim, *subshape = self._shape
             stride, *substrides = self._strides
             k_start, k_stop, k_stride = key.indices(dim)
@@ -499,13 +566,13 @@ class NDSeq(Sequence, Shaped):
 
         substart = self.start + offset
         if subshape:
-            subseq = NDSeqView(self._data, subshape, start=substart, strides=substrides)
+            subseq = self.view_type(self._data, subshape, start=substart, strides=substrides)
             if lookup:
                 # could we make this more efficient, by not actually constructing this backing array?
                 subdata = [elt[lookup] for elt in subseq.data]
                 # we construct a concrete backing list for a view of the lookups;
                 # because it's still a view, it can still try to reify to condense its shape.
-                return NDSeqView(subdata, subshape)
+                return self.view_type(subdata, subshape)
             else:
                 return subseq
         else:
@@ -529,64 +596,47 @@ class NDSeq(Sequence, Shaped):
     def tostr(self, descr=repr, sep=', ', lparen='(', rparen=')'):
         return describe(self, descr=descr, sep=sep, lparen=lparen, rparen=rparen)
 
+class NDSeqView(ViewND, NDSeq):
+    """An offset view of an NDSeq."""
 
-class NDSeqView(NDSeq, View):
-    """An offset view of an n-dimensional sequence."""
-
-    real_type = NDSeq
-
-    @property
-    def data(self):
-        self.reify()
-        return self._data
-
-    @property
-    def shape(self):
-        self.reify()
-        return self._shape
-
-    @property
-    def size(self):
-        self.reify()
-        return self._size
-
-    @property
-    def strides(self):
-        self.reify()
-        return self._strides
-
-    @property
-    def start(self):
-        return self._start
-
-    def reify(self):
-        cls = self.real_type
-        data_gen, shape = reshape(self, recshape=cls)
-        self._data = self.backing_type(data_gen)
-        self._shape = shape
-        self._strides, self._size = calc_strides(self._shape)
-        del self._start
-        self.__class__ = cls
-
-    def __init__(self, data, shape, start=0, strides=None):
-        self._data = data
-        self._shape = shape
-        self._start = start
-        if strides:
-            self._strides = strides
-            self._size = calc_size(self._shape)
-        else:
-            self._strides, self._size = calc_strides(self._shape)
-
-        # might want to remove to improve performance if the check isn't needed
-        check_offset(self._data, self._shape, self._start, self._strides)
+NDSeq.real_type = NDSeq
+NDSeq.view_type = NDSeqView
 
 
 class NDArray(MutableSequence, NDSeq):
     """N-dimensional array."""
 
+    backing_type = list
+
+    __hash__ = None
+
     def __setitem__(self, key, value):
-        raise NotImplementedError()
+        data = self.data
+        shape = self.shape
+        strides = self.strides
+        if isinstance(key, int):
+            dim, *subshape = shape
+            stride, *substrides = strides
+            if key < 0:
+                key = dim + key
+            if 0 <= key < dim:
+                offset = stride * key
+                lookup = ()
+            else:
+                raise IndexError(f'index {key!r} out of range for dimension 0 of shape {shape!r}')
+        elif isinstance(key, slice):
+            raise NotImplementedError('slicing currently not supported')
+        else:
+            offset, subshape, substrides, lookup = calc_offset(shape, strides, key)
+
+        substart = self.start + offset
+        if subshape:
+            raise NotImplementedError('assigning to slices currently not supported')
+        else:
+            if lookup:
+                data[substart][lookup] = value
+            else:
+                data[substart] = value
 
     def __delitem__(self, key):
         raise TypeError('cannot delete items from NDArray')
@@ -594,8 +644,8 @@ class NDArray(MutableSequence, NDSeq):
     def __iadd__(self, other):
         raise NotImplementedError()
 
-    def reverse(self):
-        raise NotImplementedError()
+    # def reverse(self):
+    #     raise NotImplementedError()
 
     def append(self, x):
         raise NotImplementedError()
@@ -614,3 +664,9 @@ class NDArray(MutableSequence, NDSeq):
 
     def clear(self):
         raise TypeError('cannot clear NDArray')
+
+class NDArrayView(ViewND, NDArray):
+    """An offset view of an NDArray."""
+
+NDArray.real_type = NDArray
+NDArray.view_type = NDArrayView
