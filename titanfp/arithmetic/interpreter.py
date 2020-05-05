@@ -7,7 +7,7 @@ import traceback
 from ..titanic import utils, digital
 from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
-from . import ndarray
+from ..titanic import ndarray
 
 class EvaluatorError(utils.TitanicError):
     """Base Titanic evaluator error."""
@@ -79,8 +79,6 @@ class Evaluator(object):
         ast.Integer: '_eval_integer',
         ast.Rational: '_eval_rational',
         ast.Digits: '_eval_digits',
-        # tensor literals are like data, but occur as expressions
-        ast.TensorLit: '_eval_tensorlit',
         # strings are special ValueExprs (not Vals) that won't normally be evaluated
         ast.String: '_eval_string',
         # rounding contexts
@@ -98,6 +96,8 @@ class Evaluator(object):
         ast.TensorStar: '_eval_tensorstar',
         # catch-all for operations with some number of arguments
         ast.NaryExpr: '_eval_op',
+        # arrays are like expressions, but they return a list of the inputs
+        ast.Array: '_eval_array',
         # unknown operations are treated as function calls
         ast.UnknownOperator: '_eval_unknown',
         # specific operations
@@ -256,16 +256,10 @@ class BaseInterpreter(Evaluator):
         except KeyError as exn:
             raise EvaluatorUnimplementedError('unsupported constant {}'.format(repr(exn.args[0])))
 
-    def _eval_tensorlit(self, e, ctx):
-        try:
-            data, shape = ndarray.flatten_shaped_list(e.as_list())
-            rounded_data = [self.evaluate(d, ctx) for d in data]
-            return None, ndarray.NDArray(shape, rounded_data)
-        except Exception:
-            traceback.print_exc()
-            raise EvaluatorError('expecting a well-formed tensor literal, got:\n{}'.format(str(e)))
-
     # Tensors
+
+    def _eval_array(self, e, ctx):
+        return None, ndarray.NDArray(self.evaluate(child, ctx) for child in e.children)
 
     def _eval_dim(self, e, ctx):
         nd = self.evaluate(e.children[0], ctx)

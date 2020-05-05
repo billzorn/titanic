@@ -296,29 +296,6 @@ class Digits(Val):
     def replace_subexprs(self, exprs):
         return type(self)(self.m, self.e, self.b)
 
-class TensorLit(Val):
-    name: str = 'data'
-
-    def __init__(self, value) -> None:
-        self.value = value
-
-    def __str__(self):
-        return '(' + self.name + sexp_to_string(self.value) + ')'
-
-    def __repr__(self):
-        return type(self).__name__ + '(' + repr(self.value) + ')'
-
-    def is_list(self):
-        return isinstance(self.value, tuple)
-
-    def as_list(self, strict=False):
-        if isinstance(self.value, tuple):
-            return self.value
-        elif strict:
-            raise TypeError('data is not a list')
-        else:
-            return None
-
 class String(ValueExpr):
     name: str = 'String'
 
@@ -594,6 +571,12 @@ class NaryExpr(Expr):
 
 class Array(NaryExpr):
     name: str = 'array'
+
+    # this is a dumb copy-pasta to avoid inheriting the behavior of other NaryExprs
+    # really there should be a MathOp mixin or something
+    def canonicalize_annotations(self, global_props=None):
+        exprs = [[e.canonicalize_annotations(global_props) for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
 
 class UnknownOperator(NaryExpr):
     name: str = 'UnknownOperator'
