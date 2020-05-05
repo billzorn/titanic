@@ -312,7 +312,7 @@ class BaseInterpreter(Evaluator):
         # TODO: should coordinates be rounded?
         data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
-                for idx in range(ndarray.shape_size(shape))]
+                for idx in range(ndarray.calc_size(shape))]
         return inputs, ndarray.NDArray(shape=shape, data=data)
 
     def _eval_tensorstar(self, e, ctx):
@@ -336,7 +336,7 @@ class BaseInterpreter(Evaluator):
             new_binding = (name, self.evaluate(init_expr, ctx))
             ctx = ctx.let(bindings=[new_binding])
 
-        for idx in range(ndarray.shape_size(shape)):
+        for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
             pos = ndarray.position(shape, idx)
             ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
@@ -401,7 +401,7 @@ class BaseInterpreter(Evaluator):
         bindings = [(name, self.evaluate(init_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
         ctx = ctx.let(bindings=bindings)
 
-        for idx in range(ndarray.shape_size(shape)):
+        for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
             ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                     for name, i in zip(names, ndarray.position(shape, idx))])
@@ -426,7 +426,7 @@ class BaseInterpreter(Evaluator):
             new_binding = (name, self.evaluate(init_expr, ctx))
             ctx = ctx.let(bindings=[new_binding])
 
-        for idx in range(ndarray.shape_size(shape)):
+        for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
             ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
                                     for name, i in zip(names, ndarray.position(shape, idx))])
