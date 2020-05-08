@@ -531,6 +531,8 @@ class SimpleInterpreter(BaseInterpreter):
 
     def _eval_cast(self, e, ctx):
         in0 = self.evaluate(e.children[0], ctx)
+        # HACK to make sure that rounding to a wider type doesn't cause a precision error
+        in0 = type(in0)(in0, inexact=False, rounded=False)
         return [in0], self.round_to_context(in0, ctx)
 
     def _eval_add(self, e, ctx):
