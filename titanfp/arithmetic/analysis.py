@@ -89,7 +89,7 @@ class BitcostAnalysis(object):
                 inbits = bitcost(inputs[0])
                 outbits = bitcost(result)
                 if inbits != 0 and outbits != 0:
-                    quantized += (outbits - inbits)
+                    self.bits_quantized += (outbits - inbits)
             else:
                 if inputs:
                     for arg in inputs:

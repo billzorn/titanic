@@ -76,6 +76,45 @@ def oob(results):
     return counted, maxerr, sumerr / sumcount
 
 
+# new, with bitcost
+def run_and_eval_bitcost(core, bound):
+
+    results = []
+
+    for arg, ref in zip(one_to_ten, reference_results):
+        evaltor = Interpreter()
+        als = analysis.BitcostAnalysis()
+        evaltor.analyses = [als]
+        result = evaltor.interpret(core, (arg, bound))
+        err = (ref.sub(result)).fabs()
+        steps = evaltor.evals
+        bitcost = als.bits_requested
+
+        abserr = abs(float(err))
+        # if not math.isfinite(err):
+        #     print(str(arg), str(result), str(err))
+
+        results.append((str(arg), str(result), str(err), steps, bitcost))
+
+    timeouts = 0
+    infs = 0
+    maxerr = 0
+    total_bitcost = 0
+    for arg, result, err, steps, bitcost in results:
+        if steps > 200:
+            timeouts += 1
+        total_bitcost += bitcost
+
+        abserr = abs(float(err))
+        if math.isfinite(abserr):
+            if abserr > maxerr:
+                maxerr = abserr
+        else:
+            infs += 1
+    # print(f'{timeouts!s} inputs ran for more than 200 steps.')
+    # print(f'worst point was {maxerr!s}.')
+    return timeouts, infs, maxerr, total_bitcost
+
 def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
     formatted = sqrt_core.format(
         overall_prec = '(float 8 16)',
@@ -84,16 +123,19 @@ def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
         scale_prec = f'(float {expbits!s} {scale_bits!s})',
     )
     core = fpcparser.compile1(formatted)
-    results = run_tests(core, bound)
-    #counted, worst, avg = oob(results)
-    return oob(results)
+
+    return run_and_eval_bitcost(core, bound)
+
+    # results = run_tests(core, bound)
+    # #counted, worst, avg = oob(results)
+    # return oob(results)
 
 from multiprocessing import Pool
 
 def sweep():
     bound = 1/100
-    cheapest = 1000
-    badness = 1000
+    cheapest = float('inf')
+    badness = float('inf')
     cheapest_config = None
 
     cfgs = 0
@@ -103,10 +145,10 @@ def sweep():
 
         print('building async result list')
 
-        for expbits in range(3,9):
-            for res_bits in range(expbits + 1, 18):
-                for diff_bits in range(expbits + 1, 18):
-                    for scale_bits in range(expbits + 1, 18):
+        for expbits in range(2,9):
+            for res_bits in range(expbits + 1, 19):
+                for diff_bits in range(expbits + 1, 19):
+                    for scale_bits in range(expbits + 1, 19):
                         args = bound, expbits, res_bits, diff_bits, scale_bits
                         result_buf.append((args, p.apply_async(sweep_stage, args)))
 
@@ -120,29 +162,33 @@ def sweep():
                         # results = run_tests(core, bound)
                         # counted, worst, avg = oob(results)
 
-        print('waiting for results to come back')
+        print(f'waiting for {len(result_buf)!s} results to come back')
 
         for args, result in result_buf:
-            bound, expbits, res_bits, diff_bits, scale_bits = args
-            counted, worst, avg = result.get()
+            bound,  *config = args
+            expbits, res_bits, diff_bits, scale_bits =  config
+            result_get = result.get()
+            timeouts, infs, worst, bitcost = result_get
 
             cfgs += 1
-            print(f'ran {(expbits, res_bits, diff_bits, scale_bits)!r}, got {(counted, worst, avg)!r}')
+            print(f'ran {config!r}, got {result_get!r}')
 
-            if counted == 0 and worst < bound:
-                cost = res_bits + diff_bits + scale_bits
+            if timeouts == 0 and infs == 0 and worst < bound:
+                cost = bitcost
                 if cost <= cheapest:
                     if worst < badness:
                         cheapest = cost
                         badness = worst
-                        cheapest_config = (expbits, res_bits, diff_bits, scale_bits)
-                        print(f'  NEW best cost: {cheapest!r} w/ {cheapest_config!r}')
+                        cheapest_config = config
+                        print(f'  NEW best cost: {cheapest!r}, badness {badness!r}, w/ {cheapest_config!r}')
 
-    return cheapest, cheapest_config
+        print(f'tried {cfgs!s} configs, done')
+
+    return cheapest, badness, cheapest_config
 
 
-# we got an answer:
+# got an answer:
 
-# (33, (3, 11, 12, 10))
-# >>> sweep_stage(1/100, 3, 11, 12, 10)
-# (0, 0.00894894614631192, 0.002602821809623318)
+# (592590, 0.008814576415149933, [4, 15, 16, 9])
+# >>> sweep_stage(1/100, 4, 15, 16, 9)
+# (0, 0, 0.008814576415149933, 592590)
