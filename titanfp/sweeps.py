@@ -22,6 +22,21 @@ sqrt_core = '''(FPCore sqrt_bfloat_limit (a residual_bound)
 )
 '''
 
+sqrt_bab_core = '''(FPCore bab_bfloat_limit (a residual_bound)
+ :precision {overall_prec}
+
+ (while* (and (< steps (# 20)) (>= (fabs residual) residual_bound))
+  ([x a (! :precision {diff_prec} (* 1/2 (+ x
+                                            (! :precision {scale_prec} (/ a x)))))]
+   [residual (! :precision {res_prec} (- (* x x) a))
+             (! :precision {res_prec} (- (* x x) a))]
+   [steps 0 (# (+ 1 steps))])
+  x
+ )
+
+)
+'''
+
 formatted = sqrt_core.format(
     overall_prec = '(float 8 16)',
     res_prec = '(float 5 16)',
@@ -123,12 +138,19 @@ def run_and_eval_bitcost(core, bound):
     # print(f'worst point was {maxerr!s}.')
     return timeouts, infs, maxerr, worst_bitcost, total_bitcost
 
+
+
 def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
+
+    res_nbits = expbits + res_bits
+    diff_nbits = expbits + diff_bits
+    scale_nbits = expbits + scale_bits
+
     formatted = sqrt_core.format(
         overall_prec = '(float 8 16)',
-        res_prec = f'(float {expbits!s} {res_bits!s})',
-        diff_prec = f'(float {expbits!s} {diff_bits!s})',
-        scale_prec = f'(float {expbits!s} {scale_bits!s})',
+        res_prec = f'(float {expbits!s} {res_nbits!s})',
+        diff_prec = f'(float {expbits!s} {diff_nbits!s})',
+        scale_prec = f'(float {expbits!s} {scale_nbits!s})',
     )
     core = fpcparser.compile1(formatted)
 
@@ -138,19 +160,94 @@ def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
     # #counted, worst, avg = oob(results)
     # return oob(results)
 
+
+
+def bab_stage(bound, expbits, res_bits, diff_bits, scale_bits):
+
+    res_nbits = expbits + res_bits
+    diff_nbits = expbits + diff_bits
+    scale_nbits = expbits + scale_bits
+
+    formatted = sqrt_bab_core.format(
+        overall_prec = '(float 8 16)',
+        res_prec = f'(float {expbits!s} {res_nbits!s})',
+        diff_prec = f'(float {expbits!s} {diff_nbits!s})',
+        scale_prec = f'(float {expbits!s} {scale_nbits!s})',
+    )
+    core = fpcparser.compile1(formatted)
+
+    return run_and_eval_bitcost(core, bound)
+
+
+# New, to facilitate using search interface
+import random
+
+def init_bound():
+    return 1/100
+
+def neighbor_bound(x):
+    yield 1/100
+
+def init_expbits():
+    return random.randint(3,8)
+
+def neighbor_expbits(x):
+    nearby = 1
+    for neighbor in range(x-nearby, x+nearby+1):
+        if 1 <= neighbor <= 8:
+            yield neighbor
+
+def init_p():
+    return random.randint(1, 16)
+
+def neighbor_p(x):
+    nearby = 3
+    for neighbor in range(x-nearby, x+nearby+1):
+        if 1 <= neighbor <= 32:
+            yield neighbor
+
+
+newton_inits = [
+    init_bound,
+    init_expbits,
+    init_p,
+    init_p,
+    init_p
+]
+
+newton_neighbors = [
+    neighbor_bound,
+    neighbor_expbits,
+    neighbor_p,
+    neighbor_p,
+    neighbor_p
+]
+
+newton_metrics = (operator.lt,) * 5
+
+def run_random():
+    return search.sweep_random_init(sweep_stage, newton_inits, newton_neighbors, newton_metrics)
+
+
 from multiprocessing import Pool
 
 
-def sweep():
+def sweep(stage_fn):
     bound = 1/100
-    extrabits = 2
-    maxbits = 21
+
+    minexp = 3
+    maxexp = 8
+    minp = 2
+    maxp = 24
+
+    # minexp = 4
+    # maxexp = 4
+    # minp = 12
+    # maxp = 14
 
     cfgs = 0
 
-
     frontier = []
-    frontier_bounded = []
     metrics = (operator.lt, operator.lt, operator.lt, operator.lt, operator.lt)
 
     with Pool() as p:
@@ -158,12 +255,12 @@ def sweep():
 
         print('building async result list')
 
-        for expbits in range(4,9):
-            for res_bits in range(expbits + extrabits, maxbits):
-                for diff_bits in range(expbits + extrabits, maxbits):
-                    for scale_bits in range(expbits + extrabits, maxbits):
+        for expbits in range(minexp,maxexp+1):
+            for res_bits in range(minp, maxp+1):
+                for diff_bits in range(minp, maxp+1):
+                    for scale_bits in range(minp, maxp+1):
                         args = bound, expbits, res_bits, diff_bits, scale_bits
-                        result_buf.append((args, p.apply_async(sweep_stage, args)))
+                        result_buf.append((args, p.apply_async(stage_fn, args)))
 
         print(f'waiting for {len(result_buf)!s} results to come back')
 
@@ -184,20 +281,28 @@ def sweep():
                     print('New (unbounded) frontier:')
                     search.print_frontier(frontier)
 
-                if worst < bound:
-                    updated, frontier_bounded = search.update_frontier(frontier_bounded, frontier_elt, metrics)
-                    if updated:
-                        print('New BOUNDED frontier:')
-                        search.print_frontier(frontier_bounded)
-
     print(f'tried {cfgs!s} configs, done\n')
     print('Final frontier:')
     search.print_frontier(frontier)
-    print('Final bounded frontier:')
-    search.print_frontier(frontier_bounded)
     print(flush=True)
 
-    return frontier, frontier_bounded
+    return frontier
+
+
+def go():
+
+    frontier_newton = sweep(sweep_stage)
+    frontier_babylonian = sweep(bab_stage)
+
+    print('\n\n\n\n')
+    print('final frontier for newton:')
+    search.print_frontier(frontier_newton)
+    print('final frontier for babylonian:')
+    search.print_frontier(frontier_babylonian)
+
+    return frontier_newton, frontier_babylonian
+
+
 
 
 

@@ -57,6 +57,7 @@
 
 
 import itertools
+import multiprocessing
 
 def compare_results(m1, m2, metrics):
 
@@ -152,7 +153,58 @@ def check_frontier(frontier, metrics):
 
 
 def print_frontier(frontier):
-    print('{')
+    print('[')
     for frontier_data, frontier_m in frontier:
-        print(f'  {frontier_data!r} : {frontier_m!r}')
-    print('}', flush=True)
+        print(f'  ({frontier_data!r}, {frontier_m!r})')
+    print(']')
+
+
+def sweep_random_init(stage_fn, inits, neighbors, metrics, verbose=3):
+    initial_cfg = [f() for f in inits]
+    initial_result = stage_fn(*initial_cfg)
+
+    frontier = [(initial_cfg, initial_result)]
+    improved_frontier = True
+    gen_number = 0
+
+    with multiprocessing.Pool() as pool:
+        while improved_frontier:
+            improved_frontier = False
+
+            if verbose:
+                print(f'generation {gen_number!s}: ')
+                print_frontier(frontier)
+                print(flush=True)
+
+            gen_number += 1
+
+            async_results = []
+            for cfg, result in frontier:
+                for i in range(len(cfg)):
+                    x = cfg[i]
+                    f = neighbors[i]
+                    for new_x in f(x):
+                        new_cfg = list(cfg)
+                        new_cfg[i] = new_x
+                        async_results.append((new_cfg, pool.apply_async(stage_fn, new_cfg)))
+
+            if verbose >= 2:
+                print(f'dispatched {len(async_results)!s} evaluations for generation {gen_number!s}')
+
+            for i, (new_cfg, ares) in enumerate(async_results):
+                new_res = ares.get()
+                updated, frontier = update_frontier(frontier, (new_cfg, new_res), metrics)
+                improved_frontier |= updated
+
+                if verbose >= 3:
+                    print(f' -- {i+1!s} -- ran {new_cfg!r}, got {new_res!r}')
+                    if updated:
+                        print('The frontier changed:')
+                        print_frontier(frontier)
+
+    if verbose:
+        print(f'improvement stopped at generation {gen_number!s}: ')
+        print_frontier(frontier)
+        print(flush=True)
+
+    return frontier
