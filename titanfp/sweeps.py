@@ -1,8 +1,12 @@
 import math
+import operator
 
 from .fpbench import fpcparser
 from .arithmetic import mpmf, ieee754, evalctx, analysis
 from .arithmetic.mpmf import Interpreter
+
+from .sweep import search
+
 
 sqrt_core = '''(FPCore sqrt_bfloat_limit (a residual_bound)
  :precision {overall_prec}
@@ -99,10 +103,14 @@ def run_and_eval_bitcost(core, bound):
     timeouts = 0
     infs = 0
     maxerr = 0
+    worst_bitcost = 0
     total_bitcost = 0
     for arg, result, err, steps, bitcost in results:
         if steps > 200:
             timeouts += 1
+
+        if bitcost > worst_bitcost:
+            worst_bitcost = bitcost
         total_bitcost += bitcost
 
         abserr = abs(float(err))
@@ -113,7 +121,7 @@ def run_and_eval_bitcost(core, bound):
             infs += 1
     # print(f'{timeouts!s} inputs ran for more than 200 steps.')
     # print(f'worst point was {maxerr!s}.')
-    return timeouts, infs, maxerr, total_bitcost
+    return timeouts, infs, maxerr, worst_bitcost, total_bitcost
 
 def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
     formatted = sqrt_core.format(
@@ -132,35 +140,30 @@ def sweep_stage(bound, expbits, res_bits, diff_bits, scale_bits):
 
 from multiprocessing import Pool
 
+
 def sweep():
     bound = 1/100
-    cheapest = float('inf')
-    badness = float('inf')
-    cheapest_config = None
+    extrabits = 2
+    maxbits = 21
 
     cfgs = 0
+
+
+    frontier = []
+    frontier_bounded = []
+    metrics = (operator.lt, operator.lt, operator.lt, operator.lt, operator.lt)
 
     with Pool() as p:
         result_buf = []
 
         print('building async result list')
 
-        for expbits in range(2,9):
-            for res_bits in range(expbits + 1, 19):
-                for diff_bits in range(expbits + 1, 19):
-                    for scale_bits in range(expbits + 1, 19):
+        for expbits in range(4,9):
+            for res_bits in range(expbits + extrabits, maxbits):
+                for diff_bits in range(expbits + extrabits, maxbits):
+                    for scale_bits in range(expbits + extrabits, maxbits):
                         args = bound, expbits, res_bits, diff_bits, scale_bits
                         result_buf.append((args, p.apply_async(sweep_stage, args)))
-
-                        # formatted = sqrt_core.format(
-                        #      overall_prec = '(float 8 16)',
-                        #     res_prec = f'(float {expbits!s} {res_bits!s})',
-                        #     diff_prec = f'(float {expbits!s} {diff_bits!s})',
-                        #     scale_prec = f'(float {expbits!s} {scale_bits!s})',
-                        # )
-                        # core = fpcparser.compile1(formatted)
-                        # results = run_tests(core, bound)
-                        # counted, worst, avg = oob(results)
 
         print(f'waiting for {len(result_buf)!s} results to come back')
 
@@ -168,27 +171,68 @@ def sweep():
             bound,  *config = args
             expbits, res_bits, diff_bits, scale_bits =  config
             result_get = result.get()
-            timeouts, infs, worst, bitcost = result_get
+            timeouts, infs, worst, worst_bitcost, bitcost = result_get
 
             cfgs += 1
-            print(f'ran {config!r}, got {result_get!r}')
+            print(f' -- {cfgs!s} -- ran {config!r}, got {result_get!r}')
 
-            if timeouts == 0 and infs == 0 and worst < bound:
-                cost = bitcost
-                if cost <= cheapest:
-                    if worst < badness:
-                        cheapest = cost
-                        badness = worst
-                        cheapest_config = config
-                        print(f'  NEW best cost: {cheapest!r}, badness {badness!r}, w/ {cheapest_config!r}')
+            if timeouts == 0 and infs == 0:
+                frontier_elt = (config, result_get)
 
-        print(f'tried {cfgs!s} configs, done')
+                updated, frontier = search.update_frontier(frontier, frontier_elt, metrics)
+                if updated:
+                    print('New (unbounded) frontier:')
+                    search.print_frontier(frontier)
 
-    return cheapest, badness, cheapest_config
+                if worst < bound:
+                    updated, frontier_bounded = search.update_frontier(frontier_bounded, frontier_elt, metrics)
+                    if updated:
+                        print('New BOUNDED frontier:')
+                        search.print_frontier(frontier_bounded)
+
+    print(f'tried {cfgs!s} configs, done\n')
+    print('Final frontier:')
+    search.print_frontier(frontier)
+    print('Final bounded frontier:')
+    search.print_frontier(frontier_bounded)
+    print(flush=True)
+
+    return frontier, frontier_bounded
 
 
-# got an answer:
 
-# (592590, 0.008814576415149933, [4, 15, 16, 9])
-# >>> sweep_stage(1/100, 4, 15, 16, 9)
-# (0, 0, 0.008814576415149933, 592590)
+# there are 5 metrics:
+
+# how many examples timed out
+# how many examples reported inf
+# the worst error (not residual!) of an example
+# the worst individual bitcost
+# the total bitcost (sum of examples)
+
+# And here are the frontiers:
+
+# tried 11375 configs, done
+
+# Final frontier:
+# {
+#   [4, 14, 15, 8] : (0, 0, 0.010319312515875811, 2722, 583906)
+#   [4, 15, 15, 8] : (0, 0, 0.009583499933366824, 2309, 586235)
+#   [4, 15, 15, 9] : (0, 0, 0.009225947422650371, 2324, 589008)
+#   [4, 15, 15, 10] : (0, 0, 0.009225947422650371, 1900, 592208)
+#   [4, 15, 16, 9] : (0, 0, 0.008814576415149933, 2342, 592590)
+#   [4, 15, 16, 10] : (0, 0, 0.008814576415149933, 1914, 596226)
+#   [4, 15, 16, 11] : (0, 0, 0.008540409355627165, 1926, 599862)
+#   [4, 16, 15, 10] : (0, 0, 0.008913438213184577, 1914, 595794)
+# }
+# Final bounded frontier:
+# {
+#   [4, 15, 15, 8] : (0, 0, 0.009583499933366824, 2309, 586235)
+#   [4, 15, 15, 9] : (0, 0, 0.009225947422650371, 2324, 589008)
+#   [4, 15, 15, 10] : (0, 0, 0.009225947422650371, 1900, 592208)
+#   [4, 15, 16, 9] : (0, 0, 0.008814576415149933, 2342, 592590)
+#   [4, 15, 16, 10] : (0, 0, 0.008814576415149933, 1914, 596226)
+#   [4, 15, 16, 11] : (0, 0, 0.008540409355627165, 1926, 599862)
+#   [4, 16, 15, 10] : (0, 0, 0.008913438213184577, 1914, 595794)
+# }
+
+# ([([4, 14, 15, 8], (0, 0, 0.010319312515875811, 2722, 583906)), ([4, 15, 15, 8], (0, 0, 0.009583499933366824, 2309, 586235)), ([4, 15, 15, 9], (0, 0, 0.009225947422650371, 2324, 589008)), ([4, 15, 15, 10], (0, 0, 0.009225947422650371, 1900, 592208)), ([4, 15, 16, 9], (0, 0, 0.008814576415149933, 2342, 592590)), ([4, 15, 16, 10], (0, 0, 0.008814576415149933, 1914, 596226)), ([4, 15, 16, 11], (0, 0, 0.008540409355627165, 1926, 599862)), ([4, 16, 15, 10], (0, 0, 0.008913438213184577, 1914, 595794))], [([4, 15, 15, 8], (0, 0, 0.009583499933366824, 2309, 586235)), ([4, 15, 15, 9], (0, 0, 0.009225947422650371, 2324, 589008)), ([4, 15, 15, 10], (0, 0, 0.009225947422650371, 1900, 592208)), ([4, 15, 16, 9], (0, 0, 0.008814576415149933, 2342, 592590)), ([4, 15, 16, 10], (0, 0, 0.008814576415149933, 1914, 596226)), ([4, 15, 16, 11], (0, 0, 0.008540409355627165, 1926, 599862)), ([4, 16, 15, 10], (0, 0, 0.008913438213184577, 1914, 595794))])

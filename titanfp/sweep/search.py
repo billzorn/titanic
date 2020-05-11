@@ -54,3 +54,105 @@
 
 # cost metric isn't about the chip - we have proxies
 # spin it as an advantage!
+
+
+import itertools
+
+def compare_results(m1, m2, metrics):
+
+    # probably don't need this?
+    # s = range(len(metrics))
+    # powerset = itertools.chain.from_iterable(
+    #     itertools.combinations(s, r) for r in range(len(s)+1)
+    # )
+
+    lt = False
+    gt = False
+    for a1, a2, cmp_lt in zip(m1, m2, metrics):
+        if cmp_lt(a1, a2):
+            lt = True
+        elif cmp_lt(a2, a1):
+            gt = True
+
+    if lt:
+        if gt:
+            return None
+        else:
+            return -1
+    else:
+        if gt:
+            return 1
+        else:
+            return 0
+
+
+
+def update_frontier(frontier, result, metrics):
+
+    keep = True
+    new_frontier = []
+    for frontier_data, frontier_m in frontier:
+        result_data, result_m = result
+        comparison = compare_results(result_m, frontier_m, metrics)
+
+        if comparison is None:
+            # the points are incomparable; keep both
+            new_frontier.append((frontier_data, frontier_m))
+
+
+        elif comparison >= 0:
+            # some existing result is at least as good as the new one;
+            # we don't need the new one
+            new_frontier.append((frontier_data, frontier_m))
+            keep = False
+
+        # else: # comparison < 0
+        #     pass
+        #     # new result is less, which is strictly better;
+        #     # keep it and throw out this result
+
+    if keep:
+        new_frontier.append(result)
+
+    #check_frontier(new_frontier, metrics)
+
+    return keep, new_frontier
+
+
+def check_frontier(frontier, metrics):
+
+    broken = False
+    new_frontier = []
+
+    for i1 in range(len(frontier)):
+        keep = True
+
+        for i2 in range(i1+1, len(frontier)):
+
+            res1_data, res1_m = frontier[i1]
+            res2_data, res2_m = frontier[i2]
+
+            comparison = compare_results(res1_m, res2_m, metrics)
+
+            if comparison != None:
+                broken = True
+                print('how did this get here?')
+                print(i1, repr(frontier[i1]))
+                print(i2, repr(frontier[i2]))
+                print(flush=True)
+
+                if comparison >= 0:
+                    keep = False
+                    break
+
+        if keep:
+            new_frontier.append(frontier[i1])
+
+    return broken, new_frontier
+
+
+def print_frontier(frontier):
+    print('{')
+    for frontier_data, frontier_m in frontier:
+        print(f'  {frontier_data!r} : {frontier_m!r}')
+    print('}', flush=True)
