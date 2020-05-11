@@ -203,11 +203,13 @@ class Evaluator(object):
             self.evals += 1
             if self.evals & self.notify_evals == self.notify_evals:
                 print(',', end='', flush=True)
-            for analysis in self.analyses:
-                analysis.track(e, ctx, inputs, result)
-            if self.max_evals and self.evals > self.max_evals:
-                raise EvaluatorError('Evaluation limit {} reached on expression {}'
-                                     .format(str(self.max_evals), str(e)))
+
+            if str(ctx.props.get('titanic-analysis')) != 'skip':
+                for analysis in self.analyses:
+                    analysis.track(e, ctx, inputs, result)
+                if self.max_evals and self.evals > self.max_evals:
+                    raise EvaluatorError('Evaluation limit {} reached on expression {}'
+                                         .format(str(self.max_evals), str(e)))
 
         return result
 

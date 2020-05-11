@@ -155,7 +155,7 @@ def check_frontier(frontier, metrics):
 def print_frontier(frontier):
     print('[')
     for frontier_data, frontier_m in frontier:
-        print(f'  ({frontier_data!r}, {frontier_m!r})')
+        print(f'    ({frontier_data!r}, {frontier_m!r}),')
     print(']')
 
 
