@@ -160,25 +160,28 @@ def print_frontier(frontier):
 
 
 def sweep_random_init(stage_fn, inits, neighbors, metrics, verbose=3):
-    initial_cfg = [f() for f in inits]
+    initial_cfg = tuple(f() for f in inits)
     initial_result = stage_fn(*initial_cfg)
 
     frontier = [(initial_cfg, initial_result)]
     improved_frontier = True
     gen_number = 0
 
+    all_cfgs = {initial_cfg}
+
     with multiprocessing.Pool() as pool:
         while improved_frontier:
             improved_frontier = False
 
             if verbose:
-                print(f'generation {gen_number!s}: ')
+                print(f'generation {gen_number!s}: ({len(all_cfgs)!s} cfgs total) ')
                 print_frontier(frontier)
                 print(flush=True)
 
             gen_number += 1
 
             async_results = []
+            skipped = 0
             for cfg, result in frontier:
                 for i in range(len(cfg)):
                     x = cfg[i]
@@ -186,10 +189,15 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics, verbose=3):
                     for new_x in f(x):
                         new_cfg = list(cfg)
                         new_cfg[i] = new_x
-                        async_results.append((new_cfg, pool.apply_async(stage_fn, new_cfg)))
+                        new_cfg = tuple(new_cfg)
+                        if new_cfg not in all_cfgs:
+                            async_results.append((new_cfg, pool.apply_async(stage_fn, new_cfg)))
+                            all_cfgs.add(new_cfg)
+                        else:
+                            skipped += 1
 
             if verbose >= 2:
-                print(f'dispatched {len(async_results)!s} evaluations for generation {gen_number!s}')
+                print(f'dispatched {len(async_results)!s} evaluations for generation {gen_number!s}, {skipped!s} skipped')
 
             for i, (new_cfg, ares) in enumerate(async_results):
                 new_res = ares.get()

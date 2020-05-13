@@ -218,16 +218,16 @@ def init_expbits():
 def neighbor_expbits(x):
     nearby = 1
     for neighbor in range(x-nearby, x+nearby+1):
-        if 1 <= neighbor <= 8:
+        if 1 <= neighbor <= 8 and neighbor != x:
             yield neighbor
 
 def init_p():
     return random.randint(1, 16)
 
 def neighbor_p(x):
-    nearby = 3
+    nearby = 2
     for neighbor in range(x-nearby, x+nearby+1):
-        if 1 <= neighbor <= 32:
+        if 1 <= neighbor <= 32 and neighbor != x:
             yield neighbor
 
 
@@ -247,10 +247,10 @@ newton_neighbors = [
     neighbor_p
 ]
 
-newton_metrics = (operator.lt,) * 5
+newton_metrics = (operator.lt,) * 8
 
 def run_random():
-    return search.sweep_random_init(sweep_stage, newton_inits, newton_neighbors, newton_metrics)
+    return search.sweep_random_init(bab_stage, newton_inits, newton_neighbors, newton_metrics)
 
 
 from multiprocessing import Pool
