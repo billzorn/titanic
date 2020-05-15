@@ -9,6 +9,7 @@ from ..fpbench import fpcast as ast
 from .evalctx import EvalCtx
 from ..titanic import ndarray
 
+
 class EvaluatorError(utils.TitanicError):
     """Base Titanic evaluator error."""
 
@@ -18,12 +19,6 @@ class EvaluatorUnimplementedError(EvaluatorError):
 class EvaluatorUnboundError(EvaluatorError, LookupError):
     """Unbound variable encountered during evaluation."""
 
-
-def bitcost(r):
-    if hasattr(r, 'ctx'):
-        return r.ctx.nbits
-    else:
-        return 0
 
 class Evaluator(object):
     """FPCore evaluator.

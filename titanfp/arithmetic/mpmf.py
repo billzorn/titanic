@@ -12,7 +12,7 @@ from . import ieee754
 from . import posit
 from . import fixed
 from . import interpreter
-from . import ndarray
+from ..titanic import ndarray
 
 class MPMF(mpnum.MPNum):
 

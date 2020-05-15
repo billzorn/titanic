@@ -173,9 +173,9 @@ class WebtoolState(object):
     @property
     def precision(self):
         if self.backend in webdemo_float_backends:
-            return ast.Data([ast.Var('float'), ast.Decnum(str(self.w)), ast.Decnum(str(self.p + self.w))])
+            return ast.Data((ast.Var('float'), ast.Integer(self.w), ast.Integer(self.p + self.w)))
         elif self.backend in webdemo_posit_backends:
-            return ast.Data([ast.Var('posit'), ast.Decnum(str(self.es)), ast.Decnum(str(self.nbits))])
+            return ast.Data((ast.Var('posit'), ast.Integer(self.es), ast.Integer(self.nbits)))
         else:
             return None
 
@@ -348,6 +348,7 @@ def run_eval(data):
             result['e_val'] = '{} by {} matrix:'.format(rows, cols)
 
     except WebtoolError as e:
+        traceback.print_exc()
         result = {
             'success': 0,
             'message' : str(e),
