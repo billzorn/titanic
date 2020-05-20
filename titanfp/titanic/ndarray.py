@@ -154,7 +154,7 @@ def describe_nd(a, descr=repr, dimsep=dimsep_array, lparen='(', rparen=')', dept
             ]), height
         else:
             # empty iterable
-            return lparen + rparen
+            return lparen + rparen, 1
     else:
         return descr(a), 0
 
