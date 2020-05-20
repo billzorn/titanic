@@ -42,6 +42,8 @@ export const fpcore = {
         'M_2_SQRTPI', 'SQRT2', 'SQRT1_2', 'INFINITY', 'NAN',
         // boolean
         'TRUE', 'FALSE',
+        // let's stick tensor literals in here
+        'array',
     ],
 
     brackets: [

@@ -142,15 +142,19 @@ def describe_nd(a, descr=repr, dimsep=dimsep_array, lparen='(', rparen=')', dept
     from the top and bottom of the data structure, and the parentheses.
     """
     if isinstance(a, Iterable) and not isinstance(a, str):
-        rows, heights = zip(*(describe_nd(elt, descr=descr, dimsep=dimsep,
-                                          lparen=lparen, rparen=rparen, depth=depth+1) for elt in a))
-        height = max(heights) + 1
-        sep = dimsep(depth, height, lparen, rparen)
-        return ''.join([
-            lparen,
-            sep.join(rows),
-            rparen,
-        ]), height
+        if a:
+            rows, heights = zip(*(describe_nd(elt, descr=descr, dimsep=dimsep,
+                                              lparen=lparen, rparen=rparen, depth=depth+1) for elt in a))
+            height = max(heights) + 1
+            sep = dimsep(depth, height, lparen, rparen)
+            return ''.join([
+                lparen,
+                sep.join(rows),
+                rparen,
+            ]), height
+        else:
+            # empty iterable
+            return lparen + rparen
     else:
         return descr(a), 0
 
