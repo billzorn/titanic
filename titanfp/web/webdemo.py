@@ -16,13 +16,12 @@ import numpy as np
 from . import fserver
 
 from ..fpbench import fpcparser, fpcast as ast
-from ..titanic import digital
+from ..titanic import digital, ndarray
 from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
 from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
 from ..arithmetic import mpmf
-from ..arithmetic import ndarray
 
 here = os.path.dirname(os.path.realpath(__file__))
 dist = os.path.join(here, 'dist')
@@ -157,6 +156,8 @@ class WebtoolState(object):
 
                 self.img_tensor = np_array_to_ndarray(np.array(self.img))
 
+                print(self.img_tensor)
+
             except Exception:
                 print('Exception decoding user image:', file=sys.stderr, flush=True)
                 traceback.print_exc()
@@ -169,6 +170,8 @@ class WebtoolState(object):
             self.heatmap = self._read_bool(payload['heatmap'], 'heatmap')
 
         self.payload = payload
+
+        print(self.payload)
 
     @property
     def precision(self):
@@ -203,18 +206,15 @@ def img_to_sexp(img):
 
 # convert everything into integers, should be fine for images
 def np_array_to_ndarray(a):
-    data, shape = ndarray.flatten_shaped_list(a.tolist())
-    assert shape == a.shape
-    #interned_data = [digital.Digital(m=int(d), exp=0) for d in data]
-    interned_data = [int(d) for d in data]
-    return ndarray.NDArray(shape, interned_data)
+    data, shape = ndarray.reshape(a)
+    return ndarray.NDArray(data=map(int, data), shape=shape)
 
 def pixel(x):
     return max(0, min(int(x), 255))
 
 def b64_encode_image(e):
-    bitmap_tensor = ndarray.NDArray(shape=e.shape, data=[pixel(d) for d in e.data])
-    bitmap = np.array(bitmap_tensor.to_list(), dtype=np.uint8)
+    bitmap_tensor = ndarray.NDArray(shape=e.shape, data=map(pixel, e.data))
+    bitmap = np.array(bitmap_tensor, dtype=np.uint8)
     img = Image.fromarray(bitmap)
     buf = io.BytesIO()
     img.save(buf, format='PNG')
@@ -279,7 +279,11 @@ def run_eval(data):
             args_with_image = state.args
 
         try:
+            print(repr(args_with_image))
+
             arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
+            print(repr(arg_ctx))
+
             named_args = [[str(k), ('[' + 'x'.join(['{}'] * len(shape)) + ' tensor]').format(*arg_ctx.bindings[k].shape) if shape
                            else str(arg_ctx.bindings[k])]
                           for k, props, shape in core.inputs]
