@@ -307,7 +307,7 @@ class BaseInterpreter(Evaluator):
             names.append(name)
 
         # TODO: should coordinates be rounded?
-        data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+        data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.dtype(i))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.calc_size(shape))]
         return inputs, ndarray.NDArray(shape=shape, data=data)
@@ -336,7 +336,7 @@ class BaseInterpreter(Evaluator):
         for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
             pos = ndarray.position(shape, idx)
-            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+            ctx = ctx.let(bindings=[(name, self.dtype(i))
                                     for name, i in zip(names, pos)])
             for name, init_expr, update_expr in e.while_bindings:
                 new_binding = (name, self.evaluate(update_expr, ctx))
@@ -498,7 +498,7 @@ class BaseInterpreter(Evaluator):
                     if isinstance(dim, int) and dim != argdim:
                         raise EvaluatorError('tensor input has wrong shape: expecting {}, got {}'.format(repr(shape), repr(argval.shape)))
                     elif isinstance(dim, str):
-                        arg_bindings.append((dim, self.arg_to_digital(argdim, local_ctx)))
+                        arg_bindings.append((dim, self.dtype(argdim)))
 
             arg_bindings.append((name, argval))
 
