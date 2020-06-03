@@ -4,7 +4,7 @@
 # NOTE TODO: see https://rszalski.github.io/magicmethods/
 
 from collections.abc import Iterable, Sequence, MutableSequence
-import itertools
+import sys, itertools
 
 
 class ShapeError(ValueError):
@@ -299,79 +299,94 @@ def check_offset(data, shape, start, strides):
 # lazy sequences (including lookup chains, and size changing operations)
 
 
-class ViewND(View, Shaped):
-    """An offset view of an n-dimensional sequence."""
+def _mk_view(cls):
+    """Create a new view type from an existing n-dimensional sequence type.
 
-    # We want to inherit all of these things from a sequence type to determine what the view does.
-    # Note that we won't be able to define them in the body of the real_type itself,
-    # since the view won't be defined yet.
-    # To get around this, we can always monkey patch it in later.
+    Due to the way inheritance works with assigning to __class__
+    it is necessary that the derived view type inherit directly from the base sequence type
+    or we won't be able to reify due to differing object layout.
 
-    # We also can't define any placeholder values here, as we want to overwrite the properties
-    # from the real_type, but not the inherited implementation types.
+    The only way to implement this inheritance pattern
+    without duplicating the full implementation of the view type
+    is to create each view type dynamically.
+    """
 
-    # backing_type = None
-    # real_type = None
-    # view_type = None
+    class NewView(cls, View):
+        """An offset view of an n-dimensional sequence."""
 
-    @property
-    def data(self):
-        self.reify()
-        return self._data
+        # We want to inherit all of these things from the sequence type to determine what the view does.
+        # Note that we won't be able to define them in the body of the real_type itself,
+        # since the view won't be defined yet.
+        # To get around this, we can always monkey patch them in later.
 
-    @property
-    def shape(self):
-        self.reify()
-        return self._shape
+        # Since this dynamic type is extending the original sequence,
+        # we can't even put in sane placeholders here (like None).
 
-    @property
-    def size(self):
-        self.reify()
-        return self._size
+        # backing_type = None
+        # real_type = None
+        # view_type = None
 
-    @property
-    def strides(self):
-        self.reify()
-        return self._strides
+        @property
+        def data(self):
+            self.reify()
+            return self._data
 
-    @property
-    def start(self):
-        return self._start
+        @property
+        def shape(self):
+            self.reify()
+            return self._shape
 
-    def reify(self):
-        cls = self.real_type
-        data_gen, shape = reshape(self, recshape=cls)
-        self._data = self.backing_type(data_gen)
-        self._shape = shape
-        self._strides, self._size = calc_strides(self._shape)
-        del self._start
-        self.__class__ = cls
+        @property
+        def size(self):
+            self.reify()
+            return self._size
 
-    def __init__(self, data, shape, start=0, strides=None):
-        self._data = data
-        self._shape = shape
-        self._start = start
-        if strides:
-            self._strides = strides
-            self._size = calc_size(self._shape)
-        else:
+        @property
+        def strides(self):
+            self.reify()
+            return self._strides
+
+        @property
+        def start(self):
+            return self._start
+
+        def reify(self):
+            cls = self.real_type
+            data_gen, shape = reshape(self, recshape=cls)
+            self._data = self.backing_type(data_gen)
+            self._shape = shape
             self._strides, self._size = calc_strides(self._shape)
+            del self._start
+            self.__class__ = cls
 
-        # might want to remove to improve performance if the check isn't needed
-        check_offset(self._data, self._shape, self._start, self._strides)
+        def __init__(self, data, shape, start=0, strides=None):
+            self._data = data
+            self._shape = shape
+            self._start = start
+            if strides:
+                self._strides = strides
+                self._size = calc_size(self._shape)
+            else:
+                self._strides, self._size = calc_strides(self._shape)
+
+            # might want to remove to improve performance if the check isn't needed
+            check_offset(self._data, self._shape, self._start, self._strides)
 
 
-    _data_size_abs_threshold = 64
-    _data_size_rel_threshold = 0.5
+        _data_size_abs_threshold = 64
+        _data_size_rel_threshold = 0.5
 
-    def __repr__(self):
-        dlen = len(self._data)
-        if (dlen <= self._data_size_abs_threshold
-            or (self._size / dlen) >= _data_size_rel_threshold):
-            dstr = repr(self._data)
-        else:
-            dstr = f"'{type(self._data).__name__}' object of length {dlen!s}"
-        return f'{type(self).__name__}({dstr}, {self._shape!r}, start={self._start!s}, strides={self._strides!r})'
+        def __repr__(self):
+            dlen = len(self._data)
+            if (dlen <= self._data_size_abs_threshold
+                or (self._size / dlen) >= _data_size_rel_threshold):
+                dstr = repr(self._data)
+            else:
+                dstr = f"'{type(self._data).__name__}' object of length {dlen!s}"
+            return f'{type(self).__name__}({dstr}, {self._shape!r}, start={self._start!s}, strides={self._strides!r})'
+
+    NewView.__name__ = cls.__name__ + 'View'
+    return NewView
 
 
 class NDSeq(Sequence, Shaped):
@@ -600,9 +615,7 @@ class NDSeq(Sequence, Shaped):
     def tostr(self, descr=repr, sep=', ', lparen='(', rparen=')'):
         return describe(self, descr=descr, sep=sep, lparen=lparen, rparen=rparen)
 
-class NDSeqView(ViewND, NDSeq):
-    """An offset view of an NDSeq."""
-
+NDSeqView = _mk_view(NDSeq)
 NDSeq.real_type = NDSeq
 NDSeq.view_type = NDSeqView
 
@@ -669,8 +682,6 @@ class NDArray(MutableSequence, NDSeq):
     def clear(self):
         raise TypeError('cannot clear NDArray')
 
-class NDArrayView(ViewND, NDArray):
-    """An offset view of an NDArray."""
-
+NDArrayView = _mk_view(NDArray)
 NDArray.real_type = NDArray
 NDArray.view_type = NDArrayView

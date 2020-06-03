@@ -310,7 +310,7 @@ class BaseInterpreter(Evaluator):
         data = [self.evaluate(e.body, ctx.let(bindings=[(name, self.dtype(i))
                                                         for name, i in zip(names, ndarray.position(shape, idx))]))
                 for idx in range(ndarray.calc_size(shape))]
-        return inputs, ndarray.NDArray(shape=shape, data=data)
+        return inputs, ndarray.NDArrayView(shape=shape, data=data)
 
     def _eval_tensorstar(self, e, ctx):
         inputs = []
@@ -343,7 +343,7 @@ class BaseInterpreter(Evaluator):
                 ctx = ctx.let(bindings=[new_binding])
             nd[pos] = self.evaluate(e.body, ctx)
 
-        return inputs, nd
+        return inputs, ndarray.NDArrayView(shape=nd.shape, data=nd.data)
 
 
     # control flow
