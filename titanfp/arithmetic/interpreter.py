@@ -400,7 +400,7 @@ class BaseInterpreter(Evaluator):
 
         for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
-            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+            ctx = ctx.let(bindings=[(name, self.dtype(i))
                                     for name, i in zip(names, ndarray.position(shape, idx))])
             bindings = [(name, self.evaluate(update_expr, ctx)) for name, init_expr, update_expr in e.while_bindings]
             ctx = ctx.let(bindings=bindings)
@@ -425,7 +425,7 @@ class BaseInterpreter(Evaluator):
 
         for idx in range(ndarray.calc_size(shape)):
             # TODO: should coordinates be rounded?
-            ctx = ctx.let(bindings=[(name, self.arg_to_digital(i, ctx=ctx))
+            ctx = ctx.let(bindings=[(name, self.dtype(i))
                                     for name, i in zip(names, ndarray.position(shape, idx))])
             for name, init_expr, update_expr in e.while_bindings:
                 new_binding = (name, self.evaluate(update_expr, ctx))
