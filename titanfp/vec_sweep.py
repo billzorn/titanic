@@ -44,7 +44,7 @@ binsum_template = '''(FPCore addpairs ((A n))
            [k2 (# (+ k1 1))])
       (if (< k2 n)
           (! {sum_prec} (+ (ref A k1) (ref A k2)))
-          (! {sum_prec} (ref A k1))))
+          (ref A k1)))
   ))
 
 (FPCore binsum ((A n))
@@ -77,9 +77,8 @@ dotprod_bin_template = (
     vec_prod_template + '\n' +
 '''(FPCore dotprod ((A n) (B m))
  :pre (== n m)
- {overall_prec}
   (let ([result (binsum (vec-prod A B))])
-    (cast result)))
+    (! {overall_prec} (cast result))))
 ''')
 
 dotprod_neumaier_template = (
@@ -87,9 +86,8 @@ dotprod_neumaier_template = (
     vec_prod_template + '\n' +
 '''(FPCore dotprod ((A n) (B m))
  :pre (== n m)
- {overall_prec}
   (let ([result (nksum (vec-prod A B))])
-    (cast result)))
+    (! {overall_prec} (cast result))))
 ''')
 
 def mk_dotprod(template, overall_prec, mul_prec, sum_prec):
@@ -193,6 +191,7 @@ def setup_full_quire(ctx, unrounded=False):
 
 class VecSettings(object):
     def __init__(self):
+        self.trials = None
         self.n = None
         self.As = None
         self.Bs = None
@@ -201,15 +200,18 @@ class VecSettings(object):
         self.overall_ctx = None
         self.mul_ctx = None
 
-    def cfg(self, n, ctx, template, signed=True):
+    def cfg(self, trials, n, ctx, template, signed=True):
+        self.trials = trials
         self.n = n
-        self.As = [rand_vec(n, ctx=ctx, signed=signed) for _ in range(n)]
-        self.Bs = [rand_vec(n, ctx=ctx, signed=signed) for _ in range(n)]
+        self.As = [rand_vec(n, ctx=ctx, signed=signed) for _ in range(trials)]
+        self.Bs = [rand_vec(n, ctx=ctx, signed=signed) for _ in range(trials)]
         evaltor, main = setup_full_quire(ctx)
         self.refs = [evaltor.interpret(main, [a, b]) for a, b in zip(self.As, self.Bs)]
         self.template = template
         self.overall_ctx = ctx
         self.mul_ctx = safe_mul_ctx(ctx)
+
+        print(mk_dotprod(template, self.overall_ctx.propstr(), self.mul_ctx.propstr(), safe_quire_ctx(ctx).propstr()))
 
 global_settings = VecSettings()
 
@@ -238,7 +240,7 @@ def vec_stage(quire_lo, quire_hi):
                 sum_ulps = math.inf
                 infs += 1
 
-        avg_ulps = sum_ulps / global_settings.n
+        avg_ulps = sum_ulps / global_settings.trials
 
         return quire_lo + quire_hi, infs, worst_ulps, avg_ulps
     except Exception:
@@ -257,9 +259,12 @@ vec_inits = (init_prec,) * 2
 vec_neighbors = (neighbor_prec,) * 2
 vec_metrics = (operator.lt,) * 3
 
-def run_sweep(n, ctx, template, signed=True):
-    global_settings.cfg(n, ctx, template, signed=signed)
+def run_sweep(trials, n, ctx, template, signed=True):
+    global_settings.cfg(trials, n, ctx, template, signed=signed)
     search.sweep_random_init(vec_stage, vec_inits, vec_neighbors, vec_metrics)
+
+
+
 
 
 bf16 = ieee754.ieee_ctx(8, 16)
@@ -267,4 +272,117 @@ f16 = ieee754.ieee_ctx(5, 16)
 p16 = posit.posit_ctx(0, 16)
 p16_1 = posit.posit_ctx(1, 16)
 
+
+
+
+
+
+
+
+
+
+# some results
+from math import inf as inf
+
+# run_sweep(100, 1000, bf16, dotprod_naive_template)
+stuff = [
+    ((16, 5), (21, 0, 12, 0.57)),
+    ((17, 5), (22, 0, 4, 0.19)),
+    ((18, 5), (23, 0, 1, 0.04)),
+    ((20, 5), (25, 0, 0, 0.0)),
+    ((11, 5), (16, 0, 1928, 60.58)),
+    ((13, 5), (18, 0, 1660, 31.54)),
+    ((14, 5), (19, 0, 190, 5.18)),
+    ((15, 5), (20, 0, 72, 2.01)),
+    ((4, 6), (10, 0, 125090, 5556.55)),
+    ((5, 6), (11, 0, 64674, 3095.17)),
+    ((7, 5), (12, 0, 16034, 803.76)),
+    ((8, 5), (13, 0, 8034, 500.84)),
+    ((10, 5), (15, 0, 1970, 93.25)),
+    ((1, 1), (2, 100, inf, inf)),
+    ((1, 8), (9, 23, inf, inf)),
+    ((5, 3), (8, 94, inf, inf)),
+]
+
+# run_sweep(100, 1000, bf16, dotprod_bin_template)
+# improvement stopped at generation 7: 
+stuff = [
+    ((16, 5), (21, 0, 5, 0.17)),
+    ((17, 5), (22, 0, 2, 0.07)),
+    ((18, 5), (23, 0, 1, 0.03)),
+    ((21, 5), (26, 0, 0, 0.0)),
+    ((11, 5), (16, 0, 247, 8.6)),
+    ((12, 5), (17, 0, 125, 3.98)),
+    ((13, 5), (18, 0, 61, 1.86)),
+    ((14, 5), (19, 0, 30, 0.86)),
+    ((15, 5), (20, 0, 13, 0.42)),
+    ((3, 6), (9, 0, 62815, 2184.57)),
+    ((4, 6), (10, 0, 32479, 1237.56)),
+    ((6, 5), (11, 0, 15744, 733.06)),
+    ((7, 5), (12, 0, 3887, 162.52)),
+    ((8, 5), (13, 0, 1983, 81.96)),
+    ((10, 5), (15, 0, 503, 19.36)),
+    ((1, 1), (2, 100, inf, inf)),
+    ((1, 7), (8, 40, inf, inf)),
+    ((4, 3), (7, 88, inf, inf)),
+]
+
+
+# run_sweep(100, 1000, p16, dotprod_naive_template)
+# improvement stopped at generation 7: 
+stuff = [
+    ((16, 5), (21, 0, 127, 17.63)),
+    ((17, 5), (22, 0, 64, 8.68)),
+    ((18, 5), (23, 0, 32, 4.31)),
+    ((19, 5), (24, 0, 16, 2.15)),
+    ((20, 5), (25, 0, 8, 1.02)),
+    ((21, 5), (26, 0, 4, 0.47)),
+    ((6, 6), (12, 0, 129717, 28580.59)),
+    ((11, 5), (16, 0, 4084, 603.34)),
+    ((12, 5), (17, 0, 2032, 298.69)),
+    ((13, 5), (18, 0, 1029, 146.11)),
+    ((14, 5), (19, 0, 510, 73.76)),
+    ((15, 5), (20, 0, 258, 36.43)),
+    ((22, 5), (27, 0, 2, 0.2)),
+    ((23, 5), (28, 0, 1, 0.06)),
+    ((26, 5), (31, 0, 0, 0.0)),
+    ((4, 6), (10, 0, 517871, 73538.57)),
+    ((5, 6), (11, 0, 259311, 47042.38)),
+    ((8, 5), (13, 0, 33455, 6982.4)),
+    ((9, 5), (14, 0, 16495, 2870.68)),
+    ((10, 5), (15, 0, 8143, 1276.26)),
+    ((1, 1), (2, 100, inf, inf)),
+    ((1, 8), (9, 37, inf, inf)),
+    ((4, 3), (7, 99, inf, inf)),
+    ((4, 4), (8, 96, inf, inf)),
+]
+
+# run_sweep(100, 1000, p16, dotprod_bin_template)
+# improvement stopped at generation 7: 
+stuff = [
+    ((16, 6), (22, 0, 64, 10.26)),
+    ((17, 6), (23, 0, 32, 5.14)),
+    ((18, 6), (24, 0, 16, 2.57)),
+    ((19, 6), (25, 0, 9, 1.25)),
+    ((20, 6), (26, 0, 4, 0.63)),
+    ((21, 6), (27, 0, 2, 0.31)),
+    ((11, 6), (17, 0, 2085, 332.43)),
+    ((12, 6), (18, 0, 1087, 166.34)),
+    ((13, 6), (19, 0, 547, 82.46)),
+    ((14, 6), (20, 0, 261, 41.09)),
+    ((15, 6), (21, 0, 130, 20.56)),
+    ((22, 6), (28, 0, 1, 0.13)),
+    ((26, 6), (32, 0, 0, 0.0)),
+    ((3, 6), (9, 0, 539674, 91906.36)),
+    ((6, 5), (11, 0, 67363, 16120.78)),
+    ((7, 5), (12, 0, 34520, 6755.21)),
+    ((8, 5), (13, 0, 16794, 3023.6)),
+    ((9, 5), (14, 0, 8340, 1413.98)),
+    ((10, 5), (15, 0, 4180, 681.31)),
+    ((1, 1), (2, 100, inf, inf)),
+    ((1, 7), (8, 42, inf, inf)),
+    ((3, 3), (6, 99, inf, inf)),
+    ((4, 3), (7, 91, inf, inf)),
+    ((5, 5), (10, 0, 136730, 28892.4)),
+]
 
