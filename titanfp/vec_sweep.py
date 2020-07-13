@@ -216,6 +216,13 @@ class VecSettings(object):
 global_settings = VecSettings()
 
 
+def describe_stage(quire_lo, quire_hi):
+    overall_prec = global_settings.overall_ctx.propstr()
+    mul_prec = global_settings.mul_ctx.propstr()
+    sum_prec = fixed.fixed_ctx(-quire_lo, quire_lo + quire_hi).propstr()
+    precs = (overall_prec, mul_prec, sum_prec)
+    print(mk_dotprod(global_settings.template, *precs))
+
 def vec_stage(quire_lo, quire_hi):
     try:
         overall_prec = global_settings.overall_ctx.propstr()
@@ -257,11 +264,23 @@ def neighbor_prec(x):
 
 vec_inits = (init_prec,) * 2
 vec_neighbors = (neighbor_prec,) * 2
-vec_metrics = (operator.lt,) * 3
+vec_metrics = (operator.lt,) * 4
+
+filtered_metrics = (operator.lt, None, None, operator.lt)
 
 def run_sweep(trials, n, ctx, template, signed=True):
     global_settings.cfg(trials, n, ctx, template, signed=signed)
-    search.sweep_random_init(vec_stage, vec_inits, vec_neighbors, vec_metrics)
+    frontier = search.sweep_random_init(vec_stage, vec_inits, vec_neighbors, vec_metrics)
+
+    filtered_frontier = search.filter_frontier(frontier, filtered_metrics)
+    sorted_frontier = sorted(filtered_frontier, key=lambda x: x[1][0])
+
+    for data, measures in sorted_frontier:
+        print('\t'.join(str(m) for m in measures))
+
+    for data, measures in sorted_frontier:
+        describe_stage(*data)
+        print()
 
 
 

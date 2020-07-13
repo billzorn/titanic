@@ -54,9 +54,9 @@ rk_core = ('''(FPCore vec-scale ((A n) x)
   xyz))
 ''')
 
-rk_args = '''(array 1 1 1)
-1/16
-189
+rk_args = '''(array -12 -8.5 35)
+1/64
+240
 '''
 
 import matplotlib.pyplot as plt
@@ -93,8 +93,9 @@ def mkplot(data, name='fig.png', title='Some chaotic attractor'):
 # new:
 # 1/16, 189:
 
-ref_state = (1.0299874625744918, 2.1055180341334374, 18.17152158199435)
-ref_dstate = (10.755305715589456, 8.017691512596356, -46.28873370793634)
+ref_state = (16.157760096498592, 19.29168560322699, 34.45572835102259)
+ref_dstate = (31.339255067284, -123.60179554721446, 219.82848556462386)
+
 
 def avg_abserr(a1, a2):
     count = 0
@@ -154,6 +155,19 @@ def setup_rk(fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec):
     args = fpcparser.read_exprs(rk_args)
     return cores, args
 
+def describe_rk(fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec):
+    formatted = rk_core.format(
+        target_fn = 'lorenz-3d',
+        step_fn = 'rk4-3d',
+        fn_prec = f'(float {rk_ebits} {fn_prec + rk_ebits!s})',
+        rk_prec = f'(float {rk_ebits} {rk_prec + rk_ebits!s})',
+        k1_prec = f'(float {rk_ebits} {k1_prec + rk_ebits!s})',
+        k2_prec = f'(float {rk_ebits} {k2_prec + rk_ebits!s})',
+        k3_prec = f'(float {rk_ebits} {k3_prec + rk_ebits!s})',
+        k4_prec = f'(float {rk_ebits} {k4_prec + rk_ebits!s})',
+    )
+    print(formatted)
+
 def rk_stage(fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec):
     cores, args = setup_rk(fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec)
     evaltor, als, result_array = run_rk(cores, args)
@@ -193,13 +207,19 @@ rk_inits = (init_prec,) * 6
 rk_neighbors = (neighbor_prec,) * 6
 rk_metrics = (operator.lt,) * 3
 
+filtered_metrics = (operator.lt, operator.lt, None)
+
 def run_random():
-    return search.sweep_random_init(rk_stage, rk_inits, rk_neighbors, rk_metrics)
+    frontier = search.sweep_random_init(rk_stage, rk_inits, rk_neighbors, rk_metrics)
+    
+    filtered_frontier = search.filter_frontier(frontier, filtered_metrics)
+    sorted_frontier = sorted(filtered_frontier, key=lambda x: x[1][0])
 
+    for data, measures in sorted_frontier:
+        print('\t'.join(str(m) for m in measures))
 
-
-
-
+    for data, measures in sorted_frontier:
+        rk_plot(*data)
 
 lo_frontier = [
     ((7, 8, 7, 6, 8, 6), (572496, 0.14302797157119254, 0.828087840083158)),
@@ -253,3 +273,57 @@ hi_frontier = [
 ]
 
 
+
+
+
+
+
+
+
+
+
+"""New: sweep from 12 prec
+
+improvement stopped at generation 37: 
+[
+    ((8, 10, 8, 12, 10, 11), (812840, 0.13860094809806492, 3.144684971768868)),
+    ((8, 10, 8, 12, 10, 13), (818120, 0.02839905190193548, 0.46965798514855805)),
+    ((6, 10, 6, 12, 12, 11), (798440, 0.6220657185686029, 10.355315028231132)),
+    ((4, 5, 4, 4, 8, 4), (642060, 0.468391350249392, 14.697008681518108)),
+    ((4, 5, 2, 4, 6, 4), (629580, 1.83123911623433, 35.521981694897796)),
+    ((2, 5, 2, 1, 8, 6), (608940, 2.9979057829009967, 37.18864836156447)),
+    ((1, 4, 1, 4, 4, 2), (570320, 11.81023911623433, 144.92317872637412)),
+    ((3, 6, 3, 4, 4, 2), (616840, 2.968391350249392, 56.25651205970744)),
+    ((1, 4, 1, 4, 4, 1), (567680, 12.33123466623433, 146.25651205970743)),
+    ((3, 8, 3, 4, 4, 2), (639360, 1.287905782900997, 18.256512059707443)),
+    ((3, 6, 3, 6, 4, 2), (626440, 2.0683913502493922, 35.36367534818478)),
+    ((1, 4, 1, 1, 1, 4), (546800, 17.331239116234332, 125.36367534818477)),
+    ((1, 4, 1, 4, 1, 1), (553280, 12.331239125860996, 146.25651203970745)),
+    ((1, 6, 1, 1, 1, 4), (569320, 12.938391350249391, 140.25651205970743)),
+    ((1, 6, 1, 1, 2, 2), (568840, 12.217905782900997, 146.25651205970743)),
+    ((1, 6, 1, 2, 2, 1), (571000, 2.968391350249392, 64.81135163843554)),
+    ((2, 4, 1, 4, 1, 1), (563840, 12.331239125227663, 156.92317871670744)),
+    ((1, 6, 1, 1, 1, 2), (564040, 19.63505801691606, 112.9231787263741)),
+    ((1, 6, 1, 1, 1, 3), (566680, 17.287905782900996, 130.25651205970743)),
+    ((1, 2, 1, 1, 1, 1), (516360, 19.301724683582727, 117.36367534818477)),
+    ((1, 6, 1, 2, 1, 2), (568840, 13.140391350249393, 137.36367534818478)),
+    ((1, 1, 1, 1, 1, 1), (505100, 17.968391350249394, 127.58984539304078)),
+    ((1, 5, 1, 1, 1, 1), (550140, 12.33147811623433, 146.25651205970743)),
+]
+
+505100  17.968391350249394
+546800  17.331239116234332
+550140  12.33147811623433
+553280  12.331239125860996
+563840  12.331239125227663
+567680  12.33123466623433
+568840  12.217905782900997
+570320  11.81023911623433
+571000  2.968391350249392
+626440  2.0683913502493922
+629580  1.83123911623433
+639360  1.287905782900997
+642060  0.468391350249392
+812840  0.13860094809806492
+818120  0.02839905190193548
+"""

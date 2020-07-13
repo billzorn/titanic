@@ -327,6 +327,119 @@ def go():
     return frontier_newton, frontier_babylonian
 
 
+"""
+(FPCore sum ((A n))
+  (for ([i n])
+    ([accum 0 (+ accum (ref A i))])
+    accum))
+
+(FPCore ksum ((A n))
+ :name "Kahan Summation"
+  (for* ([i n])
+    ([y 0 (- (ref A i) c)]
+     [t 0 (+ accum y)]
+     [c 0 (- (- t accum) y)]
+     [accum 0 t])
+    accum))
+
+(FPCore nksum ((A n))
+ :name "Neumaier's improved Kahan Summation algorithm"
+  (for* ([i n])
+    ([elt 0 (ref A i)]
+     [t 0 (+ accum elt)]
+     [c 0 (if (>= (fabs accum) (fabs elt))
+              (+ c (+ (- accum t) elt))
+              (+ c (+ (- elt t) accum)))]
+     [accum 0 t])
+    (+ accum c)))
+
+
+(FPCore addpairs ((A n))
+ :pre (> n 1)
+  (tensor ([i (# (/ (+ n 1) 2))])
+    (let* ([k1 (# (* i 2))]
+           [k2 (# (+ k1 1))])
+      (if (< k2 n)
+          (+ (ref A k1) (ref A k2))
+          (ref A k1)))
+  ))
+
+(FPCore binsum ((A n))
+  (while (> (size B 0) 1)
+    ([B A (addpairs B)])
+    (if (== (size B 0) 0) 0 (ref B 0))))
+
+(FPCore binsum-inline ((A n))
+  (while (> (size B 0) 1)
+    ([B A (tensor ([i (# (/ (+ (size B 0) 1) 2))])
+            (let* ([k1 (# (* i 2))]
+                   [k2 (# (+ k1 1))])
+              (if (< k2 (size B 0))
+                  (+ (ref B k1) (ref B k2))
+                  (ref B k1)))
+          )])
+    (if (== (size B 0) 0) 0 (ref B 0))))
+
+
+(FPCore dotprod ((A n) (B m))
+ :pre (== n m)
+  (for ([i n])
+    ([accum 0 (+ accum (* (ref A i) (ref B i)))])
+    accum))
+
+(FPCore dotprod-fused ((A n) (B m))
+ :pre (== n m)
+  (for ([i n])
+    ([accum 0 (fma (ref A i) (ref B i) accum)])
+    accum))
+
+
+(FPCore vec-prod ((A n) (B m))
+ :pre (== n m)
+  (tensor ([i n])
+    (* (ref A i) (ref B i))))
+
+(FPCore dotprod-kahan ((A n) (B m))
+ :pre (== n m)
+  (ksum (vec-prod A B)))
+
+(FPCore dotprod-neumaier ((A n) (B m))
+ :pre (== n m)
+  (nksum (vec-prod A B)))
+
+(FPCore dotprod-bin ((A n) (B m))
+ :pre (== n m)
+  (binsum (vec-prod A B)))
+
+(FPCore main ((A n) (B m))
+  (dotprod-bin A B))
+"""
+
+
+
+
+# TODO:
+# sqrt:
+# - sweep script
+# - filtering
+
+# dotprod:
+# - implement quire sizing?
+# - make test set
+# - sweep:
+#   - linear
+#   - pairwise
+#   - compensated ?
+
+# RK:
+# - get baselines
+# - add other equations
+# - average???
+
+# img:
+# - get base image
+# - run
+
 
 
 

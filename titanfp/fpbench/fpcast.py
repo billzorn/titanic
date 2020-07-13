@@ -97,6 +97,10 @@ class Expr(object):
         else:
             return self.replace_subexprs(exprs)
 
+    def expand_tensor(self, ctx):
+        exprs = [[e.expand_tensor(ctx) for e in es] for es in self.subexprs()]
+        return self.replace_subexprs(exprs)
+
 class EmptyExpr(Expr):
     name: str = 'EmptyExpr'
 
@@ -461,6 +465,19 @@ class For(ControlExpr):
         while_bindings = [(x, e0, e,) for ((x, _, _,), e0, e,) in zip(self.while_bindings, while_inits, while_updates)]
         return type(self)(dim_bindings, while_bindings, body)
 
+    def expand_tensor(self, ctx):
+        idx_var, idx_max = self.dim_bindings[0]
+        let_var, let_init, let_update = self.while_bindings[0]
+
+        star_bindings = [(let_var, let_init.expand_tensor(ctx))]
+        for i in range(idx_max.i):
+            new_ctx = {}
+            new_ctx.update(ctx)
+            new_ctx.update({idx_var : i})
+            star_bindings.append((let_var, let_update.expand_tensor(new_ctx)))
+
+        return LetStar(star_bindings, self.body.expand_tensor(ctx))
+
 class ForStar(For):
     name: str = 'for*'
 
@@ -626,6 +643,22 @@ class Size(NaryExpr):
 
 class Ref(NaryExpr):
     name: str = 'ref'
+
+    def expand_tensor(self, ctx):
+        tensor_expr = self.children[0]
+        index_exprs = self.children[1:]
+        if isinstance(tensor_expr, Var):
+            index_values = []
+            for e in index_exprs:
+                if isinstance(e, Var):
+                    index_values.append(ctx[e.value])
+                elif isinstance(e, Integer):
+                    index_values.append(e.i)
+                else:
+                    raise NotImplementedError()
+            return tensor_expr.value + '_' + '_'.join(map(str, index_values))
+        else:
+            raise NotImplementedError()
 
 # IEEE 754 required arithmetic
 
@@ -867,3 +900,23 @@ class FPCore(object):
             ' '.join((annotation_to_string(*arg) for arg in self.inputs)),
             ''.join(':' + name + ' ' + sexp_to_string(prop) + ' ' for name, prop in self.props.items()),
             str(self.e))
+
+    def expand_tensor(self):
+        new_args = []
+        for arg in self.inputs:
+            name, props, shape = arg
+            if shape:
+                size = shape[0]
+                new_names = [name + '_' + str(i) for i in range(size)]
+                for new_name in new_names:
+                    new_args.append((new_name, props, []))
+            else:
+                new_args.append(arg)
+
+        return FPCore(new_args, self.e.expand_tensor({}),
+                      props=self.props,
+                      ident=self.ident,
+                      name=self.name,
+                      pre=self.pre.expand_tensor({}) if self.pre else None,
+                      spec=self.spec.expand_tensor({}) if self.spec else None)
+                      
