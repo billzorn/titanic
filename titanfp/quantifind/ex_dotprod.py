@@ -3,6 +3,7 @@
 import operator
 import math
 import random
+import traceback
 
 from ..titanic import ndarray, gmpmath
 from ..fpbench import fpcparser
@@ -180,54 +181,40 @@ def dotprod_stage(quire_lo, quire_hi):
         return math.inf, math.inf, math.inf, math.inf, -math.inf, -math.inf
 
 
-def dotprod_test():
-    init_bits, neighbor_bits = integer_neighborhood(1, 1024, 8)
+def dotprod_experiment(prefix, quire_slice, quire_init_range, trials, n, inits, retries):
+    init_bits, neighbor_bits = integer_neighborhood(*quire_slice)
     # we can allow the search to explore large quire sizes,
     # but we probably don't want to start there
-    init_bits = lambda : random.randint(1,32)
+    init_bits = lambda : random.randint(*quire_init_range)
 
     dotprod_inits = (init_bits,) * 2
     dotprod_neighbors = (neighbor_bits,) * 2
     dotprod_metrics = (operator.lt,) * 4 + (operator.gt,) * 2
 
-    settings.cfg(10, 100, bf16, 'fused', signed=True)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 10, 20, force_exploration=True)
-    jsonlog('test_dotprod_fused.json', *sweep, settings=settings.describe_cfg())
+    settings.cfg(trials, n, bf16, 'fused', signed=True)
+    try:
+        sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_dotprod_fused.json', *sweep, settings=settings.describe_cfg())
+    except Exception:
+        traceback.print_exc()
 
-    settings.cfg(10, 100, bf16, 'fused', signed=False)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 10, 20, force_exploration=True)
-    jsonlog('test_dotprod_fused_pos.json', *sweep, settings=settings.describe_cfg())
+    settings.cfg(trials, n, bf16, 'fused', signed=False)
+    try:
+        sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_dotprod_fused_unsigned.json', *sweep, settings=settings.describe_cfg())
+    except Exception:
+        traceback.print_exc()
 
-    settings.cfg(10, 100, bf16, 'bin', signed=True)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 10, 20, force_exploration=True)
-    jsonlog('test_dotprod_bin.json', *sweep, settings=settings.describe_cfg())
+    settings.cfg(trials, n, bf16, 'bin', signed=True)
+    try:
+        sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_dotprod_bin.json', *sweep, settings=settings.describe_cfg())
+    except Exception:
+        traceback.print_exc()
 
-    settings.cfg(10, 100, bf16, 'bin', signed=False)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 10, 20, force_exploration=True)
-    jsonlog('test_dotprod_bin_pos.json', *sweep, settings=settings.describe_cfg())
-
-def dotprod_experiment():
-    init_bits, neighbor_bits = integer_neighborhood(1, 1024, 8)
-    # we can allow the search to explore large quire sizes,
-    # but we probably don't want to start there
-    init_bits = lambda : random.randint(1,32)
-
-    dotprod_inits = (init_bits,) * 2
-    dotprod_neighbors = (neighbor_bits,) * 2
-    dotprod_metrics = (operator.lt,) * 4 + (operator.gt,) * 2
-
-    settings.cfg(1000, 1000, bf16, 'fused', signed=True)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_dotprod_fused.json', *sweep, settings=settings.describe_cfg())
-
-    settings.cfg(1000, 1000, bf16, 'fused', signed=False)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_dotprod_fused_pos.json', *sweep, settings=settings.describe_cfg())
-
-    settings.cfg(1000, 1000, bf16, 'bin', signed=True)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_dotprod_bin.json', *sweep, settings=settings.describe_cfg())
-
-    settings.cfg(1000, 1000, bf16, 'bin', signed=False)
-    sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_dotprod_bin_pos.json', *sweep, settings=settings.describe_cfg())
+    settings.cfg(trials, n, bf16, 'bin', signed=False)
+    try:
+        sweep = search.sweep_multi(dotprod_stage, dotprod_inits, dotprod_neighbors, dotprod_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_dotprod_bin_unsigned.json', *sweep, settings=settings.describe_cfg())
+    except Exception:
+        traceback.print_exc()

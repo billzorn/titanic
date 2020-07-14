@@ -2,6 +2,7 @@
 
 import operator
 import math
+import traceback
 
 from ..titanic import ndarray
 from ..fpbench import fpcparser
@@ -88,46 +89,30 @@ def img_stage(ebits, overall_prec, mask_prec, accum_prec, mul_prec):
     return cost, err
 
 
-def img_test():
+def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     img_metrics = (operator.lt, operator.gt)
-    init_ebits, neighbor_ebits = integer_neighborhood(8, 8, 0)
-    init_pbits, neighbor_pbits = integer_neighborhood(5, 10, 2)
+    init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
+    init_pbits, neighbor_pbits = integer_neighborhood(*pbit_slice)
 
     # for posits
-    init_es, neighbor_es = integer_neighborhood(1, 1, 0)
+    init_es, neighbor_es = integer_neighborhood(*es_slice)
 
     img_inits = (init_ebits,) + (init_pbits,) * 4
     img_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 4
 
     settings.cfg(False)
-    sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, 5, 5, force_exploration=True)
-    jsonlog('test_blur.json', *sweep, settings='Blur with floats')
+    try:
+        sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_blur.json', *sweep, settings='Blur with floats')
+    except Exception:
+        traceback.print_exc()
 
     img_inits = (init_es,) + (init_pbits,) * 4
     img_neighbors = (neighbor_es,) + (neighbor_pbits,) * 4
 
     settings.cfg(True)
-    sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, 5, 5, force_exploration=True)
-    jsonlog('test_blur_p.json', *sweep, settings='Blur with posits')
-
-def img_experiment():
-    img_metrics = (operator.lt, operator.gt)
-    init_ebits, neighbor_ebits = integer_neighborhood(1, 8, 1)
-    init_pbits, neighbor_pbits = integer_neighborhood(3, 16, 3)
-
-    # for posits
-    init_es, neighbor_es = integer_neighborhood(0, 2, 1)
-
-    img_inits = (init_ebits,) + (init_pbits,) * 4
-    img_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 4
-
-    settings.cfg(False)
-    sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, 5, 5, force_exploration=True)
-    jsonlog('sweep_blur.json', *sweep, settings='Blur with floats')
-
-    img_inits = (init_es,) + (init_pbits,) * 4
-    img_neighbors = (neighbor_es,) + (neighbor_pbits,) * 4
-
-    settings.cfg(True)
-    sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, 5, 5, force_exploration=True)
-    jsonlog('sweep_blur_p.json', *sweep, settings='Blur with posits')
+    try:
+        sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_blur_p.json', *sweep, settings='Blur with posits')
+    except Exception:
+        traceback.print_exc()

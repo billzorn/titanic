@@ -2,6 +2,7 @@
 
 import operator
 import math
+import traceback
 
 from ..titanic import gmpmath
 from ..fpbench import fpcparser
@@ -138,35 +139,9 @@ def full_sweep(minexp, maxexp, minp, maxp, verbosity=3):
     return [1], all_cfgs, frontier
 
 
-
-def sqrt_test():
-    init_expbits, neighboring_expbits = integer_neighborhood(3, 5, 2)
-    init_sigbits, neighboring_sigbits = integer_neighborhood(5, 12, 3)
-
-    sqrt_inits = (init_expbits,) + (init_sigbits,)*3
-    sqrt_neighbors = (neighboring_expbits,) + (neighboring_sigbits,)*3
-    sqrt_metrics = (operator.lt,) * 6 + (operator.gt,) * 2
-
-    settings.cfg(False)
-
-    sweep = full_sweep(3,5,7,8)
-    jsonlog('test_newton_full.json', *sweep, settings='full sweep, newton')
-
-    sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, 20, 100, force_exploration=True)
-    jsonlog('test_newton_random.json', *sweep, settings='random 20 100, newton')
-
-    settings.cfg(True)
-
-    sweep = full_sweep(3,5,7,9)
-    jsonlog('test_babylonian_full.json', *sweep, settings='full sweep, babylonian')
-
-    sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, 20, 100, force_exploration=True)
-    jsonlog('test_babylonian_random.json', *sweep, settings='random 20 100, babylonian')
-
-
-def sqrt_experiment():
-    init_expbits, neighboring_expbits = integer_neighborhood(2, 8, 2)
-    init_sigbits, neighboring_sigbits = integer_neighborhood(1, 32, 3)
+def sqrt_experiment(prefix, expbit_slice, sigbit_slice, full_range, inits, retries):
+    init_expbits, neighboring_expbits = integer_neighborhood(*expbit_slice)
+    init_sigbits, neighboring_sigbits = integer_neighborhood(*sigbit_slice)
 
     sqrt_inits = (init_expbits,) + (init_sigbits,)*3
     sqrt_neighbors = (neighboring_expbits,) + (neighboring_sigbits,)*3
@@ -174,16 +149,28 @@ def sqrt_experiment():
 
     settings.cfg(False)
 
-    sweep = full_sweep(3,5,2,20)
-    jsonlog('sweep_newton_full.json', *sweep, settings='full sweep, newton')
+    try:
+        sweep = full_sweep(*full_range)
+        jsonlog(prefix + '_newton_full.json', *sweep, settings='full sweep, newton')
+    except Exception:
+        traceback.print_exc()
 
-    sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_newton_random.json', *sweep, settings='random 20 100, newton')
+    try:
+        sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_newton_random.json', *sweep, settings='random 20 100, newton')
+    except Exception:
+        traceback.print_exc()
 
     settings.cfg(True)
 
-    sweep = full_sweep(3,5,2,20)
-    jsonlog('sweep_babylonian_full.json', *sweep, settings='full sweep, babylonian')
+    try:
+        sweep = full_sweep(*full_range)
+        jsonlog(prefix + '_babylonian_full.json', *sweep, settings='full sweep, babylonian')
+    except Exception:
+        traceback.print_exc()
 
-    sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, 20, 100, force_exploration=True)
-    jsonlog('sweep_babylonian_random.json', *sweep, settings='random 20 100, babylonian')
+    try:
+        sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_babylonian_random.json', *sweep, settings='random 20 100, babylonian')
+    except Exception:
+        traceback.print_exc()
