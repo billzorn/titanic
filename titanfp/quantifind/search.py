@@ -84,19 +84,25 @@ def update_frontier(frontier, result, metrics):
 
     keep = True
     new_frontier = []
+    frontier_cfgs = set()
+
     for frontier_data, frontier_m in frontier:
         result_data, result_m = result
         comparison = compare_results(result_m, frontier_m, metrics)
 
-        if comparison is None:
+        if comparison is None or comparison == 0:
             # the points are incomparable; keep both
-            new_frontier.append((frontier_data, frontier_m))
+            if frontier_data not in frontier_cfgs:
+                new_frontier.append((frontier_data, frontier_m))
+                frontier_cfgs.add(frontier_data)
 
 
-        elif comparison >= 0:
-            # some existing result is at least as good as the new one;
+        elif comparison > 0:
+            # some existing result is better than the new one;
             # we don't need the new one
-            new_frontier.append((frontier_data, frontier_m))
+            if frontier_data not in frontier_cfgs:
+                new_frontier.append((frontier_data, frontier_m))
+                frontier_cfgs.add(frontier_data)
             keep = False
 
         # else: # comparison < 0
@@ -104,8 +110,9 @@ def update_frontier(frontier, result, metrics):
         #     # new result is less, which is strictly better;
         #     # keep it and throw out this result
 
-    if keep:
+    if keep and result_data not in frontier_cfgs:
         new_frontier.append(result)
+        frontier_cfgs.add(result_data)
 
     #check_frontier(new_frontier, metrics)
 
@@ -116,33 +123,36 @@ def check_frontier(frontier, metrics, verbosity=3):
 
     broken = False
     new_frontier = []
+    fromtier_cfgs = set()
 
     for i1 in range(len(frontier)):
+        res1_data, res1_m = frontier[i1]
         keep = True
 
         for i2 in range(len(frontier)):
             if i1 != i2:
-                res1_data, res1_m = frontier[i1]
+
                 res2_data, res2_m = frontier[i2]
 
                 comparison = compare_results(res1_m, res2_m, metrics)
 
-                if comparison != None:
+                if not (comparison is None or comparison == 0):
                     broken = True
 
-                    if comparison >= 0:
+                    if comparison > 0:
                         if verbosity >= 2:
                             print(f'Discarding point {i1!s} {frontier[i1]!r} from frontier')
                             print(f'  point {i2!s} {frontier[i2]!r} is strictly better')
                         keep = False
                         break
 
-        if keep:
-            new_frontier.append(frontier[i1])
+        if keep and res1_data not in frontier_cfgs:
+            new_frontier.append((res1_data, res1_m))
+            frontier_cfgs.add(res1_data)
 
     if broken and verbosity >= 1:
         print(f'Discarded {len(frontier) - len(new_frontier)} points in total')
-            
+
     return broken, new_frontier
 
 
@@ -268,7 +278,7 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
 
         if verbosity >= 2:
             print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
-        
+
         attempts += 1
         if improved:
             successes += 1
