@@ -124,7 +124,7 @@ def check_frontier(frontier, metrics, verbosity=3):
 
     broken = False
     new_frontier = []
-    fromtier_cfgs = set()
+    frontier_cfgs = set()
 
     for i1 in range(len(frontier)):
         res1_data, res1_m = frontier[i1]
