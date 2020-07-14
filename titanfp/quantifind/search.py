@@ -86,8 +86,9 @@ def update_frontier(frontier, result, metrics):
     new_frontier = []
     frontier_cfgs = set()
 
+    result_data, result_m = result
+
     for frontier_data, frontier_m in frontier:
-        result_data, result_m = result
         comparison = compare_results(result_m, frontier_m, metrics)
 
         if comparison is None or comparison == 0:
