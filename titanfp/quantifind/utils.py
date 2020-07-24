@@ -4,17 +4,58 @@ import random
 import json
 
 from ..fpbench import fpcparser
-from ..arithmetic import ieee754, posit
+from ..arithmetic import ieee754, posit, evalctx
 
 
 # convenient rounding contexts
+f8 = ieee754.ieee_ctx(3, 8)
+f16 = ieee754.ieee_ctx(5, 16)
 bf16 = ieee754.ieee_ctx(8, 16)
 f32 = ieee754.ieee_ctx(8, 32)
 f64 = ieee754.ieee_ctx(11, 64)
-f4k = ieee754.ieee_ctx(20, 4096)
-posit16_1 = posit.posit_ctx(1, 16)
-posit32_1 = posit.posit_ctx(1, 32)
 
+f4k = ieee754.ieee_ctx(20, 4096)
+
+posit8_0 = posit.posit_ctx(0, 8)
+posit16_1 = posit.posit_ctx(1, 16)
+posit16_2 = posit.posit_ctx(2, 16)
+posit32_2 = posit.posit_ctx(2, 32)
+posit64_3 = posit.posit_ctx(3, 64)
+
+float_basecase = (f8, f16, bf16, f32)
+posit_basecase = (posit8_0, posit16_1, posit16_2, posit32_2)
+
+def describe_ctx(ctx):
+    if isinstance(ctx, evalctx.IEEECtx):
+        if ctx.es == 3 and ctx.nbits == 8:
+            return 'float8'
+        elif ctx.es == 5 and ctx.nbits == 16:
+            return 'float16'
+        elif ctx.es == 8 and ctx.nbits == 16:
+            return 'bfloat16'
+        elif ctx.es == 8 and ctx.nbits == 32:
+            return 'float32'
+        elif ctx.es == 11 and ctx.nbits == 32:
+            return 'float64'
+        else:
+            return f'(float {ctx.es!s} {ctx.nbits!s})'
+
+    elif isinstance(ctx, evalctx.PositCtx):
+        if ctx.es == 0 and ctx.nbits == 8:
+            return 'posit8_0'
+        elif ctx.es == 1 and ctx.nbits == 16:
+            return 'posit16_1'
+        elif ctx.es == 2 and ctx.nbits == 16:
+            return 'posit16_2'
+        elif ctx.es == 2 and ctx.nbits == 32:
+            return 'posit32_2'
+        elif ctx.es == 3 and ctx.nbits == 64:
+            return 'posit64_3'
+        else:
+            return f'(posit {ctx.es!s} {ctx.nbits!s})'
+
+    else:
+        return ctx.propstr()
 
 def linear_ulps(x, y):
     smaller_n = min(x.n, y.n)

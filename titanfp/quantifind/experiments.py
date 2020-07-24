@@ -1,5 +1,12 @@
 from . import ex_sqrt, ex_dotprod, ex_rk, ex_img
 
+def run_baselines():
+    prefix = 'baseline'
+    ex_sqrt.sqrt_baseline(prefix)
+    # dot product doesn't use the same baseline (not tuning normal FP types)
+    ex_rk.rk_baseline(prefix)
+    ex_img.img_baseline(prefix)
+
 def run_experiments():
     prefix = 'sweep'
     ex_sqrt.sqrt_experiment(prefix, (2,8,2), (1,32,3), (3,5,2,24), 20, 100)

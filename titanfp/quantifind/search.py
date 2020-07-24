@@ -59,6 +59,9 @@
 import itertools
 import multiprocessing
 
+from .utils import describe_ctx
+
+
 def compare_results(m1, m2, metrics):
     lt = False
     gt = False
@@ -259,7 +262,6 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
 
     return (gen_log[-1] > 0), gen_log, all_cfgs, frontier
 
-
 def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
                 force_exploration=False, verbosity=3):
     if verbosity >= 1:
@@ -287,6 +289,39 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
             failures += 1
 
     return gens, cfgs, frontier
+
+def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
+    if verbosity >= 1:
+        print(f'Exhaustive sweep for stage {stage_fn!r}')
+
+    visited_cfgs = set()
+    frontier = []
+    with multiprocessing.Pool() as pool:
+        async_results = []
+        for cfg in itertools.product(*cfgs):
+            str_cfg = tuple(describe_ctx(ctx) for ctx in cfg)
+            if str_cfg not in visited_cfgs:
+                visited_cfgs.add(str_cfg)
+                async_results.append((str_cfg, pool.apply_async(stage_fn, cfg)))
+
+        if verbosity >= 2:
+            print(f'dispatched {len(async_results)!s} evaluations')
+
+        for i, (cfg, ares) in enumerate(async_results):
+            res = ares.get()
+            updated, frontier = update_frontier(frontier, (cfg, res), metrics)
+
+            if verbosity >= 3:
+                print(f' -- {i+1!s} -- ran {cfg!r}, got {res!r}')
+                if updated:
+                    print('The frontier changed:')
+                    print_frontier(frontier)
+
+    if verbosity >= 1:
+        print('Done. final frontier:')
+        print_frontier(frontier)
+
+    return [1], visited_cfgs, frontier
 
 
 def filter_frontier(frontier, metrics):

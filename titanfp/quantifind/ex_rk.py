@@ -105,10 +105,28 @@ settings = RkSettings()
 
 
 def rk_stage(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec):
-    prog, equation, ctx = setup_rk(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec,
-                                                    method=settings.method, eqn=settings.eqn, use_posit=settings.use_posit)
-    evaltor, als, result_array = run_rk(prog, settings.args)
-    return eval_rk(equation, als, result_array, settings.ref, settings.dref, ctx)
+    try:
+        prog, equation, ctx = setup_rk(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec,
+                                                        method=settings.method, eqn=settings.eqn, use_posit=settings.use_posit)
+        evaltor, als, result_array = run_rk(prog, settings.args)
+        return eval_rk(equation, als, result_array, settings.ref, settings.dref, ctx)
+    except Exception:
+        traceback.print_exc()
+        return math.inf, -math.inf, -math.inf, -math.inf, -math.inf
+
+def rk_ref_stage(fn_ctx, rk_ctx, k1_ctx, k2_ctx, k3_ctx, k4_ctx):
+    try:
+        prog = mk_rk(fn_ctx, rk_ctx, k1_ctx, k2_ctx, k3_ctx, k4_ctx,
+                     method=settings.method, eqn=settings.eqn)
+        eqn_name, eqn_template = rk_equations[settings.eqn]
+        equation = eqn_template.format(fn_prec=fn_ctx.propstr())
+        prog, equation, ctx = fpcparser.compile(prog), fpcparser.compile(equation), rk_ctx
+
+        evaltor, als, result_array = run_rk(prog, settings.args)
+        return eval_rk(equation, als, result_array, settings.ref, settings.dref, ctx)
+    except Exception:
+        traceback.print_exc()
+        return math.inf, -math.inf, -math.inf, -math.inf, -math.inf
 
 
 def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
@@ -165,5 +183,55 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     try:
         sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
         jsonlog(prefix + '_rk_chua_p.json', *sweep, settings='Chua with posits')
+    except Exception:
+        traceback.print_exc()
+
+
+def rk_baseline(prefix):
+    rk_bc_float = (float_basecase,) * 6
+    rk_bc_posit = (posit_basecase,) * 6
+    rk_metrics = (operator.lt,) + (operator.gt,) * 4
+
+    settings.cfg('lorenz', False)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
+        jsonlog(prefix + '_rk_lorenz.json', *sweep, settings='Lorenz with floats baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg('rossler', False)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
+        jsonlog(prefix + '_rk_rossler.json', *sweep, settings='Rossler with floats baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg('chua', False)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
+        jsonlog(prefix + '_rk_chua.json', *sweep, settings='Chua with floats baseline')
+    except Exception:
+        traceback.print_exc()
+
+    # again with posits
+        
+    settings.cfg('lorenz', True)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
+        jsonlog(prefix + '_rk_lorenz_p.json', *sweep, settings='Lorenz with posits baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg('rossler', True)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
+        jsonlog(prefix + '_rk_rossler_p.json', *sweep, settings='Rossler with posits baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg('chua', True)
+    try:
+        sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
+        jsonlog(prefix + '_rk_chua_p.json', *sweep, settings='Chua with posits baseline')
     except Exception:
         traceback.print_exc()

@@ -69,6 +69,19 @@ def mk_sqrt(expbits, res_bits, diff_bits, scale_bits,
         scale_prec = scale_ctx.propstr(),
     )
 
+def mk_sqrt_manual(overall_ctx, res_ctx, diff_ctx, scale_ctx, babylonian=False):
+    if babylonian:
+        template = sqrt_babylonian_template
+    else:
+        template = sqrt_newton_template
+
+    return template.format(
+        overall_prec = overall_ctx.propstr(),
+        res_prec = res_ctx.propstr(),
+        diff_prec = diff_ctx.propstr(),
+        scale_prec = scale_ctx.propstr(),
+    )
+
 
 dotprod_naive_template = '''(FPCore dotprod ((A n) (B m))
  :pre (== n m)
@@ -172,13 +185,13 @@ def mk_dotprod(tempname, overall_ctx, mul_ctx, sum_ctx):
 
 
 vec_scale_template = '''(FPCore vec-scale ((A n) x)
- (tensor ([i (# n)])
+ (tensor ([i n])
   (* (ref A i) x)))
 '''
 
 vec_add_template = '''(FPCore vec-add ((A n) (B m))
  :pre (== n m)
- (tensor ([i (# n)])
+ (tensor ([i n])
   (+ (ref A i) (ref B i))))
 '''
 
@@ -201,9 +214,9 @@ lorenz_template = '''(FPCore lorenz-3d ((xyz 3))
  (let ([sigma 10]
        [beta 8/3]
        [rho 28]
-       [x (ref xyz 0)]
-       [y (ref xyz 1)]
-       [z (ref xyz 2)])
+       [x (ref xyz (# 0))]
+       [y (ref xyz (# 1))]
+       [z (ref xyz (# 2))])
   (array
       (* sigma (- y x))
       (- (* x (- rho z)) y)
@@ -216,9 +229,9 @@ rossler_template = '''(FPCore rossler-3d ((xyz 3))
  (let ([a 0.432]
        [b 2]
        [c 4]
-       [x (ref xyz 0)]
-       [y (ref xyz 1)]
-       [z (ref xyz 2)])
+       [x (ref xyz (# 0))]
+       [y (ref xyz (# 1))]
+       [z (ref xyz (# 2))])
   (array
       (- (- y) z)
       (+ x (* a y))
@@ -237,9 +250,9 @@ chua_template = '''(FPCore chua-g (v)
        [inv_C2 0.5]
        [inv_L 7]
        [G 0.7]
-       [vc1 (ref xyz 0)]
-       [vc2 (ref xyz 1)]
-       [il (ref xyz 2)])
+       [vc1 (ref xyz (# 0))]
+       [vc2 (ref xyz (# 1))]
+       [il (ref xyz (# 2))])
   (array
       (* inv_C1 (- (- (* G vc2) (* G vc1)) (chua-g vc1)))
       (* inv_C2 (+ (- (* G vc1) (* G vc2)) il))
@@ -320,8 +333,8 @@ blur_template = '''(FPCore fastblur-mask-3x3 ((img rows cols channels) (mask 3 3
        [xmax (! :titanic-analysis skip (# (- cols 1)))])
   (tensor ([y rows]
            [x cols])
-   (for* ([my 3]
-          [mx 3])
+   (for* ([my (# 3)]
+          [mx (# 3)])
     ([y* 0 (! :titanic-analysis skip (# (+ y (- my 1))))]
      [x* 0 (! :titanic-analysis skip (# (+ x (- mx 1))))]
      [in-bounds? FALSE (! :titanic-analysis skip (and (<= 0 y* ymax) (<= 0 x* xmax)))]

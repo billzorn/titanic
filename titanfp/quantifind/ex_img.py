@@ -88,6 +88,18 @@ def img_stage(ebits, overall_prec, mask_prec, accum_prec, mul_prec):
 
     return cost, err
 
+def img_ref_stage(overall_ctx, mask_ctx, accum_ctx, mul_ctx):
+    prog = mk_blur(overall_ctx, mask_ctx, accum_ctx, mul_ctx)
+
+    evaltor = mpmf.Interpreter()
+    als = analysis.BitcostAnalysis()
+    main = load_cores(evaltor, prog, [als])
+    result = evaltor.interpret(main, settings.img_args)
+
+    err = ssim(settings.ref, npify(result))
+    cost = als.bits_requested
+
+    return cost, err
 
 def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     img_metrics = (operator.lt, operator.gt)
@@ -114,5 +126,25 @@ def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     try:
         sweep = search.sweep_multi(img_stage, img_inits, img_neighbors, img_metrics, inits, retries, force_exploration=True)
         jsonlog(prefix + '_blur_p.json', *sweep, settings='Blur with posits')
+    except Exception:
+        traceback.print_exc()
+
+
+def img_baseline(prefix):
+    img_bc_float = (float_basecase,) * 4
+    img_bc_posit = (posit_basecase,) * 4
+    img_metrics = (operator.lt, operator.gt)
+
+    settings.cfg(False)
+    try:
+        sweep = search.sweep_exhaustive(img_ref_stage, img_bc_float, img_metrics)
+        jsonlog(prefix + '_blur.json', *sweep, settings='Blur with floats baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg(True)
+    try:
+        sweep = search.sweep_exhaustive(img_ref_stage, img_bc_posit, img_metrics)
+        jsonlog(prefix + '_blur_p.json', *sweep, settings='Blur with posits baseline')
     except Exception:
         traceback.print_exc()

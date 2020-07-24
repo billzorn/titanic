@@ -10,7 +10,7 @@ from ..arithmetic import mpmf, ieee754, evalctx, analysis
 
 from . import search
 from .utils import *
-from .benchmarks import mk_sqrt
+from .benchmarks import mk_sqrt, mk_sqrt_manual
 
 
 def setup_reference():
@@ -89,6 +89,11 @@ def eval_sqrt(core, bound):
 def sqrt_stage(expbits, res_bits, diff_bits, scale_bits):
     prog = mk_sqrt(expbits, res_bits, diff_bits, scale_bits,
                    overall_ctx=settings.overall_ctx, babylonian=settings.babylonian)
+    core = fpcparser.compile1(prog)
+    return eval_sqrt(core, settings.bound)
+
+def sqrt_ref_stage(res_ctx, diff_ctx, scale_ctx):
+    prog = mk_sqrt_manual(settings.overall_ctx, res_ctx, diff_ctx, scale_ctx, babylonian=settings.babylonian)
     core = fpcparser.compile1(prog)
     return eval_sqrt(core, settings.bound)
 
@@ -172,5 +177,26 @@ def sqrt_experiment(prefix, expbit_slice, sigbit_slice, full_range, inits, retri
     try:
         sweep = search.sweep_multi(sqrt_stage, sqrt_inits, sqrt_neighbors, sqrt_metrics, inits, retries, force_exploration=True)
         jsonlog(prefix + '_babylonian_random.json', *sweep, settings='random 20 100, babylonian')
+    except Exception:
+        traceback.print_exc()
+
+
+def sqrt_baseline(prefix):
+    sqrt_bc = (float_basecase,) * 3
+    sqrt_metrics = (operator.lt,) * 6 + (operator.gt,) * 2
+
+    settings.cfg(False)
+
+    try:
+        sweep = search.sweep_exhaustive(sqrt_ref_stage, sqrt_bc, sqrt_metrics)
+        jsonlog(prefix + '_newton.json', *sweep, settings='baseline')
+    except Exception:
+        traceback.print_exc()
+
+    settings.cfg(True)
+
+    try:
+        sweep = search.sweep_exhaustive(sqrt_ref_stage, sqrt_bc, sqrt_metrics)
+        jsonlog(prefix + '_babylonian.json', *sweep, settings='baseline')
     except Exception:
         traceback.print_exc()
