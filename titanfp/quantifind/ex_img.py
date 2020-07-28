@@ -101,6 +101,15 @@ def img_ref_stage(overall_ctx, mask_ctx, accum_ctx, mul_ctx):
 
     return cost, err
 
+def img_fenceposts():
+    points = [
+        ((describe_ctx(ctx),), img_ref_stage(*((ctx,) * 4)))
+        for ctx in float_basecase + posit_basecase
+    ]
+
+    return [0], points, points
+
+
 def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     img_metrics = (operator.lt, operator.gt)
     init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
@@ -142,9 +151,21 @@ def img_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = img_fenceposts()
+        jsonlog(prefix + '_blur_fenceposts.json', *sweep, settings='Blur with floats fenceposts')
+    except Exception:
+        traceback.print_exc()
+
     settings.cfg(True)
     try:
         sweep = search.sweep_exhaustive(img_ref_stage, img_bc_posit, img_metrics)
         jsonlog(prefix + '_blur_p.json', *sweep, settings='Blur with posits baseline')
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        sweep = img_fenceposts()
+        jsonlog(prefix + '_blur_p_fenceposts.json', *sweep, settings='Blur with posits fenceposts')
     except Exception:
         traceback.print_exc()

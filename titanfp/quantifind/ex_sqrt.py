@@ -103,6 +103,7 @@ def full_sweep(minexp, maxexp, minp, maxp, verbosity=3):
 
     cfgs = 0
     all_cfgs = set()
+    visited_points = []
     frontier = []
     metrics = (operator.lt,) * 6 + (operator.gt,) * 2
 
@@ -129,6 +130,7 @@ def full_sweep(minexp, maxexp, minp, maxp, verbosity=3):
                 print(f' -- {cfgs!s} -- ran {config!r}, got {result!r}')
 
             frontier_elt = (config, result)
+            visited_points.append(frontier_elt)
             updated, frontier = search.update_frontier(frontier, frontier_elt, metrics)
             if updated and verbosity >= 2:
                 print('The frontier changed:')
@@ -141,7 +143,15 @@ def full_sweep(minexp, maxexp, minp, maxp, verbosity=3):
             search.print_frontier(frontier)
             print(flush=True)
 
-    return [1], all_cfgs, frontier
+    return [1], visited_points, frontier
+
+def sqrt_fenceposts():
+    points = [
+        ((describe_ctx(ctx),), sqrt_ref_stage(*((ctx,) * 3)))
+        for ctx in float_basecase + posit_basecase
+    ]
+
+    return [0], points, points
 
 
 def sqrt_experiment(prefix, expbit_slice, sigbit_slice, full_range, inits, retries):
@@ -193,10 +203,22 @@ def sqrt_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = sqrt_fenceposts()
+        jsonlog(prefix + '_newton_fenceposts.json', *sweep, settings='fenceposts')
+    except Exception:
+        traceback.print_exc()
+
     settings.cfg(True)
 
     try:
         sweep = search.sweep_exhaustive(sqrt_ref_stage, sqrt_bc, sqrt_metrics)
         jsonlog(prefix + '_babylonian.json', *sweep, settings='baseline')
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        sweep = sqrt_fenceposts()
+        jsonlog(prefix + '_babylonian_fenceposts.json', *sweep, settings='fenceposts')
     except Exception:
         traceback.print_exc()

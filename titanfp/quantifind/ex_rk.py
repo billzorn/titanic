@@ -128,6 +128,14 @@ def rk_ref_stage(fn_ctx, rk_ctx, k1_ctx, k2_ctx, k3_ctx, k4_ctx):
         traceback.print_exc()
         return math.inf, -math.inf, -math.inf, -math.inf, -math.inf
 
+def rk_fenceposts():
+    points = [
+        ((describe_ctx(ctx),), rk_ref_stage(*((ctx,) * 6)))
+        for ctx in float_basecase + posit_basecase
+    ]
+
+    return [0], points, points
+
 
 def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     rk_metrics = (operator.lt,) + (operator.gt,) * 4
@@ -199,6 +207,12 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_lorenz_fenceposts.json', *sweep, settings='Lorenz with floats fenceposts')
+    except Exception:
+        traceback.print_exc()
+
     settings.cfg('rossler', False)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
@@ -206,10 +220,23 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_rossler_fenceposts.json', *sweep, settings='Rossler with floats fenceposts')
+    except Exception:
+        traceback.print_exc()
+
+        
     settings.cfg('chua', False)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
         jsonlog(prefix + '_rk_chua.json', *sweep, settings='Chua with floats baseline')
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_chua_fenceposts.json', *sweep, settings='Chua with floats fenceposts')
     except Exception:
         traceback.print_exc()
 
@@ -222,6 +249,12 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_lorenz_p_fenceposts.json', *sweep, settings='Lorenz with posits fenceposts')
+    except Exception:
+        traceback.print_exc()
+
     settings.cfg('rossler', True)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
@@ -229,9 +262,22 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_rossler_p_fenceposts.json', *sweep, settings='Rossler with posits fenceposts')
+    except Exception:
+        traceback.print_exc()
+
+        
     settings.cfg('chua', True)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
         jsonlog(prefix + '_rk_chua_p.json', *sweep, settings='Chua with posits baseline')
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        sweep = rk_fenceposts()
+        jsonlog(prefix + '_rk_chua_p_fenceposts.json', *sweep, settings='Chua with posits fenceposts')
     except Exception:
         traceback.print_exc()

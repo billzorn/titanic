@@ -171,6 +171,7 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
                       previous_sweep=None, force_exploration=False, verbosity=3):
     initial_cfg = tuple(f() for f in inits)
     initial_result = stage_fn(*initial_cfg)
+    visited_points = [(initial_cfg, initial_result)]
 
     if verbosity >= 1:
         print(f'Random init: the initial point is {initial_cfg!r} : {initial_result!r}')
@@ -208,7 +209,7 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
             else:
                 if verbosity >= 1:
                     print('aborting')
-                return (False, *previous_sweep)
+                return (False, visited_points, *previous_sweep)
 
     with multiprocessing.Pool() as pool:
         while improved_frontier:
@@ -242,6 +243,7 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
 
             for i, (new_cfg, ares) in enumerate(async_results):
                 new_res = ares.get()
+                visited_points.append((new_cfg, new_res))
                 updated, frontier = update_frontier(frontier, (new_cfg, new_res), metrics)
                 improved_frontier |= updated
 
@@ -260,14 +262,14 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
         print_frontier(frontier)
         print(flush=True)
 
-    return (gen_log[-1] > 0), gen_log, all_cfgs, frontier
+    return (gen_log[-1] > 0), visited_points, gen_log, all_cfgs, frontier
 
 def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
                 force_exploration=False, verbosity=3):
     if verbosity >= 1:
         print(f'Multi-sweep: sweeping over {max_inits!s} random initializations, and up to {max_retries!s} ignored points')
 
-    improved, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
+    improved, visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
 
     attempts = 0
     successes = 0
@@ -276,8 +278,10 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
         if verbosity >= 2:
             print(f'\n == attempt {attempts+1!s}, {len(cfgs)!s} cfgs, {len(frontier)!s} elements in frontier ==\n')
 
-        improved, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
-                                                           previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
+        improved, new_visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
+                                                                               previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
+
+        visited_points.extend(new_visited_points)
 
         if verbosity >= 2:
             print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
@@ -288,20 +292,21 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
         else:
             failures += 1
 
-    return gens, cfgs, frontier
+    return gens, visited_points, frontier
 
 def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
     if verbosity >= 1:
         print(f'Exhaustive sweep for stage {stage_fn!r}')
 
-    visited_cfgs = set()
+    all_cfgs = set()
+    visited_points = []
     frontier = []
     with multiprocessing.Pool() as pool:
         async_results = []
         for cfg in itertools.product(*cfgs):
             str_cfg = tuple(describe_ctx(ctx) for ctx in cfg)
-            if str_cfg not in visited_cfgs:
-                visited_cfgs.add(str_cfg)
+            if str_cfg not in all_cfgs:
+                all_cfgs.add(str_cfg)
                 async_results.append((str_cfg, pool.apply_async(stage_fn, cfg)))
 
         if verbosity >= 2:
@@ -309,6 +314,7 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
 
         for i, (cfg, ares) in enumerate(async_results):
             res = ares.get()
+            visited_points.append((cfg, res))
             updated, frontier = update_frontier(frontier, (cfg, res), metrics)
 
             if verbosity >= 3:
@@ -321,7 +327,7 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
         print('Done. final frontier:')
         print_frontier(frontier)
 
-    return [1], visited_cfgs, frontier
+    return [1], visited_points, frontier
 
 
 def filter_frontier(frontier, metrics):
