@@ -136,6 +136,20 @@ def rk_fenceposts():
 
     return [0], points, points
 
+def rk_ceiling():
+    ceil_pts = []
+    settings.cfg('lorenz', False)
+    ceil_pts.append(rk_ref_stage(*((f4k,) * 6)))
+    settings.cfg('rossler', False)
+    ceil_pts.append(rk_ref_stage(*((f4k,) * 6)))
+    settings.cfg('chua', False)
+    ceil_pts.append(rk_ref_stage(*((f4k,) * 6)))
+
+    for record in ceil_pts:
+        print(repr(record))
+
+    return ceil_pts
+
 
 def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     rk_metrics = (operator.lt,) + (operator.gt,) * 4

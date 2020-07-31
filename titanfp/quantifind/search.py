@@ -58,6 +58,7 @@
 
 import itertools
 import multiprocessing
+import math
 
 from .utils import describe_ctx
 
@@ -330,12 +331,22 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
     return [1], visited_points, frontier
 
 
-def filter_frontier(frontier, metrics):
+def filter_metrics(points, metrics, allow_inf=False):
+    new_points = []
+    for data, measures in points:
+        filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+        if allow_inf or all(map(math.isfinite, filtered_measures)):
+            new_points.append((data, filtered_measures))
+    return new_points
+
+
+def filter_frontier(frontier, metrics, allow_inf=False):
     new_metrics = [m for m in metrics if m is not None]
 
     new_frontier = []
     for data, measures in frontier:
         filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
-        _, new_frontier = update_frontier(new_frontier, (data, filtered_measures), new_metrics)
+        if allow_inf or all(map(math.isfinite, filtered_measures)):
+            _, new_frontier = update_frontier(new_frontier, (data, filtered_measures), new_metrics)
 
     return new_frontier

@@ -153,6 +153,9 @@ def sqrt_fenceposts():
 
     return [0], points, points
 
+def sqrt_ceiling():
+    return sqrt_ref_stage(f4k, f4k, f4k)
+
 
 def sqrt_experiment(prefix, expbit_slice, sigbit_slice, full_range, inits, retries):
     init_expbits, neighboring_expbits = integer_neighborhood(*expbit_slice)
