@@ -153,11 +153,7 @@ class WebtoolState(object):
             try:
                 decoded = base64.decodebytes(bytes(imgdata, 'ascii'))
                 self.img = Image.open(io.BytesIO(decoded))
-
                 self.img_tensor = np_array_to_ndarray(np.array(self.img))
-
-                print(self.img_tensor)
-
             except Exception:
                 print('Exception decoding user image:', file=sys.stderr, flush=True)
                 traceback.print_exc()
@@ -170,8 +166,6 @@ class WebtoolState(object):
             self.heatmap = self._read_bool(payload['heatmap'], 'heatmap')
 
         self.payload = payload
-
-        print(self.payload)
 
     @property
     def precision(self):
@@ -218,7 +212,34 @@ def b64_encode_image(e):
     img = Image.fromarray(bitmap)
     buf = io.BytesIO()
     img.save(buf, format='PNG')
-    return str(base64.encodebytes(buf.getvalue()), 'ascii')
+    data = str(base64.encodebytes(buf.getvalue()), 'ascii')
+    buf.close()
+    return data
+
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+def mkplot_b64(result_array):
+    results = [[], [], []]
+    for x,y,z in result_array:
+        r_x, r_y, r_z = results
+        r_x.append(float(str(x)))
+        r_y.append(float(str(y)))
+        r_z.append(float(str(z)))
+
+    fig = plt.figure(figsize=(8,6), dpi=80)
+    ax = Axes3D(fig)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    ax.plot(results[0], results[1], results[2], color='blue', lw=1)
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    data = str(base64.encodebytes(buf.getvalue()), 'ascii')
+    plt.close(fig)
+    buf.close()
+    return data
 
 
 def create_analysis_report(interpreter):
@@ -237,7 +258,7 @@ def run_eval(data):
         if state.backend in webdemo_eval_backends:
             backend = webdemo_eval_backends[state.backend]
             backend_interpreter = backend()
-            backend_interpreter.max_evals = 1000000
+            #backend_interpreter.max_evals = 1000000
         else:
             raise WebtoolError('unknown Titanic evaluator backend: {}'.format(repr(state.backend)))
         if state.cores is None or len(state.cores) < 1:
@@ -279,11 +300,7 @@ def run_eval(data):
             args_with_image = state.args
 
         try:
-            print(repr(args_with_image))
-
             arg_ctx = backend_interpreter.arg_ctx(core, args_with_image, ctx=ctx, override=state.override)
-            print(repr(arg_ctx))
-
             named_args = [[str(k), ('[' + 'x'.join(['{}'] * len(shape)) + ' tensor]').format(*arg_ctx.bindings[k].shape) if shape
                            else str(arg_ctx.bindings[k])]
                           for k, props, shape in core.inputs]
@@ -297,11 +314,12 @@ def run_eval(data):
             backend_interpreter = backend()
 
             if state.enable_analysis:
-                backend_interpreter.max_evals = 1000000
+                #backend_interpreter.max_evals = 1000000
                 als, bc_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis()
                 backend_interpreter.analyses = [als, bc_als]
             else:
-                backend_interpreter.max_evals = 5000000
+                pass
+                #backend_interpreter.max_evals = 5000000
 
             for core in state.cores:
                 backend_interpreter.register_function(core)
@@ -334,20 +352,34 @@ def run_eval(data):
         if analysis_report:
             result['report'] = analysis_report
 
+        made_plot = False
+            
         if state.img is not None:
             if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [3,4]:
                 e_img = e_val
-                if state.heatmap:
-                    e_img = ndarray.NDArray(shape=e_img.shape, data=[
-                        (max(0, d.ctx.p - d.p) / d.ctx.p) * 255 for d in e_img.data
-                    ])
+                # if state.heatmap:
+                #     e_img = ndarray.NDArray(shape=e_img.shape, data=[
+                #         (max(0, d.ctx.p - d.p) / d.ctx.p) * 255 for d in e_img.data
+                #     ])
                 result['result_img'] = b64_encode_image(e_img)
                 result['e_val'] = 'image'
+        elif state.heatmap:
+            print('hm')
+            if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 2 and e_val.shape[1] == 3:
+                print('  plotting')
+                try:
+                    result['result_img'] = mkplot_b64(e_val)
+                    result['e_val'] = '3d plot (disable plot option to print array)'
+                    made_plot = True
+                except Exception:
+                    made_plot = False
+                    traceback.print_exc()
 
         # 2d matrix printer
-        if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 2:
+        if (not made_plot) and isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 2:
+            print(' -- 2d override')
             ndstr = ndarray.NDArray(shape=e_val.shape, data=[str(d) for d in e_val.data])
-            result['mat_2d'] = ndstr.to_list()
+            result['mat_2d'] = ndstr.tolist()
             rows, cols = ndstr.shape
             result['e_val'] = '{} by {} matrix:'.format(rows, cols)
 
