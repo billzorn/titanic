@@ -45,11 +45,13 @@ module.exports = {
             inject: 'body',
             favicon: 'favicon.ico',
         }),
-        new CopyWebpackPlugin([
-            'titanfp.css',
-            'piceberg.png',
-            'piceberg_round.png',
-        ]),
+        new CopyWebpackPlugin({
+            patterns: [
+		{from : 'titanfp.css'},
+            	{from : 'piceberg.png'},
+            	{from : 'piceberg_round.png'},
+	    ]
+        }),
         new CleanWebpackPlugin(),
     ],
 };
