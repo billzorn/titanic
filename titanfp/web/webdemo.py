@@ -19,7 +19,7 @@ from ..fpbench import fpcparser, fpcast as ast
 from ..titanic import digital, ndarray
 from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
-from ..arithmetic import softfloat, softposit
+#from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
 from ..arithmetic import mpmf
 
@@ -37,8 +37,8 @@ def path_aliases(path):
 webdemo_eval_backends = {
     'ieee754': ieee754.Interpreter,
     'posit': posit.Interpreter,
-    'softfloat': softfloat.Interpreter,
-    'softposit': softposit.Interpreter,
+    #'softfloat': softfloat.Interpreter,
+    #'softposit': softposit.Interpreter,
     'sinking-point': sinking.Interpreter,
     'sinking-posit': sinkingposit.Interpreter,
     'mpmf': mpmf.Interpreter,
