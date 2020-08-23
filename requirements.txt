@@ -5,15 +5,16 @@ twine
 keyring
 
 # math libs
-numpy ~= 1.16.1
-gmpy2 ~= 2.0.8
+numpy
+gmpy2
 
 # antlr
-antlr4-python3-runtime ~= 4.7.2
+antlr4-python3-runtime ~= 4.8
 
 # softfloat libs
-sfpy
-softposit
+#sfpy
+#softposit
 
 # webdemo
 Pillow
+matplotlib

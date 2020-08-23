@@ -2,7 +2,7 @@
 #   http://www.antlr.org/download.html
 # requires java to be available on the path. openjdk version "1.8.0_151" works.
 
-ANTLR_JAR = antlr-4.7.2-complete.jar
+ANTLR_JAR = antlr-4.8-complete.jar
 PYTHON_TARGET_DIR = ..
 
 python_target:
