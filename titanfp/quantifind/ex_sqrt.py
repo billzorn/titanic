@@ -130,7 +130,7 @@ def full_sweep(minexp, maxexp, minp, maxp, verbosity=3):
                 print(f' -- {cfgs!s} -- ran {config!r}, got {result!r}')
 
             frontier_elt = (config, result)
-            visited_points.append(frontier_elt)
+            visited_points.append((0, config, result))
             updated, frontier = search.update_frontier(frontier, frontier_elt, metrics)
             if updated and verbosity >= 2:
                 print('The frontier changed:')
@@ -151,7 +151,7 @@ def sqrt_fenceposts():
         for ctx in float_basecase + posit_basecase
     ]
 
-    return [0], points, points
+    return [0], [(0, a, b) for a, b in points], points
 
 def sqrt_ceiling():
     return sqrt_ref_stage(f4k, f4k, f4k)

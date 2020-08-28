@@ -64,27 +64,31 @@ settings = ImgSettings()
 
 
 def img_stage(ebits, overall_prec, mask_prec, accum_prec, mul_prec):
-    if settings.use_posit:
-        mk_ctx = posit.posit_ctx
-        extra_bits = 0
-    else:
-        mk_ctx = ieee754.ieee_ctx
-        extra_bits = ebits
+    try:
+        if settings.use_posit:
+            mk_ctx = posit.posit_ctx
+            extra_bits = 0
+        else:
+            mk_ctx = ieee754.ieee_ctx
+            extra_bits = ebits
 
-    overall_ctx = mk_ctx(ebits, overall_prec + extra_bits)
-    mask_ctx = mk_ctx(ebits, mask_prec + extra_bits)
-    accum_ctx = mk_ctx(ebits, accum_prec + extra_bits)
-    mul_ctx = mk_ctx(ebits, mul_prec + extra_bits)
+        overall_ctx = mk_ctx(ebits, overall_prec + extra_bits)
+        mask_ctx = mk_ctx(ebits, mask_prec + extra_bits)
+        accum_ctx = mk_ctx(ebits, accum_prec + extra_bits)
+        mul_ctx = mk_ctx(ebits, mul_prec + extra_bits)
 
-    prog = mk_blur(overall_ctx, mask_ctx, accum_ctx, mul_ctx)
+        prog = mk_blur(overall_ctx, mask_ctx, accum_ctx, mul_ctx)
 
-    evaltor = mpmf.Interpreter()
-    als = analysis.BitcostAnalysis()
-    main = load_cores(evaltor, prog, [als])
-    result = evaltor.interpret(main, settings.img_args)
+        evaltor = mpmf.Interpreter()
+        als = analysis.BitcostAnalysis()
+        main = load_cores(evaltor, prog, [als])
+        result = evaltor.interpret(main, settings.img_args)
 
-    err = ssim(settings.ref, npify(result))
-    cost = als.bits_requested
+        err = ssim(settings.ref, npify(result))
+        cost = als.bits_requested
+    except Exception:
+        traceback.print_exc()
+        return math.inf, 0
 
     return cost, err
 
@@ -107,7 +111,7 @@ def img_fenceposts():
         for ctx in float_basecase + posit_basecase
     ]
 
-    return [0], points, points
+    return [0], [(0, a, b) for a, b in points], points
 
 
 def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):

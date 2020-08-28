@@ -85,7 +85,7 @@ def load_cores(interpreter, cores, analyses=None):
 def neighborhood(lo, hi, near):
     def neighbors(x):
         for n in range(x-near, x+near+1):
-            if lo <= n <= hi and n != x:
+            if lo <= n <= hi:
                 yield n
     return neighbors
 

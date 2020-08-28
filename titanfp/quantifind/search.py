@@ -63,6 +63,36 @@ import math
 from .utils import describe_ctx
 
 
+def center_ranges(input_ranges):
+    maxlen = 0
+    output_ranges = []
+
+    # turn the generator into a list, so we can iterate it multiple times
+    input_ranges = [tuple(r) for r in input_ranges]
+    for rng in input_ranges:
+        new_range = list(rng)
+        if len(new_range) == 0:
+            print('unable to center; skip')
+            print(input_ranges)
+            return input_ranges
+        if len(new_range) > maxlen:
+            maxlen = len(new_range)
+        output_ranges.append(new_range)
+
+    for i in range(len(output_ranges)):
+        rng = output_ranges[i]
+        if len(rng) < maxlen:
+            pad_count = maxlen - len(rng)
+            left_pad = right_pad = pad_count // 2
+            if left_pad + right_pad < pad_count:
+                right_pad += 1
+            output_ranges[i] = ([rng[0]] * left_pad) + rng + ([rng[-1]] * right_pad)
+
+    print(output_ranges)
+
+    return output_ranges
+
+
 def compare_results(m1, m2, metrics):
     lt = False
     gt = False
@@ -226,6 +256,7 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
             async_results = []
             skipped = 0
             for cfg, result in frontier:
+                # work on individual points
                 for i in range(len(cfg)):
                     x = cfg[i]
                     f = neighbors[i]
@@ -238,6 +269,17 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
                             all_cfgs.add(new_cfg)
                         else:
                             skipped += 1
+
+                # work on all points together
+                print('before centering', cfg, 'len:', len(cfg))
+
+                for combined_cfg in zip(*center_ranges(f(x) for f, x in zip(neighbors, cfg))):
+                    print('cc', combined_cfg)
+                    if combined_cfg not in all_cfgs:
+                        async_results.append((combined_cfg, pool.apply_async(stage_fn, combined_cfg)))
+                        all_cfgs.add(combined_cfg)
+                    else:
+                        skipped += 1
 
             if verbosity >= 2:
                 print(f'dispatched {len(async_results)!s} evaluations for generation {gen_log[-1]!s}, {skipped!s} skipped')
@@ -272,6 +314,8 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
 
     improved, visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
 
+    visited_points = [(0, a, b) for a, b in visited_points]
+
     attempts = 0
     successes = 0
     failures = 0
@@ -282,7 +326,7 @@ def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
         improved, new_visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
                                                                                previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
 
-        visited_points.extend(new_visited_points)
+        visited_points.extend((attempts, a, b) for a, b in new_visited_points)
 
         if verbosity >= 2:
             print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
@@ -315,7 +359,7 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
 
         for i, (cfg, ares) in enumerate(async_results):
             res = ares.get()
-            visited_points.append((cfg, res))
+            visited_points.append((0, cfg, res))
             updated, frontier = update_frontier(frontier, (cfg, res), metrics)
 
             if verbosity >= 3:
@@ -333,10 +377,20 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
 
 def filter_metrics(points, metrics, allow_inf=False):
     new_points = []
-    for data, measures in points:
-        filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
-        if allow_inf or all(map(math.isfinite, filtered_measures)):
-            new_points.append((data, filtered_measures))
+
+
+
+    for point in points:
+        if len(point) == 2:
+            data, measures = point
+            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+            if allow_inf or all(map(math.isfinite, filtered_measures)):
+                new_points.append((data, filtered_measures))
+        if len(point) == 3:
+            gen, data, measures = point
+            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+            if allow_inf or all(map(math.isfinite, filtered_measures)):
+                new_points.append((gen, data, filtered_measures))
     return new_points
 
 

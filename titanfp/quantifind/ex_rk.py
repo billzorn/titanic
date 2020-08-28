@@ -134,7 +134,7 @@ def rk_fenceposts():
         for ctx in float_basecase + posit_basecase
     ]
 
-    return [0], points, points
+    return [0], [(0, a, b) for a, b in points], points
 
 def rk_ceiling():
     ceil_pts = []
