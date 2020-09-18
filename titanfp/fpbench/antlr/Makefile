@@ -4,17 +4,30 @@
 
 ANTLR_JAR = antlr-4.8-complete.jar
 PYTHON_TARGET_DIR = ..
+RM = rm -f
 
-python_target:
+all: fpcore fpy
+
+fpcore:
 	java -cp $(ANTLR_JAR) org.antlr.v4.Tool -Dlanguage=Python3 -visitor -no-listener -o $(PYTHON_TARGET_DIR) FPCore.g4
 
-clean:
-	rm $(PYTHON_TARGET_DIR)/FPCoreLexer.py
-	rm $(PYTHON_TARGET_DIR)/FPCoreParser.py
-	rm $(PYTHON_TARGET_DIR)/FPCoreVisitor.py
-	rm $(PYTHON_TARGET_DIR)/FPCoreLexer.tokens
-	rm $(PYTHON_TARGET_DIR)/FPCore.tokens
-	rm $(PYTHON_TARGET_DIR)/FPCoreLexer.interp
-	rm $(PYTHON_TARGET_DIR)/FPCore.interp
+fpy:
+	java -cp $(ANTLR_JAR) org.antlr.v4.Tool -Dlanguage=Python3 -visitor -no-listener -o $(PYTHON_TARGET_DIR) FPY.g4
 
-.PHONY: python_target clean
+clean:
+	$(RM) $(PYTHON_TARGET_DIR)/FPCoreLexer.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPCoreParser.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPCoreVisitor.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPCoreLexer.tokens
+	$(RM) $(PYTHON_TARGET_DIR)/FPCore.tokens
+	$(RM) $(PYTHON_TARGET_DIR)/FPCoreLexer.interp
+	$(RM) $(PYTHON_TARGET_DIR)/FPCore.interp
+	$(RM) $(PYTHON_TARGET_DIR)/FPYLexer.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPYParser.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPYVisitor.py
+	$(RM) $(PYTHON_TARGET_DIR)/FPYLexer.tokens
+	$(RM) $(PYTHON_TARGET_DIR)/FPY.tokens
+	$(RM) $(PYTHON_TARGET_DIR)/FPYLexer.interp
+	$(RM) $(PYTHON_TARGET_DIR)/FPY.interp
+
+.PHONY: fpcore fpy clean
