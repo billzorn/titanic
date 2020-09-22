@@ -162,7 +162,8 @@ def plot_density(fname, sources, metrics, plot_settings = [],
 
 
 
-def integrate_frontier(frontier, x_left=None, x_right=None, y_floor=None, x_idx=0, y_idx=1):
+def integrate_frontier(frontier, x_left=None, x_right=None, y_floor=None, y_ceil=None,
+                       x_idx=0, y_idx=1):
     x_first = None
     x_prev = None
     y_prev = None
@@ -185,7 +186,10 @@ def integrate_frontier(frontier, x_left=None, x_right=None, y_floor=None, x_idx=
                 else:
                     x_dist = min(x, x_right) - x_prev
                 x_prev = x
-                y_dist = y_prev - y_floor
+                if y_ceil is None:
+                    y_dist = y_prev - y_floor
+                else:
+                    y_dist = min(y_ceil, y_prev) - y_floor
                 y_prev = y
                 if y_dist > 0 and x_dist > 0:
                     # discount area under the floor
@@ -197,17 +201,26 @@ def integrate_frontier(frontier, x_left=None, x_right=None, y_floor=None, x_idx=
                     # which is subsequently improved upon even by a cheaper alternative.
                     total_area += x_dist * y_dist
 
+                # if we've exceeded the ceiling, we actually want to stop early
+                if y_ceil is not None and y >= y_ceil:
+                    break
+
     # extend over to the right
     if x_right is not None and x_prev is not None and x_prev < x_right:
         x_dist = x_right - x_prev
-        y_dist = y_prev - y_floor
+        if y_ceil is None:
+            y_dist = y_prev - y_floor
+        else:
+            y_dist = min(y_ceil, y_prev) - y_floor
         if y_dist > 0:
+            # we already checked x_dist when deciding if we should run
+            # this fixup code
             total_area += x_dist * y_dist
 
     return x_first, x_prev, y_floor, total_area
 
-def plot_progress(fname, sources, new_metrics, plot_settings = [],
-                  axis_titles = []):
+def plot_progress(fname, sources, new_metrics, ceiling=None,
+                  plot_settings=[], axis_titles=[]):
 
     update_metrics = [m for m in new_metrics if m is not None]
 
@@ -225,12 +238,20 @@ def plot_progress(fname, sources, new_metrics, plot_settings = [],
             final_frontier = search.filter_frontier(source['frontier'], new_metrics)
             frontier = []
             plot_points = []
+            plot_points_capped = []
 
             x_left, x_right, y_floor, ref_area = integrate_frontier(
-                final_frontier, x_idx=x_idx, y_idx=y_idx,
+                final_frontier, y_ceil=None, x_idx=x_idx, y_idx=y_idx,
             )
 
             last_ratio = 0
+
+            if ceiling is not None:
+                x_left_capped, x_right_capped, y_floor_capped, ref_area_capped = integrate_frontier(
+                    final_frontier, y_ceil=ceiling, x_idx=x_idx, y_idx=y_idx,
+                )
+
+                last_ratio_capped = 0
 
             for i, point in enumerate(all_points):
                 if len(point) == 2:
@@ -243,7 +264,7 @@ def plot_progress(fname, sources, new_metrics, plot_settings = [],
                 changed, frontier = search.update_frontier(frontier, (tuple(data), filtered_measures), update_metrics)
                 if changed or i == len(all_points) - 1:
                     x_left_current, x_right_current, y_floor_current, current_area = integrate_frontier(
-                        frontier, x_left=x_left, x_right=x_right, y_floor=y_floor, x_idx=x_idx, y_idx=y_idx,
+                        frontier, x_left=x_left, x_right=x_right, y_floor=y_floor, y_ceil=None, x_idx=x_idx, y_idx=y_idx,
                     )
                     # print(f'coverage: {current_area!s} / {ref_area!s}')
                     # print(f'  from {x_left_current!s} - {x_right_current!s} of {x_left!s} - {x_right!s}')
@@ -256,17 +277,36 @@ def plot_progress(fname, sources, new_metrics, plot_settings = [],
                     last_ratio = ratio
                     plot_points.append((i, ratio))
 
+                    if ceiling is not None:
+                        x_left_current, x_right_current, y_floor_current, current_area = integrate_frontier(
+                            frontier, x_left=x_left_capped, x_right=x_right_capped, y_floor=y_floor_capped, y_ceil=ceiling, x_idx=x_idx, y_idx=y_idx,
+                        )
+                        # print(f' capped coverage: {current_area!s} / {ref_area!s}')
+                        # print(f'  from {x_left_current!s} - {x_right_current!s} of {x_left!s} - {x_right!s}')
+
+                        ratio = current_area / ref_area_capped
+
+                        if ratio < last_ratio_capped:
+                            print(f'  RATIO DECREASED!!! {last_ratio!s} -> {ratio!s}')
+
+                        last_ratio_capped = ratio
+                        plot_points_capped.append((i, ratio))
+
             if plot_count == 1:
-                zidx = 98
+                zidx = 96
             elif plot_count == 2:
-                zidx = 99
+                zidx = 98
             else:
-                zidx = 100 - plot_count
+                zidx = 100 - (2 * plot_count)
 
             x, y = zip(*plot_points)
             ax.plot(x, y, opts, ds='steps-post', zorder=zidx)
-
             print(f'  {len(plot_points)!s} points')
+
+            if ceiling is not None:
+                x, y = zip(*plot_points_capped)
+                ax.plot(x, y, opts, ds='steps-post', fillstyle='none', zorder=zidx + 1)
+                print(f'  {len(plot_points_capped)!s} points')
 
         if axis_titles:
             title, xlabel, ylabel = axis_titles
@@ -300,14 +340,19 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
             frontier = source['frontier']
             all_points = source['configs']
 
-            print(end='  ')
+            print(f'{source["settings"]}--f: {len(frontier)!s}, all: {len(all_points)!s}')
+
+            # print(end='  ')
+            linend = '\n'
 
             for metrics, opts in zip(metric_group, plot_settings_group):
                 filtered_frontier = search.filter_frontier(frontier, metrics)
-                print(len(filtered_frontier), end=', ')
+                print('filtered:', len(filtered_frontier), end=linend)
 
                 x, y = [], []
                 for cfg, measures in sorted(filtered_frontier, key = lambda t : t[1][0]):
+                    print('   ', cfg, measures)
+
                     a, b = measures
                     if flip_axes:
                         y.append(a)
@@ -327,7 +372,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
 
                 if complete_frontier:
                     filtered_points = search.filter_metrics(frontier, metrics)
-                    print(len(filtered_points), end=', ')
+                    print('complete:', len(filtered_points), end=linend)
                     alpha = 0.5
                     x, y = [], []
                     for cfg, measures in sorted(filtered_points, key = lambda t : t[1][0]):
@@ -351,7 +396,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
 
                 if draw_ghosts:
                     filtered_points = search.filter_metrics(all_points, metrics)
-                    print(len(filtered_points), end=', ')
+                    print('ghosts:', len(filtered_points), end=linend)
                     ghost_count = len(filtered_points)
                     alpha = min(100, math.sqrt(ghost_count)) / ghost_count
                     x, y = [], []
@@ -440,13 +485,14 @@ img_metrics = (operator.lt, operator.gt)
 # return timeouts, infs, worst_bitcost, total_bitcost, worst_ulps, total_ulps, worst_abits, total_abits
 new_sqrt_metrics_worst = (None, None, None, operator.lt, None, None, operator.gt, None)
 new_sqrt_metrics_avg = (None, None, None, operator.lt, None, None, None, operator.gt)
+new_sqrt_metrics_both = (None, None, None, operator.lt, None, None, operator.gt, operator.gt)
 new_sqrt_metrics_infs = (None, operator.lt, None, operator.lt, None, None, None, None)
 new_sqrt_metrics_timeouts = (operator.lt, None, None, operator.lt, None, None, None, None)
 
 # return als.bits_requested, worst_abits_last, avg_abits_last, worst_abits_dlast, avg_abits_dlast
 rk_avg_metrics = (operator.lt, None, operator.gt, None, None)
 rk_davg_metrics = (operator.lt, None, None, None, operator.gt)
-
+rk_both_metrics = (operator.lt, None, operator.gt, None, operator.gt)
 
 # reference results
 
@@ -466,6 +512,18 @@ chua_davg_ceiling = 8.330294319415229
 
 plot_dir = os.path.join(here, 'paper/figs')
 table_dir = os.path.join(here, 'paper/tables')
+
+# Table labels
+
+sqrt_labels = ['Exp', 'Res', 'Diff', 'Scale',
+               'bitcost', '(worst)', 'avg. acc']
+
+rk_labels = ['Exp', 'fn', 'rk', 'k1', 'k2', 'k3', 'k4',
+             'bitcost', 'acc pos', 'acc. slope']
+
+blur_labels = ['Exp', 'overall', 'mask', 'accum', 'mul',
+               'bitcost', 'ssim']
+
 
 
 def all_plots(ghosts=False):
@@ -652,72 +710,87 @@ def density_plots():
                  ['C0s--', 'C1^:'],
                  axis_titles = ["3x3 mask blur", "configurations searched", "frontier size"])
 
-def progress_plots():
+def progress_plots(use_ceiling=False):
     sqrt_metrics = (operator.lt,) * 6 + (operator.gt,) * 2
     rk_metrics = (operator.lt,) + (operator.gt,) * 4
     img_metrics = (operator.lt, operator.gt)
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_newton_avg_progress'),
+    if use_ceiling:
+        suffix = '_progress'
+    else:
+        suffix = '_progress'
+
+    plot_progress(os.path.join(plot_dir, 'sqrt_newton_avg' + suffix),
                   [data.sweep_newton_full, data.sweep_newton_random],
                   new_sqrt_metrics_avg,
+                  ceiling = sqrt_avg_ceiling if use_ceiling else None,
                   plot_settings = ['C0o-', 'C1+:'],
                   axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (avg)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_newton_worst_progress'),
+    plot_progress(os.path.join(plot_dir, 'sqrt_newton_worst' + suffix),
                   [data.sweep_newton_full, data.sweep_newton_random],
                   new_sqrt_metrics_worst,
+                  ceiling = sqrt_worst_ceiling if use_ceiling else None,
                   plot_settings = ['C0o-', 'C1+:'],
                   axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (worst)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_avg_progress'),
+    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_avg' + suffix),
                   [data.sweep_babylonian_full, data.sweep_babylonian_random],
                   new_sqrt_metrics_avg,
+                  ceiling = sqrt_avg_ceiling if use_ceiling else None,
                   plot_settings = ['C0o-', 'C1+:'],
                   axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (avg)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_worst_progress'),
+    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_worst' + suffix),
                   [data.sweep_babylonian_full, data.sweep_babylonian_random],
                   new_sqrt_metrics_worst,
+                  ceiling = sqrt_worst_ceiling if use_ceiling else None,
                   plot_settings = ['C0o-', 'C1+:'],
                   axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (worst)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_lorenz_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_lorenz' + suffix),
                   [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
                   rk_avg_metrics,
+                  ceiling = lorenz_avg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_lorenz_d_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_lorenz_d' + suffix),
                   [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
                   rk_davg_metrics,
+                  ceiling = lorenz_davg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_rossler_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_rossler' + suffix),
                   [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
                   rk_avg_metrics,
+                  ceiling = rossler_avg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_rossler_d_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_rossler_d' + suffix),
                   [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
                   rk_davg_metrics,
+                  ceiling = rossler_davg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_chua_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_chua' + suffix),
                   [data.sweep_rk_chua, data.sweep_rk_chua_p],
                   rk_avg_metrics,
+                  ceiling = chua_avg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_chua_d_progress'),
+    plot_progress(os.path.join(plot_dir, 'rk_chua_d' + suffix),
                   [data.sweep_rk_chua, data.sweep_rk_chua_p],
                   rk_davg_metrics,
+                  ceiling = chua_davg_ceiling if use_ceiling else None,
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
-    plot_progress(os.path.join(plot_dir, 'blur_progress'),
+    plot_progress(os.path.join(plot_dir, 'blur' + suffix),
                   [data.sweep_blur, data.sweep_blur_p],
                   img_metrics,
                   plot_settings = ['C0s--', 'C1^:'],
@@ -725,24 +798,43 @@ def progress_plots():
 
 
 def format_table_value(v):
-    if isinstance(v, int):
-        return str(v)
-    elif isinstance(v, float):
-        return f'{v:.2f}'
-    else:
-        return repr(v)
+    try:
+        v, ceil = v
+    except Exception:
+        v, ceil = v, None
 
-def dump_tex_table(fname, source, labels=None, filter_metrics=None, key=None, reverse=False):
+    if isinstance(v, int):
+        s = str(v)
+    elif isinstance(v, float):
+        s = f'{v:.2f}'
+    else:
+        s = repr(v)
+
+    if ceil is not None and v >= ceil:
+        s = '{\color{orange}' + s + '}'
+
+    return s
+
+def format_table_row(cfg, meas, ceils=None):
+    row = ' & '.join(map(format_table_value, cfg))
+    if ceils is None:
+        row = ' & '.join([row, ' & '.join(map(format_table_value, meas))])
+    else:
+        row = ' & '.join([row, ' & '.join(map(format_table_value, zip(meas, ceils)))])
+    return '  ' + row
+
+
+def dump_tex_table(fname, source, labels=None, filter_metrics=None, ceils=None, key=None, reverse=False):
     frontier = source['frontier']
 
     if filter_metrics is not None:
-        frontier = search.filter_frontier(frontier, filter_metrics)
+        frontier = search.filter_frontier(frontier, filter_metrics, allow_inf=True)
 
     left_cols, right_cols = 0, 0
     rows = []
     for cfg, meas in sorted(frontier, key=key, reverse=reverse):
         left_cols, right_cols = len(cfg), len(meas)
-        rows.append('  ' + ' & '.join(map(format_table_value, cfg + meas)))
+        rows.append(format_table_row(cfg, meas, ceils))
 
     cols = '||'.join(['|'.join(['c'] * left_cols), '|'.join(['c'] * right_cols)])
 
@@ -765,65 +857,77 @@ def dump_tex_table(fname, source, labels=None, filter_metrics=None, key=None, re
 
 
 def tables():
-    sqrt_labels = ['Exp', 'Res', 'Diff', 'Scale',
-                   'timeouts', 'infs', '(worst)', 'total bitcost', '(worst)', 'avg. ulps', '(worst)', 'avg. accuracy']
-
-
     dump_tex_table(os.path.join(table_dir, 'sqrt_newton_full'),
                    data.sweep_newton_full,
                    labels=sqrt_labels,
-                   key=nd_getter(1, 3))
+                   filter_metrics=new_sqrt_metrics_both,
+                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+                   key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_newton_random'),
                    data.sweep_newton_random,
                    labels=sqrt_labels,
-                   key=nd_getter(1, 3))
+                   filter_metrics=new_sqrt_metrics_both,
+                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+                   key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_full'),
                    data.sweep_babylonian_full,
                    labels=sqrt_labels,
-                   key=nd_getter(1, 3))
+                   filter_metrics=new_sqrt_metrics_both,
+                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+                   key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_random'),
                    data.sweep_babylonian_random,
                    labels=sqrt_labels,
-                   key=nd_getter(1, 3))
+                   filter_metrics=new_sqrt_metrics_both,
+                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+                   key=nd_getter(1, 0))
 
-    rk_labels = ['Exp', 'fn', 'rk', 'k1', 'k2', 'k3', 'k4',
-                 'avg. bitcost', '(worst)', 'avg. accuracy pos', '(worst)', 'avg. accuracy slope']
 
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz'),
                    data.sweep_rk_lorenz,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_rossler'),
                    data.sweep_rk_rossler,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_chua'),
                    data.sweep_rk_chua,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz_p'),
                    data.sweep_rk_lorenz_p,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_rossler_p'),
                    data.sweep_rk_rossler_p,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_chua_p'),
                    data.sweep_rk_chua_p,
                    labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
                    key=nd_getter(1, 0))
 
-    blur_labels = ['Exp', 'overall', 'mask', 'accum', 'mul',
-                   'bitcost', 'ssim']
 
     dump_tex_table(os.path.join(table_dir, 'blur'),
                    data.sweep_blur,
@@ -832,4 +936,51 @@ def tables():
     dump_tex_table(os.path.join(table_dir, 'blur_p'),
                    data.sweep_blur_p,
                    labels=blur_labels,
+                   key=nd_getter(1, 0))
+
+
+    dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz'),
+                   data.baseline_rk_lorenz,
+                   labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
+                   key=nd_getter(1, 0))
+
+    dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz_p'),
+                   data.baseline_rk_lorenz_p,
+                   labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
+                   key=nd_getter(1, 0))
+
+
+def all_figs():
+    all_plots()
+    all_plots(True)
+    density_plots()
+    progress_plots()
+    progress_plots(True)
+
+    tables()
+
+
+
+
+
+def test():
+    ghosts = False
+    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+                  [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
+                  [[rk_avg_metrics],] * 4,
+                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+                  ref_lines=[lorenz_avg_ceiling],
+                  draw_ghosts = ghosts,
+                  axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+
+    dump_tex_table(os.path.join(table_dir, 'rk_lorenz'),
+                   data.sweep_rk_lorenz,
+                   labels=rk_labels,
+                   filter_metrics=rk_both_metrics,
+                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))

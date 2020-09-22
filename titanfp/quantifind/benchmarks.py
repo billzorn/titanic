@@ -1,9 +1,6 @@
 """FPCore benchmark templates for QuantiFind prototype"""
 
-from ..arithmetic import evalctx, ieee754, posit
-
-bf16 = ieee754.ieee_ctx(8, 16)
-posit16_1 = posit.posit_ctx(1, 16)
+from .utils import *
 
 sqrt_newton_template = '''(FPCore sqrt_bfloat_limit (a residual_bound)
  {overall_prec}
