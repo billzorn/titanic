@@ -521,6 +521,9 @@ sqrt_labels = ['Exp', 'Res', 'Diff', 'Scale',
 rk_labels = ['Exp', 'fn', 'rk', 'k1', 'k2', 'k3', 'k4',
              'bitcost', 'acc pos', 'acc. slope']
 
+rk_baseline_labels = ['fn', 'rk', 'k1', 'k2', 'k3', 'k4',
+             'bitcost', 'acc pos', 'acc. slope']
+
 blur_labels = ['Exp', 'overall', 'mask', 'accum', 'mul',
                'bitcost', 'ssim']
 
@@ -807,8 +810,12 @@ def format_table_value(v):
         s = str(v)
     elif isinstance(v, float):
         s = f'{v:.2f}'
+    elif isinstance(v, str):
+        s = v
     else:
         s = repr(v)
+
+    s = s.replace('_', r'\_')
 
     if ceil is not None and v >= ceil:
         s = '{\color{orange}' + s + '}'
@@ -941,14 +948,14 @@ def tables():
 
     dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz'),
                    data.baseline_rk_lorenz,
-                   labels=rk_labels,
+                   labels=rk_baseline_labels,
                    filter_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz_p'),
                    data.baseline_rk_lorenz_p,
-                   labels=rk_labels,
+                   labels=rk_baseline_labels,
                    filter_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
