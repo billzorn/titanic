@@ -326,7 +326,7 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
 
 
 def plot_frontier(fname, sources, new_metrics, plot_settings = [],
-                  ref_pts = [], ref_lines = [], axis_titles = [],
+                  extra_pts = [], ref_pts = [], ref_lines = [], axis_titles = [],
                   complete_frontier = True, draw_ghosts = True, flip_axes = False):
     fig = plt.figure(figsize=(12,8), dpi=80)
     ax = fig.gca()
@@ -436,6 +436,14 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
                 px, py, label, zorder=101,
                 #bbox=dict(facecolor='white', edgecolor='none', pad=1.0)
             ))
+
+        for pt, label in extra_pts:
+            px, py = pt
+            texts.append(plt.text(
+                px, py, label, zorder=101,
+            ))
+
+        if texts:
             adjust_text(texts)
 
         for y_value in ref_lines:
@@ -515,19 +523,29 @@ table_dir = os.path.join(here, 'paper/tables')
 
 # Table labels
 
-sqrt_labels = ['Exp', 'Res', 'Diff', 'Scale',
+sqrt_labels = ['Exp', 'res', 'diff', 'scale',
                'bitcost', '(worst)', 'avg. acc']
 
 rk_labels = ['Exp', 'fn', 'rk', 'k1', 'k2', 'k3', 'k4',
-             'bitcost', 'acc pos', 'acc. slope']
+             'bitcost', 'acc. pos', 'acc. slope']
 
 rk_baseline_labels = ['fn', 'rk', 'k1', 'k2', 'k3', 'k4',
-             'bitcost', 'acc pos', 'acc. slope']
+             'bitcost', 'acc. pos', 'acc. slope']
 
 blur_labels = ['Exp', 'overall', 'mask', 'accum', 'mul',
                'bitcost', 'ssim']
 
+# extra plot labels
 
+lorenz_pts_extra = [
+    ((494760, 1.35), 'A'),
+    ((569160, 4.69), 'B'),
+    ((660280, 8.32), 'C'),
+
+    ((379800, 3.26), 'D'),
+    ((464520, 3.27), 'E'),
+    ((680860, 7.96), 'F'),
+]
 
 def all_plots(ghosts=False):
     plot_frontier(os.path.join(plot_dir, 'sqrt_newton_infs'),
@@ -617,6 +635,7 @@ def all_plots(ghosts=False):
                   [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
                   [[rk_avg_metrics],] * 4,
                   plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  extra_pts=lorenz_pts_extra,
                   ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
                   ref_lines=[lorenz_avg_ceiling],
                   draw_ghosts = ghosts,
@@ -831,11 +850,15 @@ def format_table_row(cfg, meas, ceils=None):
     return '  ' + row
 
 
-def dump_tex_table(fname, source, labels=None, filter_metrics=None, ceils=None, key=None, reverse=False):
+def dump_tex_table(fname, source, labels=None, filter_metrics=None, display_metrics=None,
+                   ceils=None, key=None, reverse=False):
     frontier = source['frontier']
 
     if filter_metrics is not None:
-        frontier = search.filter_frontier(frontier, filter_metrics, allow_inf=True)
+        frontier = search.filter_frontier(frontier, filter_metrics, allow_inf=False, reconstruct_metrics=True)
+
+    if display_metrics is not None:
+        frontier = search.filter_metrics(frontier, display_metrics, allow_inf=True)
 
     left_cols, right_cols = 0, 0
     rows = []
@@ -867,28 +890,28 @@ def tables():
     dump_tex_table(os.path.join(table_dir, 'sqrt_newton_full'),
                    data.sweep_newton_full,
                    labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_both,
+                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
                    ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_newton_random'),
                    data.sweep_newton_random,
                    labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_both,
+                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
                    ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_full'),
                    data.sweep_babylonian_full,
                    labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_both,
+                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
                    ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_random'),
                    data.sweep_babylonian_random,
                    labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_both,
+                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
                    ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
                    key=nd_getter(1, 0))
 
@@ -896,42 +919,42 @@ def tables():
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz'),
                    data.sweep_rk_lorenz,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_rossler'),
                    data.sweep_rk_rossler,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_chua'),
                    data.sweep_rk_chua,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz_p'),
                    data.sweep_rk_lorenz_p,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_rossler_p'),
                    data.sweep_rk_rossler_p,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_chua_p'),
                    data.sweep_rk_chua_p,
                    labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
                    key=nd_getter(1, 0))
 
@@ -949,14 +972,14 @@ def tables():
     dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz'),
                    data.baseline_rk_lorenz,
                    labels=rk_baseline_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'baseline_rk_lorenz_p'),
                    data.baseline_rk_lorenz_p,
                    labels=rk_baseline_labels,
-                   filter_metrics=rk_both_metrics,
+                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
@@ -976,18 +999,13 @@ def all_figs():
 
 def test():
     ghosts = False
-    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
-                  [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
-                  [[rk_avg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
-                  ref_lines=[lorenz_avg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
 
-    dump_tex_table(os.path.join(table_dir, 'rk_lorenz'),
-                   data.sweep_rk_lorenz,
-                   labels=rk_labels,
-                   filter_metrics=rk_both_metrics,
-                   ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
-                   key=nd_getter(1, 0))
+    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+              [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
+              [[rk_avg_metrics],] * 4,
+              plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+              extra_pts=lorenz_pts_extra,
+              ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+              ref_lines=[lorenz_avg_ceiling],
+              draw_ghosts = ghosts,
+              axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])

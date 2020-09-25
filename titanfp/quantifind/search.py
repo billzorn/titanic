@@ -378,8 +378,6 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
 def filter_metrics(points, metrics, allow_inf=False):
     new_points = []
 
-
-
     for point in points:
         if len(point) == 2:
             data, measures = point
@@ -394,13 +392,23 @@ def filter_metrics(points, metrics, allow_inf=False):
     return new_points
 
 
-def filter_frontier(frontier, metrics, allow_inf=False):
+def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=False):
     new_metrics = [m for m in metrics if m is not None]
 
     new_frontier = []
-    for data, measures in frontier:
+    for i, (data, measures) in enumerate(frontier):
         filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+
+        if reconstruct_metrics:
+            filtered_data = i
+        else:
+            filtered_data = data
+
         if allow_inf or all(map(math.isfinite, filtered_measures)):
-            _, new_frontier = update_frontier(new_frontier, (data, filtered_measures), new_metrics)
+            _, new_frontier = update_frontier(new_frontier, (filtered_data, filtered_measures), new_metrics)
+
+    if reconstruct_metrics:
+        reconstructed_frontier = [frontier[i] for i, measures in new_frontier]
+        new_frontier = reconstructed_frontier
 
     return new_frontier
