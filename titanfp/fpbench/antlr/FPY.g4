@@ -120,20 +120,16 @@ parse_fpy : fpy* EOF ;
 
 // grammar
 
-fpy : (meta=fptype)? core=fpcore ;
-
-fptype : FPTYPE (ident=SYMBOL)? props=data_block;
-
-fpcore : FPCORE (ident=SYMBOL)? args=arglist COLON body=suite;
+fpy : FPCORE (ident=symbolic)? args=arglist COLON body=suite;
 
 arglist : OPEN_PAREN (arg=argument (COMMA args+=argument)* COMMA?)? CLOSE_PAREN;
 
-argument : name=SYMBOL dims=dimlist? ;
+argument : name=symbolic dims=dimlist? (BANG props+=prop)*;
 
 dimlist : OPEN_BRACK (dim=dimension (COMMA dims+=dimension)* COMMA?)? CLOSE_BRACK;
 
 dimension
-    : name=SYMBOL
+    : name=symbolic
     | size=number
     ;
 
@@ -157,37 +153,43 @@ factor : op=(PLUS | MINUS) f=factor | e=power ;
 power  : e=atom (POWER f=factor)? ;
 
 atom 
-    : x=SYMBOL
+    : x=symbolic
     | n=number
     | OPEN_PAREN (e=expr)? CLOSE_PAREN
     | OPEN_BRACK (lst=expr?) CLOSE_BRACK
     | call=atom OPEN_PAREN (args=expr)? CLOSE_PAREN
     | deref=atom OPEN_BRACK (args=expr)? CLOSE_BRACK
+    | DIG OPEN_PAREN (digits=expr)? CLOSE_PAREN
+    | ABORT
     ;
 
-prop : x=SYMBOL d=datum ;
+prop : x=symbolic d=datum ;
 
 simple_stmt : expr NEWLINE ;
 
 binding
-    : x=SYMBOL asgn=IS   body=suite
-    | x=SYMBOL asgn=GETS body=suite
+    : x=symbolic asgn=IS   body=suite
+    | x=symbolic asgn=GETS body=suite
     ;
 
 block : NEWLINE INDENT binding+ DEDENT ;
 
-if_stmt : ( IF   test=expr COLON body+=suite 
-           (ELIF tests+=expr COLON bodies+=suite)*
-            ELSE             COLON else_body=suite)
+if_stmt : (((IF test=expr COLON body=suite)
+           |(IF COLON testsuite=suite THEN COLON bodysuite=suite))
+           ((ELIF tests+=expr COLON bodies+=suite)
+           |(ELIF COLON testsuites+=suite THEN COLON bodysuites+=suite))*
+           ELSE COLON else_body=suite)
         ;
 
 let_stmt : (LET COLON bindings=block
             IN  COLON body=suite)
          ;
 
-while_stmt : (WITH            COLON inits=block
-              WHILE test=expr COLON updates=block
-              IN              COLON body=suite)
+while_stmt : (WITH              COLON inits=block
+              ((WHILE test=expr COLON updates=block)
+              |(WHILE           COLON testsuite=suite 
+                DO              COLON updates=block))
+              IN                COLON body=suite)
            ;
 
 for_stmt : (FOR  COLON dims=block
@@ -216,7 +218,7 @@ statement
     ;
 
 datum
-    : x=symbolic_
+    : x=symbolic_data
     | n=number
     | s=STRING
     | open_ (data+=datum)* close_
@@ -229,7 +231,7 @@ data_suite
     | body=suite
     ;
 
-annotation : x=SYMBOL COLON data=data_suite ;
+annotation : x=symbolic COLON data=data_suite ;
 
 data_block : NEWLINE INDENT (props+=annotation)+ DEDENT ;
 
@@ -238,10 +240,12 @@ suite
     | NEWLINE INDENT (props+=annotation)* body=statement DEDENT
     ;
 
-symbolic_
-    : x=FPTYPE
-    | x=FPCORE
+symbolic : SYMBOL | SYM OPEN_PAREN (s=STRING) CLOSE_PAREN ;
+
+symbolic_data
+    : x=FPCORE
     | x=IF
+    | x=THEN
     | x=ELIF
     | x=ELSE
     | x=LET
@@ -269,6 +273,11 @@ symbolic_
     | x=GE
     | x=EQ
     | x=NE
+    | x=ABORT
+    | x=SYM
+    | x=DIG
+    | x=SYMBOL
+    | x=S_SYMBOL
     ;
 
 open_  : OPEN_PAREN | OPEN_BRACK ;
@@ -284,9 +293,9 @@ CLOSE_BRACK : ']' {self.opened -= 1};
 
 // All of these constructs need to be declared explicitly, to control the precedence
 // in lexer rules.
-FPTYPE     : 'FPType' ;
 FPCORE     : 'FPCore' ;
 IF         : 'if' ;
+THEN       : 'then' ;
 ELIF       : 'elif' ;
 ELSE       : 'else' ;
 LET        : 'let' ;
@@ -317,11 +326,20 @@ GE         : '>=' ;
 EQ         : '==' ;
 NE         : '!=' ;
 
+ABORT      : 'abort' ;
+SYM        : 'symbol' ;
+DIG        : 'digits' ;
+
 DECNUM   : [+-]? ([0-9]+ ('.' [0-9]+)? | '.' [0-9]+) ([eE] [-+]? [0-9]+)? ;
 HEXNUM   : [+-]? '0' [xX] ([0-9a-fA-F]+ ('.' [0-9a-fA-F]+)? | '.' [0-9a-fA-F]+) ([pP] [-+]? [0-9]+)? ;
 RATIONAL : [+-]? [0-9]+ '/' [0-9]* [1-9] [0-9]* ;
 
-SYMBOL : [a-zA-Z~!@$%^&*_\-+=<>.?/:] [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]* ;
+// For the infix grammar, we want to trim this down a bit. Must go first for precedence.
+SYMBOL : [a-zA-Z~@$^&_.?] [a-zA-Z0-9~@$^&_.?]* ;
+
+// From the original S-expression grammar.
+S_SYMBOL : [a-zA-Z~!@$%^&*_\-+=<>.?/:] [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]* ;
+
 STRING : '"' ([\u0008-\u000d\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [bfnrtv\u0022\u005c])* '"' ;
 
 NEWLINE
