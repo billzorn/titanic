@@ -327,9 +327,17 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
 
 def plot_frontier(fname, sources, new_metrics, plot_settings = [],
                   extra_pts = [], ref_pts = [], ref_lines = [], axis_titles = [],
-                  complete_frontier = True, draw_ghosts = True, flip_axes = False):
+                  complete_frontier = True, draw_ghosts = True, flip_axes = False,
+                  xlim=None, ylim=None):
     fig = plt.figure(figsize=(12,8), dpi=80)
     ax = fig.gca()
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
 
     print('generating', fname)
 
@@ -547,6 +555,41 @@ lorenz_pts_extra = [
     ((680860, 7.96), 'F'),
 ]
 
+rossler_pts_extra = [
+    ((441742, 1.56), 'A'),
+    ((539946, 5.93), 'B'),
+    ((765244, 11.44), 'C'),
+
+    ((366450, 2.28), 'D'),
+    ((526735, 6.51), 'E'),
+    ((768830, 11.10), 'F'),
+]
+
+chua_pts_extra = [
+    ((705644, 4.59), 'A'),
+    ((761631, 6.79), 'B'),
+    ((918359, 9.46), 'C'),
+
+    ((650696, 3.68), 'D'),
+    ((733793, 7.25), 'E'),
+    ((934971, 12.04), 'F'),
+]
+
+blur_pts_extra = [
+        ((994604, 0.06), 'A'),
+        ((1038784, 0.87), 'B'),
+        ((1076176, 0.95), 'C'),
+        ((1168632, 0.98), 'D'),
+        ((1324988, 1.00), 'E'),
+
+        ((488048, 0.27), 'F'),
+        ((757320, 0.73), 'G'),
+        ((1113568, 0.95), 'H'),
+        ((1194140, 0.98), 'I'),
+        ((1356236, 1.00), 'J'),
+
+    ]
+
 def all_plots(ghosts=False):
     plot_frontier(os.path.join(plot_dir, 'sqrt_newton_infs'),
                   [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
@@ -654,6 +697,7 @@ def all_plots(ghosts=False):
                   [data.sweep_rk_rossler, data.sweep_rk_rossler_p, data.baseline_rk_rossler, data.baseline_rk_rossler_p],
                   [[rk_avg_metrics],] * 4,
                   plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  extra_pts=rossler_pts_extra,
                   ref_pts=label_fenceposts(data.baseline_rk_rossler_fenceposts, rk_avg_metrics),
                   ref_lines=[rossler_avg_ceiling],
                   draw_ghosts = ghosts,
@@ -672,6 +716,7 @@ def all_plots(ghosts=False):
                   [data.sweep_rk_chua, data.sweep_rk_chua_p, data.baseline_rk_chua, data.baseline_rk_chua_p],
                   [[rk_avg_metrics],] * 4,
                   plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  extra_pts=chua_pts_extra,
                   ref_pts=label_fenceposts(data.baseline_rk_chua_fenceposts, rk_avg_metrics),
                   ref_lines=[chua_avg_ceiling],
                   draw_ghosts = ghosts,
@@ -690,6 +735,7 @@ def all_plots(ghosts=False):
                   [data.sweep_blur, data.sweep_blur_p, data.baseline_blur, data.baseline_blur_p],
                   [[img_metrics],] * 4,
                   plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  extra_pts=blur_pts_extra,
                   ref_pts=label_fenceposts(data.baseline_blur_fenceposts, img_metrics),
                   ref_lines=[1],
                   draw_ghosts = ghosts,
@@ -998,14 +1044,43 @@ def all_figs():
 
 
 def test():
+    # ghosts = False
+
+    # plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+    #           [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
+    #           [[rk_avg_metrics],] * 4,
+    #           plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #           extra_pts=lorenz_pts_extra,
+    #           ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+    #           ref_lines=[lorenz_avg_ceiling],
+    #           draw_ghosts = ghosts,
+    #           axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+
     ghosts = False
 
-    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
-              [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
-              [[rk_avg_metrics],] * 4,
-              plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-              extra_pts=lorenz_pts_extra,
-              ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
-              ref_lines=[lorenz_avg_ceiling],
-              draw_ghosts = ghosts,
-              axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+    blur_pts_extra = [
+        #((994604, 0.06), 'A'),
+        ((1038784, 0.87), 'B'),
+        ((1076176, 0.95), 'C'),
+        ((1168632, 0.98), 'D'),
+        ((1324988, 1.00), 'E'),
+
+        #((488048, 0.27), 'F'),
+        #((757320, 0.73), 'G'),
+        ((1113568, 0.95), 'H'),
+        ((1194140, 0.98), 'I'),
+        ((1356236, 1.00), 'J'),
+
+    ]
+
+    plot_frontier(os.path.join(plot_dir, 'blur_extra'),
+                  [data.sweep_blur, data.sweep_blur_p, data.baseline_blur, data.baseline_blur_p],
+                  [[img_metrics],] * 4,
+                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+                  extra_pts=blur_pts_extra,
+                  #ref_pts=label_fenceposts(data.baseline_blur_fenceposts, img_metrics),
+                  ref_lines=[1],
+                  draw_ghosts = ghosts,
+                  axis_titles = ["3x3 mask blur", "bitcost", "structural similarity"],
+                  xlim=(1000000,2000000),
+                  ylim=(0.85,1.025))
