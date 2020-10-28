@@ -141,8 +141,8 @@ number
 
 expr
     : e=note
-    | head=expr COMMA
-    | head=expr (COMMA rest+=expr)+ COMMA?
+    | head=note COMMA
+    | head=note (COMMA rest+=note)+ COMMA?
     ;
 
 note   : e=comp (BANG props+=prop)* ;

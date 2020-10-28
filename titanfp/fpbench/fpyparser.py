@@ -140,12 +140,7 @@ class Visitor(FPYVisitor):
             # must be a list with some commas
             # head is the first element
             # rest may contain more elements (but is list either way)
-            head_is_list, head_e = ctx.head.accept(self)
-            lst = [head_e]
-            for e in ctx.rest:
-                rest_is_list, rest_e = e.accept(self)
-                lst.append(rest_e)
-            return True, lst
+            return True, [ctx.head.accept(self), *(e.accept(self) for e in ctx.rest)]
 
     def _one_expr(self, e):
         is_list, e = e.accept(self)
