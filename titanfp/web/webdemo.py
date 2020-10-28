@@ -15,7 +15,7 @@ import numpy as np
 # from .fserver import AsyncTCPServer, AsyncHTTPRequestHandler
 from . import fserver
 
-from ..fpbench import fpcparser, fpcast as ast
+from ..fpbench import fpcparser, fpyparser, fpcast as ast
 from ..titanic import digital, ndarray
 from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
@@ -115,10 +115,16 @@ class WebtoolState(object):
             raise WebtoolError('malformed json request data')
 
         if 'core' in payload:
+            buf = str(payload['core']).strip()
             try:
-                self.cores = fpcparser.compile(str(payload['core']).strip())
+                if buf.startswith('FPCore'):
+                    self.cores = fpyparser.compile(buf)
+                else:
+                    self.cores = fpcparser.compile(buf)
             except fpcparser.FPCoreParserError as e:
                 raise WebtoolParseError(str(e))
+            except Exception:
+                raise WebtoolParseError(traceback.format_exc())
 
         if 'args' in payload:
             try:
@@ -353,7 +359,7 @@ def run_eval(data):
             result['report'] = analysis_report
 
         made_plot = False
-            
+
         if state.img is not None:
             if isinstance(e_val, ndarray.NDArray) and len(e_val.shape) == 3 and e_val.shape[2] in [3,4]:
                 e_img = e_val

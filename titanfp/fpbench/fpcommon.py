@@ -21,6 +21,12 @@ def _neg_or_sub(a, b=None):
     else:
         return ast.Sub(a, b)
 
+def _pos_or_add(a, b=None):
+    if b is None:
+        return a
+    else:
+        return ast.Add(a, b)
+
 reserved_constructs = {
     # reserved
     'FPCore' : None,
@@ -48,10 +54,11 @@ reserved_constructs = {
     'size' : ast.Size,
     'ref' : ast.Ref,
     # IEEE 754 required arithmetic (negation is a special case of subtraction)
-    '+' : ast.Add,
+    '+' : _pos_or_add,
     '-' : _neg_or_sub,
     '*' : ast.Mul,
     '/' : ast.Div,
+    '%' : ast.Fmod,
     'sqrt' : ast.Sqrt,
     'fma' : ast.Fma,
     # discrete operations
@@ -147,15 +154,17 @@ reserved_constants = {
 class FPCoreParserError(Exception):
     """Unable to parse FPCore."""
 
-    
+
 def sanitize_arglist(args, argnames=None):
     if argnames is None:
         argnames = set()
+    else:
+        argnames = set(argnames)
     for name, props, shape in args:
         if name in argnames:
-            raise FPCoreParserError(f'duplicate argument name {name}')
+            raise FPCoreParserError(f'duplicate argument name {name!s}')
         elif name in reserved_constants:
-            raise FPCoreParserError(f'argument name {name} is a reserved constant')
+            raise FPCoreParserError(f'argument name {name!s} is a reserved constant')
         else:
             argnames.add(name)
         # Also check the names of dimensions.
@@ -163,8 +172,14 @@ def sanitize_arglist(args, argnames=None):
             for dim in shape:
                 if isinstance(dim, str):
                     if dim in argnames:
-                        raise FPCoreParserError(f'duplicate argument name {dim} for tensor dimension')
+                        raise FPCoreParserError(f'duplicate argument name {dim!s} for tensor dimension')
                     elif dim in reserved_constants:
-                        raise FPCoreParserError(f'dimension name {dim} is a reserved constant')
+                        raise FPCoreParserError(f'dimension name {dim!s} is a reserved constant')
                     else:
                         argnames.add(dim)
+
+_sym_re = re.compile(r'[a-zA-Z~!@$%^&*_\-+=<>.?/:][a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]*')
+
+def sanitize_symbol(s):
+    if not _sym_re.fullmatch(s):
+        raise FPCoreParserError(f'invalid symbol {s!s}')

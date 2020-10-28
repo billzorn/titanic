@@ -150,34 +150,34 @@ comp   : e=arith (ops+=(LT | LE | GT | GE | EQ | NE) es+=arith)*;
 arith  : e=term (ops+=(PLUS | MINUS) es+=term)* ;
 term   : e=factor (ops+=(TIMES | DIVIDE | MOD) es+=factor)* ;
 factor : op=(PLUS | MINUS) f=factor | e=power ;
-power  : e=atom (POWER f=factor)? ;
+power  : e=atom (op=POWER f=factor)? ;
 
 atom 
     : x=symbolic
     | n=number
-    | OPEN_PAREN (e=expr)? CLOSE_PAREN
-    | OPEN_BRACK (lst=expr?) CLOSE_BRACK
+    | parens=OPEN_PAREN (e=expr)? CLOSE_PAREN
+    | bracks=OPEN_BRACK (lst=expr)? CLOSE_BRACK
     | call=atom OPEN_PAREN (args=expr)? CLOSE_PAREN
     | deref=atom OPEN_BRACK (args=expr)? CLOSE_BRACK
-    | DIG OPEN_PAREN (digits=expr)? CLOSE_PAREN
-    | ABORT
+    | dig=DIG OPEN_PAREN (digits=expr)? CLOSE_PAREN
+    | abort=ABORT
     ;
 
 prop : x=symbolic d=datum ;
 
-simple_stmt : expr NEWLINE ;
+simple_stmt : e=expr NEWLINE ;
 
 binding
     : x=symbolic asgn=IS   body=suite
     | x=symbolic asgn=GETS body=suite
     ;
 
-block : NEWLINE INDENT binding+ DEDENT ;
+block : NEWLINE INDENT bindings+=binding+ DEDENT ;
 
 if_stmt : (((IF test=expr COLON body=suite)
            |(IF COLON testsuite=suite THEN COLON bodysuite=suite))
-           ((ELIF tests+=expr COLON bodies+=suite)
-           |(ELIF COLON testsuites+=suite THEN COLON bodysuites+=suite))*
+           ((eliftypes+=ELIF tests+=expr COLON bodies+=suite)
+           |(ELIF COLON testsuites+=suite eliftypes+=THEN COLON bodysuites+=suite))*
            ELSE COLON else_body=suite)
         ;
 
@@ -233,14 +233,12 @@ data_suite
 
 annotation : x=symbolic COLON data=data_suite ;
 
-data_block : NEWLINE INDENT (props+=annotation)+ DEDENT ;
-
 suite
     : e=simple_stmt
     | NEWLINE INDENT (props+=annotation)* body=statement DEDENT
     ;
 
-symbolic : SYMBOL | SYM OPEN_PAREN (s=STRING) CLOSE_PAREN ;
+symbolic : x=SYMBOL | s_str=S_STRING ;
 
 symbolic_data
     : x=FPCORE
@@ -256,11 +254,6 @@ symbolic_data
     | x=DO
     | x=IN
     | x=OF
-    | x=IS
-    | x=GETS
-    | x=COLON
-    | x=COMMA
-    | x=BANG
     | x=POWER
     | x=PLUS
     | x=MINUS
@@ -273,11 +266,16 @@ symbolic_data
     | x=GE
     | x=EQ
     | x=NE
+    | x=IS
+    | x=GETS
+    | x=COLON
+    | x=COMMA
+    | x=BANG
     | x=ABORT
     | x=SYM
     | x=DIG
     | x=SYMBOL
-    | x=S_SYMBOL
+    | s_str=S_STRING
     ;
 
 open_  : OPEN_PAREN | OPEN_BRACK ;
@@ -307,24 +305,24 @@ DO         : 'do' ;
 IN         : 'in' ;
 OF         : 'of' ;
 
-IS         : '=' ;
-GETS       : ':=' ;
-COLON      : ':' ;
-COMMA      : ',' ;
-BANG       : '!' ;
-
 POWER      : '**' ;
 PLUS       : '+' ;
 MINUS      : '-' ;
 TIMES      : '*' ;
 DIVIDE     : '/' ;
 MOD        : '%' ;
-LT         : '<' ;
 LE         : '<=' ;
-GT         : '>' ;
+LT         : '<' ;
 GE         : '>=' ;
+GT         : '>' ;
 EQ         : '==' ;
 NE         : '!=' ;
+
+IS         : '=' ;
+GETS       : ':=' ;
+COLON      : ':' ;
+COMMA      : ',' ;
+BANG       : '!' ;
 
 ABORT      : 'abort' ;
 SYM        : 'symbol' ;
@@ -334,13 +332,9 @@ DECNUM   : [+-]? ([0-9]+ ('.' [0-9]+)? | '.' [0-9]+) ([eE] [-+]? [0-9]+)? ;
 HEXNUM   : [+-]? '0' [xX] ([0-9a-fA-F]+ ('.' [0-9a-fA-F]+)? | '.' [0-9a-fA-F]+) ([pP] [-+]? [0-9]+)? ;
 RATIONAL : [+-]? [0-9]+ '/' [0-9]* [1-9] [0-9]* ;
 
-// For the infix grammar, we want to trim this down a bit. Must go first for precedence.
-SYMBOL : [a-zA-Z~@$^&_.?] [a-zA-Z0-9~@$^&_.?]* ;
-
-// From the original S-expression grammar.
-S_SYMBOL : [a-zA-Z~!@$%^&*_\-+=<>.?/:] [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]* ;
-
-STRING : '"' ([\u0008-\u000d\u0020-\u0021\u0023-\u005b\u005d-\u007e] | '\\' [bfnrtv\u0022\u005c])* '"' ;
+SYMBOL : SIMPLE_SYMBOL_START SIMPLE_SYMBOL_CHAR* ;
+S_STRING : 's"' STRING_CHAR* '"' ;
+STRING : '"' STRING_CHAR* '"' ;
 
 NEWLINE
  : ( {self.atStartOfInput()}?   SPACES
@@ -406,4 +400,26 @@ fragment COMMENT
 
 fragment LINE_JOINING
  : '\\' SPACES? ( '\r'? '\n' | '\r' | '\f' )
+ ;
+
+fragment SIMPLE_SYMBOL_START
+ : [a-zA-Z~@$^&_.?]
+ ;
+
+fragment SIMPLE_SYMBOL_CHAR
+ : [a-zA-Z0-9~@$^&_.?]
+ ;
+
+// // legacy symbols from the s-expression FPCore grammar
+// fragment SYMBOL_START
+//  : [a-zA-Z~!@$%^&*_\-+=<>.?/:]
+//  ;
+
+// fragment SYMBOL_CHAR
+//  : [a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]
+//  ;
+
+fragment STRING_CHAR
+ : [\u0008-\u000d\u0020-\u0021\u0023-\u005b\u005d-\u007e]
+ | '\\' [bfnrtv\u0022\u005c]
  ;

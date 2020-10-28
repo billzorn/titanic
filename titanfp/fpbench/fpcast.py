@@ -108,10 +108,25 @@ class EmptyExpr(Expr):
         return []
 
     def replace_subexprs(self, exprs):
-        return EmptyExpr()
+        return type(self)()
 
     def __str__(self):
         return '...'
+
+    def __repr__(self):
+        return type(self).__name__ + '()'
+
+class Abort(Expr):
+    name: str = 'Abort'
+
+    def subexprs(self):
+        return []
+
+    def replace_subexprs(self, exprs):
+        return type(self)()
+
+    def __str__(self):
+        return 'Abort'
 
     def __repr__(self):
         return type(self).__name__ + '()'
