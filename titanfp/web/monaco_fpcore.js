@@ -12,6 +12,7 @@ export const fpcore = {
         'FPCore', 'if', 'let', 'let*',
         'tensor', 'tensor*', 'for', 'for*', 'while', 'while*',
         'digits',
+        'then', 'elif', 'with', 'do', 'in', 'of',
     ],
 
     operators: [
@@ -19,6 +20,8 @@ export const fpcore = {
         'dim', 'size', 'ref',
         // mathematical
         '+', '-', '*', '/', 'fabs',
+        '%', '**',
+        
         'fma', 'exp', 'exp2', 'expm1', 'log',
         'log10', 'log2', 'log1p', 'pow', 'sqrt',
         'cbrt', 'hypot', 'sin', 'cos', 'tan',

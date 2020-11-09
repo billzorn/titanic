@@ -13,6 +13,9 @@ class RoundingError(TitanicError):
 class PrecisionError(RoundingError):
     """Insufficient precision to perform rounding."""
 
+class TitanicAbort(Exception):
+    """Interpreter abort."""
+
 
 # some common data structures
 

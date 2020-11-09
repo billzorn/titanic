@@ -1,6 +1,7 @@
 """A reusable AST for manipulating or executing FPCores in python."""
 
 import typing
+#from . import fpcommon
 
 
 def sexp_to_string(e):
@@ -56,6 +57,9 @@ def update_props(old_props, new_props):
 class Expr(object):
     name: str = 'Expr'
 
+    def fpy(self, indent=None):
+        return str(self)
+
     def subexprs(self):
         raise NotImplementedError()
 
@@ -101,6 +105,7 @@ class Expr(object):
         exprs = [[e.expand_tensor(ctx) for e in es] for es in self.subexprs()]
         return self.replace_subexprs(exprs)
 
+
 class EmptyExpr(Expr):
     name: str = 'EmptyExpr'
 
@@ -145,6 +150,12 @@ class Data(Expr):
 
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.value) + ')'
+
+    def fpy(self, indent=None):
+        if isinstance(e, list) or isinstance(e, tuple):
+            return ' '.join(child.fpy(indent=indent) for child in e)
+        else:
+            return e.fpy(indent=indent)
 
     def __eq__(self, other):
         try:
@@ -245,6 +256,12 @@ class Var(ValueExpr):
     def __hash__(self):
         return hash(self.value)
 
+    def fpy(self, indent=None):
+        if fpcommon.is_simple_symbol(self.value):
+            return str(self)
+        else:
+            return 's"' + str(self) + '"'
+
 class Val(ValueExpr):
     name: str = 'Val'
 
@@ -312,6 +329,9 @@ class Digits(Val):
     def __repr__(self):
         return type(self).__name__ + '(' + repr(self.m) + ', ' + repr(self.e) + ', ' + repr(self.b) + ')'
 
+    def fpy(self, indent=None):
+        return f'digits({self.m!s}, {self.e!s}, {self.b!s})'
+
     def replace_subexprs(self, exprs):
         return type(self)(self.m, self.e, self.b)
 
@@ -326,6 +346,9 @@ class String(ValueExpr):
 
     def __hash__(self):
         return hash(self.value)
+
+    def __str__(self):
+        return '"' + self.value + '"'
 
 
 # rounding contexts
@@ -934,4 +957,3 @@ class FPCore(object):
                       name=self.name,
                       pre=self.pre.expand_tensor({}) if self.pre else None,
                       spec=self.spec.expand_tensor({}) if self.spec else None)
-                      

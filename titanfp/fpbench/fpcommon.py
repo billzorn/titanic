@@ -46,6 +46,8 @@ reserved_constructs = {
     'tensor' : None,
     'tensor*' : None,
 
+    'abort' : ast.Abort,
+    
     # arrays
     'array' : ast.Array,
 
@@ -183,3 +185,8 @@ _sym_re = re.compile(r'[a-zA-Z~!@$%^&*_\-+=<>.?/:][a-zA-Z0-9~!@$%^&*_\-+=<>.?/:]
 def sanitize_symbol(s):
     if not _sym_re.fullmatch(s):
         raise FPCoreParserError(f'invalid symbol {s!s}')
+
+_sym_re_simplified = re.compile(r'[a-zA-Z~@$^&_.?][a-zA-Z0-9~@$^&_.?]*')
+
+def is_simple_symbol(s):
+    return bool(_sym_re_simplified.fullmatch(s))

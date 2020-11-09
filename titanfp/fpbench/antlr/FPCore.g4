@@ -37,6 +37,7 @@ number
 expr
     : x=SYMBOL # ExprSym
     | n=number # ExprNum
+    | ABORT # ExprAbort
     | OPEN DIGITS m=DECNUM e=DECNUM b=DECNUM CLOSE # ExprDigits
     | OPEN ANNOTATION (props+=prop)* body=expr CLOSE # ExprCtx
     | OPEN IF cond=expr then_body=expr else_body=expr CLOSE # ExprIf
@@ -71,6 +72,7 @@ datum
 // in some cases (like data) we want to permit both.
 symbolic
     : x=FPCORE
+    | x=ABORT
     | x=DIGITS
     | x=ANNOTATION
     | x=IF
@@ -95,6 +97,7 @@ CLOSE : ')' | ']' ;
 // All of these constructs need to be declared explicitly, to control the precedence
 // in lexer rules.
 FPCORE     : 'FPCore' ;
+ABORT      : 'abort' ;
 DIGITS     : 'digits' ;
 ANNOTATION : '!' ;
 IF         : 'if' ;

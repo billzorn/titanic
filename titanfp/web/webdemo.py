@@ -15,8 +15,10 @@ import numpy as np
 # from .fserver import AsyncTCPServer, AsyncHTTPRequestHandler
 from . import fserver
 
+from ..titanic.utils import *
+
 from ..fpbench import fpcparser, fpyparser, fpcast as ast
-from ..titanic import digital, ndarray
+from ..titanic import utils, digital, ndarray
 from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
 #from ..arithmetic import softfloat, softposit
@@ -321,7 +323,7 @@ def run_eval(data):
 
             if state.enable_analysis:
                 #backend_interpreter.max_evals = 1000000
-                als, bc_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis()
+                als, bc_als, r_als = analysis.DefaultAnalysis(), analysis.BitcostAnalysis(), analysis.RangeAnalysis()
                 backend_interpreter.analyses = [als, bc_als]
             else:
                 pass
@@ -346,6 +348,8 @@ def run_eval(data):
             raise WebtoolError('unbound variable {}'.format(str(e)))
         except interpreter.EvaluatorError as e:
             raise WebtoolError(str(e))
+        except utils.TitanicAbort:
+            raise WebtoolError('interpreter aborted')
 
         result = {
             'success': 1,

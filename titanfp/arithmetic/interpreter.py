@@ -30,6 +30,9 @@ class Evaluator(object):
     def _eval_expr(self, e, ctx):
         raise EvaluatorUnimplementedError('expr {}: unimplemented'.format(str(e)))
 
+    def _eval_abort(self, e, ctx):
+        raise utils.TitanicAbort()
+
     def _eval_data(self, e, ctx):
         raise EvaluatorUnimplementedError('data {}: unimplemented'.format(str(e)))
 
@@ -61,6 +64,8 @@ class Evaluator(object):
         ast.Expr: '_eval_expr',
         # structured data, which usually will only occur in properties
         ast.Data: '_eval_data',
+        # interpreter exception
+        ast.Abort: '_eval_abort',
         # the parent value class represents interned data that should be returned exactly
         ast.ValueExpr: '_eval_value',
         # variables are their own thing
