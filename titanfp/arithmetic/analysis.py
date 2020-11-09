@@ -113,3 +113,34 @@ class BitcostAnalysis(object):
         s += '  {:d} bits read from bound variables\n'.format(self.bits_variable)
         s += '  {:d} bits read from arrays\n'.format(self.bits_referenced)
         return s
+
+
+class RangeAnalysis(object):
+    """FPCore analysis for dynamic range of values that come out of operations
+    """
+
+    def __init__(self):
+        self.node_map = {}
+        self.report_from = set()
+
+    def track(self, e, ctx, inputs, result):
+        eid = id(e)
+        if eid not in self.node_map:
+            self.node_map[eid] = RangeRecord(e)
+        self.node_map[eid].record(result)
+        if isinstance(e, ast.Ctx):
+            if 'report' in e.props and e.props['report'] == 'here':
+                self.report_from.add(eid)
+
+    def report(self):
+        return [(str(self.node_map[eid].e.depth_limit(3)), self.node_map[eid].exponents) for eid in self.report_from]
+
+class RangeRecord(object):
+    """Analysis record for a single node in the ast."""
+
+    def __init__(self, e):
+        self.e = e
+        self.exponents = []
+
+    def record(self, result):
+        self.exponents.append(result.e)
