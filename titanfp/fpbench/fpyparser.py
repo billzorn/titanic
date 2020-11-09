@@ -30,28 +30,46 @@ class Visitor(FPYVisitor):
         else:
             return ast.Var(name)
 
-    def _merge_bindings(self, *binding_groups, sequential=True):
-        first_names = None
-        bound_exprs = {}
-        for bindings in binding_groups:
-            names, es = zip(*bindings)
-            if first_names is None:
-                first_names = names
+    def _merge_bindings(self, init_bindings, update_bindings):
+        bindings = []
+        init_idx = 0
+        update_idx = 0
+        while init_idx < len(init_bindings) and update_idx < len(update_bindings):
+            i_name, i_expr = init_bindings[init_idx]
+            u_name, u_expr = update_bindings[update_idx]
+
+            if i_name == u_name:
+                bindings.append((i_name, i_expr, u_expr))
+                init_idx += 1
+                update_idx += 1
             else:
-                if sequential:
-                    if first_names != names:
-                        raise FPCoreParserError(f'binding names do not agree, or are not in the same order')
-                else: # not sequential
-                    if set(first_names) != set(names):
-                        raise FPCoreParserError(f'binding names do not agree')
+                # ??
+                raise FPCoreParserError(f'init and update binding blocks do not match')
 
-            for name, e in bindings:
-                if name in bound_exprs:
-                    bound_exprs[name].append(e)
-                else:
-                    bound_exprs[name] = [e]
+        return bindings
 
-        return [(name, *bound_exprs[name]) for name in first_names]
+    # def _merge_bindings(self, *binding_groups):
+    #     first_names = None
+    #     bound_exprs = {}
+    #     for bindings in binding_groups:
+    #         names, es = zip(*bindings)
+    #         if first_names is None:
+    #             first_names = names
+    #         else:
+    #             if sequential:
+    #                 if first_names != names:
+    #                     raise FPCoreParserError(f'binding names do not agree, or are not in the same order')
+    #             else: # not sequential
+    #                 if set(first_names) != set(names):
+    #                     raise FPCoreParserError(f'binding names do not agree')
+
+    #         for name, e in bindings:
+    #             if name in bound_exprs:
+    #                 bound_exprs[name].append(e)
+    #             else:
+    #                 bound_exprs[name] = [e]
+
+    #     return [(name, *bound_exprs[name]) for name in first_names]
 
 
     def __init__(self):
@@ -267,20 +285,10 @@ class Visitor(FPYVisitor):
         return self._one_expr(ctx.e)
 
     def visitBinding(self, ctx):
-        return ctx.x.accept(self), ctx.asgn.text, self._suite_ctx(ctx.body)
+        return ctx.x.accept(self), self._suite_ctx(ctx.body)
 
     def visitBlock(self, ctx):
-        asgn_type = None
-        bindings = []
-        for name, asgn, e in (binding.accept(self) for binding in ctx.bindings):
-            if asgn_type is None:
-                asgn_type = asgn
-            else:
-                if asgn_type != asgn:
-                    raise FPCoreParserError(f'all bindings in block must be of same type')
-            bindings.append((name, e))
-        sequential = (asgn_type == ':=')
-        return sequential, bindings
+        return [binding.accept(self) for binding in ctx.bindings]
 
     def visitIf_stmt(self, ctx):
         if ctx.test is not None:
@@ -311,69 +319,35 @@ class Visitor(FPYVisitor):
         return rightmost
 
     def visitLet_stmt(self, ctx):
-        sequential, bindings = ctx.bindings.accept(self)
-        if sequential:
-            return ast.LetStar(bindings, self._suite_ctx(ctx.body))
-        else:
-            return ast.Let(bindings, self._suite_ctx(ctx.body))
+        bindings = ctx.bindings.accept(self)
+        return ast.LetStar(bindings, self._suite_ctx(ctx.body))
 
     def visitWhile_stmt(self, ctx):
         if ctx.test is not None:
             cond = self._one_expr(ctx.test)
         else: # ctx.testsuite is not None
             cond = self._suite_ctx(ctx.testsuite)
-        iseq, inits = ctx.inits.accept(self)
-        useq, updates = ctx.updates.accept(self)
-
-        print(repr(cond))
-
-        # this is direct transcription
-        # we should do some analysis to allow syntactic sugar with missing variables etc.
-
-        if not (iseq == useq):
-            raise FPCoreParserError(f'while inits and updates must have same type of bindings')
-
-        if iseq:
-            return ast.WhileStar(cond,
-                                 self._merge_bindings(inits, updates, sequential=iseq),
-                                 self._suite_ctx(ctx.body))
-        else:
-            return ast.While(cond,
-                             self._merge_bindings(inits, updates, sequential=iseq),
+        inits = ctx.inits.accept(self)
+        updates = ctx.updates.accept(self)
+        return ast.WhileStar(cond,
+                             self._merge_bindings(inits, updates),
                              self._suite_ctx(ctx.body))
 
     def visitFor_stmt(self, ctx):
-        dseq, dims = ctx.dims.accept(self) # note dseq is unused
-        iseq, inits = ctx.inits.accept(self)
-        useq, updates = ctx.updates.accept(self)
-        if not (iseq == useq):
-            raise FPCoreParserError(f'for inits and updates must have same type of bindings')
-
-        if iseq:
-            return ast.ForStar(dims,
-                               self._merge_bindings(inits, updates, sequential=iseq),
-                               self._suite_ctx(ctx.body))
-        else:
-            return ast.For(dims,
-                           self._merge_bindings(inits, updates, sequential=iseq),
+        dims = ctx.dims.accept(self)
+        inits = ctx.inits.accept(self)
+        updates = ctx.updates.accept(self)
+        return ast.ForStar(dims,
+                           self._merge_bindings(inits, updates),
                            self._suite_ctx(ctx.body))
 
     def visitTensor_stmt(self, ctx):
-        dseq, dims = ctx.dims.accept(self)
+        dims = ctx.dims.accept(self)
         if ctx.inits is not None:
-            if not dseq:
-                raise FPCoreParserError(f'can only have loop updates on a tensor* with sequential bindings')
-            iseq, inits = ctx.inits.accept(self)
-            useq, updates = ctx.updates.accept(self)
-            if not (iseq and useq):
-                raise FPCoreParserError(f'all bindings must be sequential for tensor*')
-        else:
-            inits = []
-            updates = []
-
-        if dseq:
+            inits = ctx.inits.accept(self)
+            updates = ctx.updates.accept(self)
             return ast.TensorStar(dims,
-                                  self._merge_bindings(inits, updates, sequential=dseq),
+                                  self._merge_bindings(inits, updates),
                                   self._suite_ctx(ctx.body))
         else:
             return ast.Tensor(dims,
@@ -509,4 +483,54 @@ example = """FPCore foo(x, y, z[2,2]):
 
 example = """FPCore (x, y):
   fma(x, y, x)
+"""
+
+
+
+example = """FPCore fastblur_mask_3x3(img[rows, cols, channels], mask[3,3]):
+  let:
+    ymax = rows - 1 ! precision integer ! s"titanic-analysis" skip
+    xmax = cols - 1 ! precision integer ! s"titanic-analysis" skip
+  in:
+    tensor:
+      x = rows
+      y = cols
+    of:
+      for:
+        my := 3 ! precision integer
+        mx := 3 ! precision integer
+      with:
+        ystar := 0
+        xstar := 0
+        in_bounds := FALSE
+        mw := 0
+        w :=
+          tensor:
+            c = channels
+          of:
+            0
+      do:
+        ystar := y + my - 1 ! precision integer ! s"titanic-analysis" skip
+        xstar := x + mx - 1 ! precision integer ! s"titanic-analysis" skip
+        in_bounds := and(0 <= ystar <= ymax, 0 <= xstar <= xmax)
+        mw :=
+          if in_bounds:
+            mw + mask[my, mx] ! precision (float 5 9) ! round nearestEven
+          else:
+            mw
+        w :=
+          if in_bounds:
+            tensor:
+              c = channels
+            of:
+              (w[c] + (mask[my, mx] * img[ystar, xstar, c]
+                       ! precision (float 5 8) ! round nearestEven)
+               ! precision (float 5 9) ! round nearestEven)
+          else:
+            w
+      in:
+        tensor:
+          c = channels
+        of:
+          w[c] / mw
 """

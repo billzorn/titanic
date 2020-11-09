@@ -168,8 +168,7 @@ prop : x=symbolic d=datum ;
 simple_stmt : e=expr NEWLINE ;
 
 binding
-    : x=symbolic asgn=IS   body=suite
-    | x=symbolic asgn=GETS body=suite
+    : x=symbolic IS body=suite
     ;
 
 block : NEWLINE INDENT bindings+=binding+ DEDENT ;
@@ -267,7 +266,6 @@ symbolic_data
     | x=EQ
     | x=NE
     | x=IS
-    | x=GETS
     | x=COLON
     | x=COMMA
     | x=BANG
@@ -319,7 +317,6 @@ EQ         : '==' ;
 NE         : '!=' ;
 
 IS         : '=' ;
-GETS       : ':=' ;
 COLON      : ':' ;
 COMMA      : ',' ;
 BANG       : '!' ;
