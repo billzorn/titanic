@@ -346,7 +346,8 @@ class Visitor(FPYVisitor):
         if ctx.inits is not None:
             inits = ctx.inits.accept(self)
             updates = ctx.updates.accept(self)
-            return ast.TensorStar(dims,
+            return ast.TensorStar('',
+                                  dims,
                                   self._merge_bindings(inits, updates),
                                   self._suite_ctx(ctx.body))
         else:
@@ -533,4 +534,27 @@ example = """FPCore fastblur_mask_3x3(img[rows, cols, channels], mask[3,3]):
           c = channels
         of:
           w[c] / mw
+"""
+
+example = """FPCore gemm(m1[N1], m2[N2], rows, cols):
+  tensor:
+    i = rows
+    j = cols
+  with:
+    i_col = 0
+  do:
+    i_col = i * cols
+  of:
+    for:
+      k = rows
+    with:
+      k_col = 0
+      mult = 0
+      accum = 0
+    do:
+      k_col = k * cols
+      mult = m1[i_col + k] * m2[k_col + j]
+      accum = accum + mult
+    in:
+      accum
 """
