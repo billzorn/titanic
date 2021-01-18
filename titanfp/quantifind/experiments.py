@@ -9,7 +9,7 @@ def run_baselines():
 
 def run_experiments():
     prefix = 'out/sweep'
-    ex_sqrt.sqrt_experiment(prefix, (2,8,2), (1,32,3), (3,5,2,24), 20, 100)
+    #ex_sqrt.sqrt_experiment(prefix, (2,8,2), (1,32,3), (3,5,2,24), 20, 100)
     #ex_dotprod.dotprod_experiment(prefix, (1,1024,5), (1,32), 1000, 1000, 10, 20)
     ex_rk.rk_experiment(prefix, (2,8,2), (3,24,3), (0,2,1), 20, 50)
     ex_img.img_experiment(prefix, (1,8,2), (3,16,3), (0,2,1), 10, 20)

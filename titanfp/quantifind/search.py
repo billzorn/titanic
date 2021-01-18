@@ -72,8 +72,6 @@ def center_ranges(input_ranges):
     for rng in input_ranges:
         new_range = list(rng)
         if len(new_range) == 0:
-            print('unable to center; skip')
-            print(input_ranges)
             return input_ranges
         if len(new_range) > maxlen:
             maxlen = len(new_range)
@@ -87,8 +85,6 @@ def center_ranges(input_ranges):
             if left_pad + right_pad < pad_count:
                 right_pad += 1
             output_ranges[i] = ([rng[0]] * left_pad) + rng + ([rng[-1]] * right_pad)
-
-    print(output_ranges)
 
     return output_ranges
 
@@ -271,10 +267,7 @@ def sweep_random_init(stage_fn, inits, neighbors, metrics,
                             skipped += 1
 
                 # work on all points together
-                print('before centering', cfg, 'len:', len(cfg))
-
                 for combined_cfg in zip(*center_ranges(f(x) for f, x in zip(neighbors, cfg))):
-                    print('cc', combined_cfg)
                     if combined_cfg not in all_cfgs:
                         async_results.append((combined_cfg, pool.apply_async(stage_fn, combined_cfg)))
                         all_cfgs.add(combined_cfg)
