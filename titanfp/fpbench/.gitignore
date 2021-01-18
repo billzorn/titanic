@@ -4,3 +4,6 @@ antlr/*.jar
 FPCoreLexer.py
 FPCoreParser.py
 FPCoreVisitor.py
+FPYLexer.py
+FPYParser.py
+FPYVisitor.py
