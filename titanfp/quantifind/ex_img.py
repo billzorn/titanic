@@ -142,6 +142,33 @@ def img_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     except Exception:
         traceback.print_exc()
 
+def img_random(prefix, ebit_slice, pbit_slice, es_slice, points):
+    img_metrics = (operator.lt, operator.gt)
+    init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
+    init_pbits, neighbor_pbits = integer_neighborhood(*pbit_slice)
+
+    # for posits
+    init_es, neighbor_es = integer_neighborhood(*es_slice)
+
+    img_inits = (init_ebits,) + (init_pbits,) * 4
+    img_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 4
+
+    settings.cfg(False)
+    try:
+        sweep = search.sweep_random(img_stage, img_inits, img_metrics, points)
+        jsonlog(prefix + '_random_blur.json', *sweep, settings='random Blur with floats')
+    except Exception:
+        traceback.print_exc()
+
+    img_inits = (init_es,) + (init_pbits,) * 4
+    img_neighbors = (neighbor_es,) + (neighbor_pbits,) * 4
+
+    settings.cfg(True)
+    try:
+        sweep = search.sweep_random(img_stage, img_inits, img_metrics, points)
+        jsonlog(prefix + '_random_blur_p.json', *sweep, settings='random Blur with posits')
+    except Exception:
+        traceback.print_exc()
 
 def img_baseline(prefix):
     img_bc_float = (float_basecase,) * 4

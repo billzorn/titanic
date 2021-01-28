@@ -151,7 +151,16 @@ def rk_ceiling():
     return ceil_pts
 
 
-def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
+def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='all'):
+    if eq_name == 'all':
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='lorenz')
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='rossler')
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='chua')
+        return
+    elif eq_name not in ['lorenz', 'rossler', 'chua']:
+        print(f'Unknown equation {eq_name}')
+        return
+
     rk_metrics = (operator.lt,) + (operator.gt,) * 4
 
     init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
@@ -163,51 +172,60 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries):
     rk_inits = (init_ebits,) + (init_pbits,) * 6
     rk_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 6
 
-    settings.cfg('lorenz', False)
+    settings.cfg(eq_name, False)
     try:
         sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_lorenz.json', *sweep, settings='Lorenz with floats')
-    except Exception:
-        traceback.print_exc()
-
-    settings.cfg('rossler', False)
-    try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_rossler.json', *sweep, settings='Rossler with floats')
-    except Exception:
-        traceback.print_exc()
-
-    settings.cfg('chua', False)
-    try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_chua.json', *sweep, settings='Chua with floats')
+        jsonlog(prefix + '_rk_' + eq_name + '.json', *sweep, settings=eq_name + ' with floats')
     except Exception:
         traceback.print_exc()
 
     rk_inits = (init_es,) + (init_pbits,) * 6
     rk_neighbors = (neighbor_es,) + (neighbor_pbits,) * 6
 
-    settings.cfg('lorenz', True)
+    settings.cfg(eq_name, True)
     try:
         sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_lorenz_p.json', *sweep, settings='Lorenz with posits')
+        jsonlog(prefix + '_rk_' + eq_name + '_p.json', *sweep, settings=eq_name + ' with posits')
+    except Exception:
+        traceback.print_exc()
+        
+def rk_random(prefix, ebit_slice, pbit_slice, es_slice, points, eq_name='all'):
+    if eq_name == 'all':
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='lorenz')
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='rossler')
+        rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='chua')
+        return
+    elif eq_name not in ['lorenz', 'rossler', 'chua']:
+        print(f'Unknown equation {eq_name}')
+        return
+
+    rk_metrics = (operator.lt,) + (operator.gt,) * 4
+
+    init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
+    init_pbits, neighbor_pbits = integer_neighborhood(*pbit_slice)
+
+    # for posits
+    init_es, neighbor_es = integer_neighborhood(*es_slice)
+
+    rk_inits = (init_ebits,) + (init_pbits,) * 6
+    rk_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 6
+
+    settings.cfg(eq_name, False)
+    try:
+        sweep = search.sweep_random(rk_stage, rk_inits, rk_metrics, points)
+        jsonlog(prefix + '_random_rk_' + eq_name + '.json', *sweep, settings=eq_name + ' random with floats')
     except Exception:
         traceback.print_exc()
 
-    settings.cfg('rossler', True)
+    rk_inits = (init_es,) + (init_pbits,) * 6
+    rk_neighbors = (neighbor_es,) + (neighbor_pbits,) * 6
+
+    settings.cfg(eq_name, True)
     try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_rossler_p.json', *sweep, settings='Rossler with posits')
+        sweep = search.sweep_random(rk_stage, rk_inits, rk_metrics, points)
+        jsonlog(prefix + '_random_rk_' + eq_name + '_p.json', *sweep, settings=eq_name + ' random with posits')
     except Exception:
         traceback.print_exc()
-
-    settings.cfg('chua', True)
-    try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_chua_p.json', *sweep, settings='Chua with posits')
-    except Exception:
-        traceback.print_exc()
-
 
 def rk_baseline(prefix):
     rk_bc_float = (float_basecase,) * 6

@@ -367,6 +367,59 @@ def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
 
     return [1], visited_points, frontier
 
+def sweep_random(stage_fn, inits, metrics, points, batch_size=1000, verbosity=3):
+    if verbosity >= 1:
+        print(f'Random sweep over {points!s} points')
+
+    explored_points = set()
+    visited_points = []
+    frontier = []
+
+    with multiprocessing.Pool() as pool:
+        batchnum = 1
+        while len(explored_points) < points:
+            if verbosity >= 1:
+                print(f'starting batch {batchnum!s}, explored {len(explored_points)!s} so far')
+                print_frontier(frontier)
+                print(flush=True)
+
+            async_results = []
+            skipped = 0
+
+            for i in range(batch_size):
+                cfg = tuple(f() for f in inits)
+                if cfg in explored_points:
+                    skipped += 1
+                else:
+                    async_results.append((cfg, pool.apply_async(stage_fn, cfg)))
+                    explored_points.add(cfg)
+                    if len(explored_points) >= points:
+                        break
+
+            if async_results:
+                if verbosity >= 2:
+                    print(f'dispatched {len(async_results)!s} evaluations for batch {batchnum!s}, {skipped!s} skipped')
+
+                for cfg, ares in async_results:
+                    res = ares.get()
+                    visited_points.append((cfg, res))
+                    updated, frontier = update_frontier(frontier, (cfg, res), metrics)
+
+                    if verbosity >= 3:
+                        print(f' -- {len(visited_points)!s} -- ran {cfg!r}, got {res!r}')
+                        if updated:
+                            print('The frontier changed:')
+                            print_frontier(frontier)
+            else:
+                if verbosity >= 1:
+                    print('could not find any new configurations, aborting')
+                    break
+
+    if verbosity >= 1:
+        print('Done. final frontier:')
+        print_frontier(frontier)
+                
+    return [1], visited_points, frontier
 
 def filter_metrics(points, metrics, allow_inf=False):
     new_points = []
