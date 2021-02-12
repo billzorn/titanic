@@ -70,16 +70,21 @@ class ExperimentData(object):
                 self.__dict__[result_name] = result_dict
 
 data = ExperimentData()
-# yes this is horrible
-convert_total_abits_to_avg(data.sweep_newton_full)
-convert_total_abits_to_avg(data.sweep_newton_random)
-convert_total_abits_to_avg(data.baseline_newton)
-convert_total_abits_to_avg(data.baseline_newton_fenceposts)
-# do it for Babylonian too
-convert_total_abits_to_avg(data.sweep_babylonian_full)
-convert_total_abits_to_avg(data.sweep_babylonian_random)
-convert_total_abits_to_avg(data.baseline_babylonian)
-convert_total_abits_to_avg(data.baseline_babylonian_fenceposts)
+# # yes this is horrible
+# convert_total_abits_to_avg(data.sweep_newton_full)
+# convert_total_abits_to_avg(data.sweep_newton_random)
+# convert_total_abits_to_avg(data.baseline_newton)
+# convert_total_abits_to_avg(data.baseline_newton_fenceposts)
+# # do it for Babylonian too
+# convert_total_abits_to_avg(data.sweep_babylonian_full)
+# convert_total_abits_to_avg(data.sweep_babylonian_random)
+# convert_total_abits_to_avg(data.baseline_babylonian)
+# convert_total_abits_to_avg(data.baseline_babylonian_fenceposts)
+
+def set_plot_settings(ax):
+    ax.title.set_fontsize(16)
+    ax.xaxis.label.set_fontsize(15)
+    ax.yaxis.label.set_fontsize(15)
 
 
 def plot_density(fname, sources, metrics, plot_settings = [],
@@ -127,9 +132,14 @@ def plot_density(fname, sources, metrics, plot_settings = [],
             else:
                 zidx = 100 - plot_count
 
+            if 's' in opts:
+                label = 'floats, '
+            else:
+                label = 'posits, '
+                
             x, y_size, y_final = zip(*plot_points)
-            ax.plot(x, y_size, opts, fillstyle='none', zorder=zidx)
-            ax.plot(x, y_final, opts, zorder=zidx)
+            ax.plot(x, y_size, opts, fillstyle='none', zorder=zidx, label=label + 'current frontier size')
+            ax.plot(x, y_final, opts, zorder=zidx, label=label + 'points from final frontier')
 
             if gen_bounds:
                 lw = 0.25
@@ -140,7 +150,7 @@ def plot_density(fname, sources, metrics, plot_settings = [],
 
                 opts_color, opts_marker, opts_line = split_fmt_string(opts)
                 for bound in gen_bounds:
-                    ax.axvline(bound, color=opts_color, linestyle=opts_line, linewidth=lw, zorder=zidx-50)
+                    ax.axvline(bound, color=opts_color, linestyle=opts_line, linewidth=lw, zorder=zidx-50, label='_skip')
 
             print(f'  {len(plot_points)!s} points, {len(gen_bounds)!s} generations')
 
@@ -149,6 +159,9 @@ def plot_density(fname, sources, metrics, plot_settings = [],
             ax.set_title(title)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
+
+        set_plot_settings(ax)
+        ax.legend(loc='lower right')
 
     except Exception:
         traceback.print_exc()
@@ -314,6 +327,8 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
 
+        set_plot_settings(ax)
+
     except Exception:
         traceback.print_exc()
 
@@ -448,7 +463,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
         for pt, label in extra_pts:
             px, py = pt
             texts.append(plt.text(
-                px, py, label, zorder=101,
+                px, py, label, zorder=101, size=14, weight='bold',
             ))
 
         if texts:
@@ -462,6 +477,9 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
             ax.set_title(title)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
+
+        set_plot_settings(ax)
+        ax.legend(['floats', '_skip', 'posits', '_skip', 'floats baseline', '_skip', 'posits baseline', '_skip'], loc='lower right')
 
     except Exception:
         traceback.print_exc()
@@ -526,8 +544,8 @@ chua_davg_ceiling = 8.330294319415229
 
 # output location
 
-plot_dir = os.path.join(here, 'paper/figs')
-table_dir = os.path.join(here, 'paper/tables')
+plot_dir = os.path.join(here, 'paper/new/figs')
+table_dir = os.path.join(here, 'paper/new/tables')
 
 # Table labels
 
@@ -591,73 +609,73 @@ blur_pts_extra = [
     ]
 
 def all_plots(ghosts=False):
-    plot_frontier(os.path.join(plot_dir, 'sqrt_newton_infs'),
-                  [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
-                  [[new_sqrt_metrics_infs],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_infs),
-                  flip_axes = True, draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Newton's method", "bitcost", "infinities (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_newton_infs'),
+    #               [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
+    #               [[new_sqrt_metrics_infs],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_infs),
+    #               flip_axes = True, draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Newton's method", "bitcost", "infinities (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_newton_timeouts'),
-                  [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
-                  [[new_sqrt_metrics_timeouts],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_timeouts),
-                  flip_axes = True, draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Newton's method", "bitcost", "timeouts (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_newton_timeouts'),
+    #               [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
+    #               [[new_sqrt_metrics_timeouts],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_timeouts),
+    #               flip_axes = True, draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Newton's method", "bitcost", "timeouts (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_newton_avg'),
-                  [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
-                  [[new_sqrt_metrics_avg],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_avg),
-                  ref_lines=[sqrt_avg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Newton's method", "bitcost", "average bits of accuracy (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_newton_avg'),
+    #               [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
+    #               [[new_sqrt_metrics_avg],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts = label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_avg),
+    #               ref_lines=[sqrt_avg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Newton's method", "bitcost", "average bits of accuracy (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_newton_worst'),
-                  [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
-                  [[new_sqrt_metrics_worst],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts=label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_worst),
-                  ref_lines=[sqrt_worst_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Newton's method", "bitcost", "worst bits of accuracy (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_newton_worst'),
+    #               [data.sweep_newton_full, data.sweep_newton_random, data.baseline_newton],
+    #               [[new_sqrt_metrics_worst],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts=label_fenceposts(data.baseline_newton_fenceposts, new_sqrt_metrics_worst),
+    #               ref_lines=[sqrt_worst_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Newton's method", "bitcost", "worst bits of accuracy (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_infs'),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
-                  [[new_sqrt_metrics_infs],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts = label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_infs),
-                  flip_axes = True, draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Babylonian method", "bitcost", "infinities (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_infs'),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
+    #               [[new_sqrt_metrics_infs],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts = label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_infs),
+    #               flip_axes = True, draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Babylonian method", "bitcost", "infinities (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_timeouts'),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
-                  [[new_sqrt_metrics_timeouts],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts = label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_timeouts),
-                  flip_axes = True, draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Babylonian method", "bitcost", "timeouts (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_timeouts'),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
+    #               [[new_sqrt_metrics_timeouts],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts = label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_timeouts),
+    #               flip_axes = True, draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Babylonian method", "bitcost", "timeouts (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_avg'),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
-                  [[new_sqrt_metrics_avg],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts=label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_avg),
-                  ref_lines=[sqrt_avg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Babylonian method", "bitcost", "average bits of accuracy (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_avg'),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
+    #               [[new_sqrt_metrics_avg],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts=label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_avg),
+    #               ref_lines=[sqrt_avg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Babylonian method", "bitcost", "average bits of accuracy (out of 417 test cases)"])
 
-    plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_worst'),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
-                  [[new_sqrt_metrics_worst],] * 3,
-                  plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
-                  ref_pts=label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_worst),
-                  ref_lines=[sqrt_worst_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Square root with Babylonian method", "bitcost", "worst bits of accuracy (out of 417 test cases)"])
+    # plot_frontier(os.path.join(plot_dir, 'sqrt_babylonian_worst'),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random, data.baseline_babylonian],
+    #               [[new_sqrt_metrics_worst],] * 3,
+    #               plot_settings = [['C0o-'], ['C1+:'], ['ks--']],
+    #               ref_pts=label_fenceposts(data.baseline_babylonian_fenceposts, new_sqrt_metrics_worst),
+    #               ref_lines=[sqrt_worst_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Square root with Babylonian method", "bitcost", "worst bits of accuracy (out of 417 test cases)"])
 
     # # return quire_lo + quire_hi, infs, worst_ulps, avg_ulps, worst_abits, avg_abits
     # dotprod_avg_metrics = (operator.lt, None, None, None, None, operator.gt)
@@ -684,52 +702,52 @@ def all_plots(ghosts=False):
                   draw_ghosts = ghosts,
                   axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
 
-    plot_frontier(os.path.join(plot_dir, 'rk_lorenz_d'),
-                  [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
-                  [[rk_davg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_davg_metrics),
-                  ref_lines=[lorenz_davg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final slope"])
+    # plot_frontier(os.path.join(plot_dir, 'rk_lorenz_d'),
+    #               [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p, data.baseline_rk_lorenz, data.baseline_rk_lorenz_p],
+    #               [[rk_davg_metrics],] * 4,
+    #               plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #               ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_davg_metrics),
+    #               ref_lines=[lorenz_davg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final slope"])
 
-    plot_frontier(os.path.join(plot_dir, 'rk_rossler'),
-                  [data.sweep_rk_rossler, data.sweep_rk_rossler_p, data.baseline_rk_rossler, data.baseline_rk_rossler_p],
-                  [[rk_avg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  extra_pts=rossler_pts_extra,
-                  ref_pts=label_fenceposts(data.baseline_rk_rossler_fenceposts, rk_avg_metrics),
-                  ref_lines=[rossler_avg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Rossler attractor, RK4", "bitcost", "bits of accuracy, final position"])
+    # plot_frontier(os.path.join(plot_dir, 'rk_rossler'),
+    #               [data.sweep_rk_rossler, data.sweep_rk_rossler_p, data.baseline_rk_rossler, data.baseline_rk_rossler_p],
+    #               [[rk_avg_metrics],] * 4,
+    #               plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #               extra_pts=rossler_pts_extra,
+    #               ref_pts=label_fenceposts(data.baseline_rk_rossler_fenceposts, rk_avg_metrics),
+    #               ref_lines=[rossler_avg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Rossler attractor, RK4", "bitcost", "bits of accuracy, final position"])
 
-    plot_frontier(os.path.join(plot_dir, 'rk_rossler_d'),
-                  [data.sweep_rk_rossler, data.sweep_rk_rossler_p, data.baseline_rk_rossler, data.baseline_rk_rossler_p],
-                  [[rk_davg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  ref_pts=label_fenceposts(data.baseline_rk_rossler_fenceposts, rk_davg_metrics),
-                  ref_lines=[rossler_davg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Rossler attractor, RK4", "bitcost", "bits of accuracy, final slope"])
+    # plot_frontier(os.path.join(plot_dir, 'rk_rossler_d'),
+    #               [data.sweep_rk_rossler, data.sweep_rk_rossler_p, data.baseline_rk_rossler, data.baseline_rk_rossler_p],
+    #               [[rk_davg_metrics],] * 4,
+    #               plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #               ref_pts=label_fenceposts(data.baseline_rk_rossler_fenceposts, rk_davg_metrics),
+    #               ref_lines=[rossler_davg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Rossler attractor, RK4", "bitcost", "bits of accuracy, final slope"])
 
-    plot_frontier(os.path.join(plot_dir, 'rk_chua'),
-                  [data.sweep_rk_chua, data.sweep_rk_chua_p, data.baseline_rk_chua, data.baseline_rk_chua_p],
-                  [[rk_avg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  extra_pts=chua_pts_extra,
-                  ref_pts=label_fenceposts(data.baseline_rk_chua_fenceposts, rk_avg_metrics),
-                  ref_lines=[chua_avg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Chua attractor, RK4", "bitcost", "bits of accuracy, final position"])
+    # plot_frontier(os.path.join(plot_dir, 'rk_chua'),
+    #               [data.sweep_rk_chua, data.sweep_rk_chua_p, data.baseline_rk_chua, data.baseline_rk_chua_p],
+    #               [[rk_avg_metrics],] * 4,
+    #               plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #               extra_pts=chua_pts_extra,
+    #               ref_pts=label_fenceposts(data.baseline_rk_chua_fenceposts, rk_avg_metrics),
+    #               ref_lines=[chua_avg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Chua attractor, RK4", "bitcost", "bits of accuracy, final position"])
 
-    plot_frontier(os.path.join(plot_dir, 'rk_chua_d'),
-                  [data.sweep_rk_chua, data.sweep_rk_chua_p, data.baseline_rk_chua, data.baseline_rk_chua_p],
-                  [[rk_davg_metrics],] * 4,
-                  plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
-                  ref_pts=label_fenceposts(data.baseline_rk_chua_fenceposts, rk_davg_metrics),
-                  ref_lines=[chua_davg_ceiling],
-                  draw_ghosts = ghosts,
-                  axis_titles = ["Chua attractor, RK4", "bitcost", "bits of accuracy, final slope"])
+    # plot_frontier(os.path.join(plot_dir, 'rk_chua_d'),
+    #               [data.sweep_rk_chua, data.sweep_rk_chua_p, data.baseline_rk_chua, data.baseline_rk_chua_p],
+    #               [[rk_davg_metrics],] * 4,
+    #               plot_settings = [['C0s--'], ['C1^:'], ['ks--'], ['k^:']],
+    #               ref_pts=label_fenceposts(data.baseline_rk_chua_fenceposts, rk_davg_metrics),
+    #               ref_lines=[chua_davg_ceiling],
+    #               draw_ghosts = ghosts,
+    #               axis_titles = ["Chua attractor, RK4", "bitcost", "bits of accuracy, final slope"])
 
     plot_frontier(os.path.join(plot_dir, 'blur'),
                   [data.sweep_blur, data.sweep_blur_p, data.baseline_blur, data.baseline_blur_p],
@@ -742,17 +760,17 @@ def all_plots(ghosts=False):
                   axis_titles = ["3x3 mask blur", "bitcost", "structural similarity"])
 
 def density_plots():
-    plot_density(os.path.join(plot_dir, 'sqrt_newton_density'),
-                 [data.sweep_newton_full, data.sweep_newton_random],
-                 sqrt_metrics,
-                 ['C0o-', 'C1o-'],
-                 axis_titles = ["Square root with Newton's method", "configurations searched", "frontier size"])
+    # plot_density(os.path.join(plot_dir, 'sqrt_newton_density'),
+    #              [data.sweep_newton_full, data.sweep_newton_random],
+    #              sqrt_metrics,
+    #              ['C0o-', 'C1o-'],
+    #              axis_titles = ["Square root with Newton's method", "configurations searched", "frontier size"])
 
-    plot_density(os.path.join(plot_dir, 'sqrt_babylonian_density'),
-                 [data.sweep_babylonian_full, data.sweep_babylonian_random],
-                 sqrt_metrics,
-                 ['C0o-', 'C1o-'],
-                 axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier size"])
+    # plot_density(os.path.join(plot_dir, 'sqrt_babylonian_density'),
+    #              [data.sweep_babylonian_full, data.sweep_babylonian_random],
+    #              sqrt_metrics,
+    #              ['C0o-', 'C1o-'],
+    #              axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier size"])
 
     plot_density(os.path.join(plot_dir, 'rk_lorenz_density'),
                  [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
@@ -760,17 +778,17 @@ def density_plots():
                  ['C0s--', 'C1^:'],
                  axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier size"])
 
-    plot_density(os.path.join(plot_dir, 'rk_rossler_density'),
-                 [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
-                 rk_metrics,
-                 ['C0s--', 'C1^:'],
-                 axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier size"])
+    # plot_density(os.path.join(plot_dir, 'rk_rossler_density'),
+    #              [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
+    #              rk_metrics,
+    #              ['C0s--', 'C1^:'],
+    #              axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier size"])
 
-    plot_density(os.path.join(plot_dir, 'rk_chua_density'),
-                 [data.sweep_rk_chua, data.sweep_rk_chua_p],
-                 rk_metrics,
-                 ['C0s--', 'C1^:'],
-                 axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier size"])
+    # plot_density(os.path.join(plot_dir, 'rk_chua_density'),
+    #              [data.sweep_rk_chua, data.sweep_rk_chua_p],
+    #              rk_metrics,
+    #              ['C0s--', 'C1^:'],
+    #              axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier size"])
 
     plot_density(os.path.join(plot_dir, 'blur_density'),
                  [data.sweep_blur, data.sweep_blur_p],
@@ -788,33 +806,33 @@ def progress_plots(use_ceiling=False):
     else:
         suffix = '_progress'
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_newton_avg' + suffix),
-                  [data.sweep_newton_full, data.sweep_newton_random],
-                  new_sqrt_metrics_avg,
-                  ceiling = sqrt_avg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0o-', 'C1+:'],
-                  axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (avg)"])
+    # plot_progress(os.path.join(plot_dir, 'sqrt_newton_avg' + suffix),
+    #               [data.sweep_newton_full, data.sweep_newton_random],
+    #               new_sqrt_metrics_avg,
+    #               ceiling = sqrt_avg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0o-', 'C1+:'],
+    #               axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (avg)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_newton_worst' + suffix),
-                  [data.sweep_newton_full, data.sweep_newton_random],
-                  new_sqrt_metrics_worst,
-                  ceiling = sqrt_worst_ceiling if use_ceiling else None,
-                  plot_settings = ['C0o-', 'C1+:'],
-                  axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (worst)"])
+    # plot_progress(os.path.join(plot_dir, 'sqrt_newton_worst' + suffix),
+    #               [data.sweep_newton_full, data.sweep_newton_random],
+    #               new_sqrt_metrics_worst,
+    #               ceiling = sqrt_worst_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0o-', 'C1+:'],
+    #               axis_titles = ["Square root with Newton's method", "configurations searched", "frontier coverage (worst)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_avg' + suffix),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random],
-                  new_sqrt_metrics_avg,
-                  ceiling = sqrt_avg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0o-', 'C1+:'],
-                  axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (avg)"])
+    # plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_avg' + suffix),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random],
+    #               new_sqrt_metrics_avg,
+    #               ceiling = sqrt_avg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0o-', 'C1+:'],
+    #               axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (avg)"])
 
-    plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_worst' + suffix),
-                  [data.sweep_babylonian_full, data.sweep_babylonian_random],
-                  new_sqrt_metrics_worst,
-                  ceiling = sqrt_worst_ceiling if use_ceiling else None,
-                  plot_settings = ['C0o-', 'C1+:'],
-                  axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (worst)"])
+    # plot_progress(os.path.join(plot_dir, 'sqrt_babylonian_worst' + suffix),
+    #               [data.sweep_babylonian_full, data.sweep_babylonian_random],
+    #               new_sqrt_metrics_worst,
+    #               ceiling = sqrt_worst_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0o-', 'C1+:'],
+    #               axis_titles = ["Square root with Babylonian method", "configurations searched", "frontier coverage (worst)"])
 
     plot_progress(os.path.join(plot_dir, 'rk_lorenz' + suffix),
                   [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
@@ -823,40 +841,40 @@ def progress_plots(use_ceiling=False):
                   plot_settings = ['C0s--', 'C1^:'],
                   axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_lorenz_d' + suffix),
-                  [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
-                  rk_davg_metrics,
-                  ceiling = lorenz_davg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0s--', 'C1^:'],
-                  axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (slope)"])
+    # plot_progress(os.path.join(plot_dir, 'rk_lorenz_d' + suffix),
+    #               [data.sweep_rk_lorenz, data.sweep_rk_lorenz_p],
+    #               rk_davg_metrics,
+    #               ceiling = lorenz_davg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0s--', 'C1^:'],
+    #               axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_rossler' + suffix),
-                  [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
-                  rk_avg_metrics,
-                  ceiling = rossler_avg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0s--', 'C1^:'],
-                  axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (position)"])
+    # plot_progress(os.path.join(plot_dir, 'rk_rossler' + suffix),
+    #               [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
+    #               rk_avg_metrics,
+    #               ceiling = rossler_avg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0s--', 'C1^:'],
+    #               axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_rossler_d' + suffix),
-                  [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
-                  rk_davg_metrics,
-                  ceiling = rossler_davg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0s--', 'C1^:'],
-                  axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (slope)"])
+    # plot_progress(os.path.join(plot_dir, 'rk_rossler_d' + suffix),
+    #               [data.sweep_rk_rossler, data.sweep_rk_rossler_p],
+    #               rk_davg_metrics,
+    #               ceiling = rossler_davg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0s--', 'C1^:'],
+    #               axis_titles = ["Rossler attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_chua' + suffix),
-                  [data.sweep_rk_chua, data.sweep_rk_chua_p],
-                  rk_avg_metrics,
-                  ceiling = chua_avg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0s--', 'C1^:'],
-                  axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (position)"])
+    # plot_progress(os.path.join(plot_dir, 'rk_chua' + suffix),
+    #               [data.sweep_rk_chua, data.sweep_rk_chua_p],
+    #               rk_avg_metrics,
+    #               ceiling = chua_avg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0s--', 'C1^:'],
+    #               axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (position)"])
 
-    plot_progress(os.path.join(plot_dir, 'rk_chua_d' + suffix),
-                  [data.sweep_rk_chua, data.sweep_rk_chua_p],
-                  rk_davg_metrics,
-                  ceiling = chua_davg_ceiling if use_ceiling else None,
-                  plot_settings = ['C0s--', 'C1^:'],
-                  axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (slope)"])
+    # plot_progress(os.path.join(plot_dir, 'rk_chua_d' + suffix),
+    #               [data.sweep_rk_chua, data.sweep_rk_chua_p],
+    #               rk_davg_metrics,
+    #               ceiling = chua_davg_ceiling if use_ceiling else None,
+    #               plot_settings = ['C0s--', 'C1^:'],
+    #               axis_titles = ["Chua attractor, RK4", "configurations searched", "frontier coverage (slope)"])
 
     plot_progress(os.path.join(plot_dir, 'blur' + suffix),
                   [data.sweep_blur, data.sweep_blur_p],
@@ -933,33 +951,33 @@ def dump_tex_table(fname, source, labels=None, filter_metrics=None, display_metr
 
 
 def tables():
-    dump_tex_table(os.path.join(table_dir, 'sqrt_newton_full'),
-                   data.sweep_newton_full,
-                   labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
-                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'sqrt_newton_full'),
+    #                data.sweep_newton_full,
+    #                labels=sqrt_labels,
+    #                filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
+    #                ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+    #                key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'sqrt_newton_random'),
-                   data.sweep_newton_random,
-                   labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
-                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'sqrt_newton_random'),
+    #                data.sweep_newton_random,
+    #                labels=sqrt_labels,
+    #                filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
+    #                ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+    #                key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_full'),
-                   data.sweep_babylonian_full,
-                   labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
-                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_full'),
+    #                data.sweep_babylonian_full,
+    #                labels=sqrt_labels,
+    #                filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
+    #                ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+    #                key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_random'),
-                   data.sweep_babylonian_random,
-                   labels=sqrt_labels,
-                   filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
-                   ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'sqrt_babylonian_random'),
+    #                data.sweep_babylonian_random,
+    #                labels=sqrt_labels,
+    #                filter_metrics=new_sqrt_metrics_avg, display_metrics=new_sqrt_metrics_both,
+    #                ceils=[None, sqrt_worst_ceiling, sqrt_avg_ceiling],
+    #                key=nd_getter(1, 0))
 
 
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz'),
@@ -969,19 +987,19 @@ def tables():
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'rk_rossler'),
-                   data.sweep_rk_rossler,
-                   labels=rk_labels,
-                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
-                   ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'rk_rossler'),
+    #                data.sweep_rk_rossler,
+    #                labels=rk_labels,
+    #                filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
+    #                ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
+    #                key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'rk_chua'),
-                   data.sweep_rk_chua,
-                   labels=rk_labels,
-                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
-                   ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'rk_chua'),
+    #                data.sweep_rk_chua,
+    #                labels=rk_labels,
+    #                filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
+    #                ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
+    #                key=nd_getter(1, 0))
 
     dump_tex_table(os.path.join(table_dir, 'rk_lorenz_p'),
                    data.sweep_rk_lorenz_p,
@@ -990,19 +1008,19 @@ def tables():
                    ceils=[None, lorenz_avg_ceiling, lorenz_davg_ceiling],
                    key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'rk_rossler_p'),
-                   data.sweep_rk_rossler_p,
-                   labels=rk_labels,
-                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
-                   ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'rk_rossler_p'),
+    #                data.sweep_rk_rossler_p,
+    #                labels=rk_labels,
+    #                filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
+    #                ceils=[None, rossler_avg_ceiling, rossler_davg_ceiling],
+    #                key=nd_getter(1, 0))
 
-    dump_tex_table(os.path.join(table_dir, 'rk_chua_p'),
-                   data.sweep_rk_chua_p,
-                   labels=rk_labels,
-                   filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
-                   ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
-                   key=nd_getter(1, 0))
+    # dump_tex_table(os.path.join(table_dir, 'rk_chua_p'),
+    #                data.sweep_rk_chua_p,
+    #                labels=rk_labels,
+    #                filter_metrics=rk_avg_metrics, display_metrics=rk_both_metrics,
+    #                ceils=[None, chua_avg_ceiling, chua_davg_ceiling],
+    #                key=nd_getter(1, 0))
 
 
     dump_tex_table(os.path.join(table_dir, 'blur'),
@@ -1038,6 +1056,7 @@ def all_figs():
     progress_plots(True)
 
     tables()
+    test()
 
 
 
@@ -1084,3 +1103,7 @@ def test():
                   axis_titles = ["3x3 mask blur", "bitcost", "structural similarity"],
                   xlim=(1000000,2000000),
                   ylim=(0.85,1.025))
+
+
+if __name__ == '__main__':
+    all_figs()
