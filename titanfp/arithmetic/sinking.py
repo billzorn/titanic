@@ -250,13 +250,3 @@ class Interpreter(interpreter.StandardInterpreter):
     def round_to_context(self, x, ctx):
         """Not actually used?"""
         return self.dtype._round_to_context(x, ctx=ctx, strict=False)
-
-
-
-# testing
-
-import math
-big = Sink(1e16)
-two = Sink(2)
-pi  = Sink(math.pi)
-pi =  Sink(pi, inexact=True)
