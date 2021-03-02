@@ -86,7 +86,7 @@ class Sink(digital.Digital):
         else:
             w = max((f.ctx.es for f in args if isinstance(f, cls)))
             p = max((f.ctx.p for f in args if isinstance(f, cls)))
-            return ieee754.ieee_ctx(w, p)
+            return ieee754.ieee_ctx(w, p+w)
 
     @classmethod
     def _round_to_context(cls, unrounded, max_p=None, min_n=None, inexact=None, ctx=None, strict=False):
@@ -250,3 +250,13 @@ class Interpreter(interpreter.StandardInterpreter):
     def round_to_context(self, x, ctx):
         """Not actually used?"""
         return self.dtype._round_to_context(x, ctx=ctx, strict=False)
+
+
+
+# testing
+
+import math
+big = Sink(1e16)
+two = Sink(2)
+pi  = Sink(math.pi)
+pi =  Sink(pi, inexact=True)
