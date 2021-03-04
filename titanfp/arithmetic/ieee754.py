@@ -148,14 +148,15 @@ class Interpreter(interpreter.StandardInterpreter):
 
 
 
-def digital_to_bits(x, ctx=ieee_ctx(11, 53)):
-    if ctx.p < 2 or ctx.w < 2:
-        raise ValueError('format with w={}, p={} cannot be represented with IEEE 754 bit pattern'.format(ctx.w, ctx.p))
+def digital_to_bits(x, ctx=None):
+    if ctx.p < 2 or ctx.es < 2:
+        raise ValueError('format with w={}, p={} cannot be represented with IEEE 754 bit pattern'.format(ctx.es, ctx.p))
 
-    try:
-        rounded = round_to_ieee_ctx(x, ctx)
-    except sinking.PrecisionError:
-        rounded = round_to_ieee_ctx(sinking.Sink(x, inexact=False), ctx)
+    if ctx is None:
+        rounded = x
+        ctx = x.ctx
+    else:
+        rounded = x._round_to_context(x, ctx=ctx, strict=False)
 
     pbits = ctx.p - 1
 
@@ -166,11 +167,11 @@ def digital_to_bits(x, ctx=ieee_ctx(11, 53)):
 
     if rounded.isnan:
         # canonical NaN
-        return (0 << (ctx.w + pbits)) | (bitmask(ctx.w) << pbits) | (1 << (pbits - 1))
+        return (0 << (ctx.es + pbits)) | (bitmask(ctx.es) << pbits) | (1 << (pbits - 1))
     elif rounded.isinf:
-        return (S << (ctx.w + pbits)) | (bitmask(ctx.w) << pbits) # | 0
+        return (S << (ctx.es + pbits)) | (bitmask(ctx.es) << pbits) # | 0
     elif rounded.is_zero():
-        return (S << (ctx.w + pbits)) # | (0 << pbits) | 0
+        return (S << (ctx.es + pbits)) # | (0 << pbits) | 0
 
     c = rounded.c
     cbits = rounded.p
@@ -197,14 +198,14 @@ def digital_to_bits(x, ctx=ieee_ctx(11, 53)):
         # overflow
         raise ValueError('exponent out of range: {}'.format(e))
 
-    return (S << (ctx.w + pbits)) | (E << pbits) | C
+    return (S << (ctx.es + pbits)) | (E << pbits) | C
 
 
-def bits_to_digital(i, ctx=ieee_ctx(11, 53)):
+def bits_to_digital(i, ctx=ieee_ctx(11, 64)):
     pbits = ctx.p - 1
 
-    S = (i >> (ctx.w + pbits)) & bitmask(1)
-    E = (i >> pbits) & bitmask(ctx.w)
+    S = (i >> (ctx.es + pbits)) & bitmask(1)
+    E = (i >> pbits) & bitmask(ctx.es)
     C = i & bitmask(pbits)
 
     negative = (S == 1)
@@ -221,32 +222,34 @@ def bits_to_digital(i, ctx=ieee_ctx(11, 53)):
     else:
         # nonreal
         if C == 0:
-            return sinking.Sink(negative=negative, c=0, exp=0, inf=True, rc=0)
+            return Float(ctx=ctx, negative=negative, c=0, exp=0, isinf=True)
         else:
-            return sinking.Sink(negative=False, c=0, exp=0, nan=True, rc=0)
+            return Float(ctx=ctx, negative=False, c=0, exp=0, isnan=True)
 
     # unfortunately any rc / exactness information is lost
-    return sinking.Sink(negative=negative, c=c, exp=exp, inexact=False, rc=0)
+    return Float(ctx=ctx, negative=negative, c=c, exp=exp, rounded=False, inexact=False)
 
 
-def show_bitpattern(x, ctx=ieee_ctx(11, 53)):
-    print(x)
-
+def show_bitpattern(x, ctx=None):
     if isinstance(x, int):
+        if ctx is None:
+            ctx = ieee_ctx(11, 64)
         i = x
-    elif isinstance(x, sinking.Sink):
+    elif isinstance(x, Float):
+        if ctx is None:
+            ctx = x.ctx
         i = digital_to_bits(x, ctx=ctx)
 
-    S = i >> (ctx.w + ctx.p - 1)
-    E = (i >> (ctx.p - 1)) & bitmask(ctx.w)
+    S = i >> (ctx.es + ctx.p - 1)
+    E = (i >> (ctx.p - 1)) & bitmask(ctx.es)
     C = i & bitmask(ctx.p - 1)
-    if E == 0 or E == bitmask(ctx.w):
+    if E == 0 or E == bitmask(ctx.es):
         hidden = 0
     else:
         hidden = 1
 
-    return ('float{:d}({:d},{:d}): {:01b} {:0'+str(ctx.w)+'b} ({:01b}) {:0'+str(ctx.p-1)+'b}').format(
-        ctx.w + ctx.p, ctx.w, ctx.p, S, E, hidden, C,
+    return ('float{:d}({:d},{:d}): {:01b} {:0'+str(ctx.es)+'b} ({:01b}) {:0'+str(ctx.p-1)+'b}').format(
+        ctx.es + ctx.p, ctx.es, ctx.p, S, E, hidden, C,
     )
 
 
