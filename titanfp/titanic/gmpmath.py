@@ -67,17 +67,17 @@ def digital_to_mpfr(x):
              else:
                  return gmp.mpfr('+inf')
 
-    m = x.m
+    c = x.c
     exp = x.exp
 
-    mbits = m.bit_length()
+    cbits = c.bit_length()
     ebits = exp.bit_length()
 
     # Apparently a multiplication between a small precision 0 and a huge
     # scale can raise a Type error indicating that gmp.mul() requires two
     # mpfr arguments - we can avoid that case entirely by special-casing
     # away the multiplication.
-    if mbits == 0:
+    if cbits == 0:
         with gmp.context(
             precision=2,
             emin=-1,
@@ -90,7 +90,10 @@ def digital_to_mpfr(x):
             trap_divzero=True,
             trap_expbound=True,
         ):
-            return gmp.mpfr(0)
+            if x.negative:
+                return -gmp.mpfr(0)
+            else:
+                return gmp.mpfr(0)
 
     else:
         with gmp.context(
@@ -108,9 +111,9 @@ def digital_to_mpfr(x):
             scale = gmp.exp2(exp)
 
         with gmp.context(
-                precision=max(2, mbits),
+                precision=max(2, cbits),
                 emin=min(-1, exp),
-                emax=max(1, mbits, exp + mbits),
+                emax=max(1, cbits, exp + cbits),
                 trap_underflow=True,
                 trap_overflow=True,
                 trap_inexact=True,
@@ -119,8 +122,11 @@ def digital_to_mpfr(x):
                 trap_divzero=True,
                 trap_expbound=True,
         ):
-            c = gmp.mpfr(m)
-            return gmp.mul(c, scale)
+            significand = gmp.mpfr(c)
+            if x.negative:
+                return -gmp.mul(significand, scale)
+            else:
+                return gmp.mul(significand, scale)
 
 
 def mpfr_to_digital(x):
