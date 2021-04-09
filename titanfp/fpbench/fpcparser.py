@@ -410,7 +410,7 @@ def compfile(fname):
     return cores
 
 def compfile1(fname):
-    with open(fmane, 'rt') as f:
+    with open(fname, 'rt') as f:
         cores = compile(f.read())
     if len(cores) > 0:
         return cores[0]
