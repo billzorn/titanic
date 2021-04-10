@@ -58,6 +58,7 @@
 
 import itertools
 import multiprocessing
+import random
 import math
 
 from .utils import describe_ctx
@@ -72,7 +73,8 @@ def center_ranges(input_ranges):
     for rng in input_ranges:
         new_range = list(rng)
         if len(new_range) == 0:
-            return input_ranges
+            raise ValueError('cannot center an empty range')
+            # return input_ranges
         if len(new_range) > maxlen:
             maxlen = len(new_range)
         output_ranges.append(new_range)
@@ -418,7 +420,7 @@ def sweep_random(stage_fn, inits, metrics, points, batch_size=1000, verbosity=3)
     if verbosity >= 1:
         print('Done. final frontier:')
         print_frontier(frontier)
-                
+
     return [1], visited_points, frontier
 
 def filter_metrics(points, metrics, allow_inf=False):
@@ -458,3 +460,337 @@ def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=Fals
         new_frontier = reconstructed_frontier
 
     return new_frontier
+
+
+
+
+
+
+
+
+
+
+
+
+
+# new general utilities
+
+# this bfs cartesian product is adapted from here:
+# https://stackoverflow.com/questions/42288203/generate-itertools-product-in-different-order
+#
+# filtering out of bounds points in the partitioning scheme,
+# instead of using a try/catch, improves performance by ~2x for "believable" cases...
+def breadth_first_partitions(n, k, max_position):
+    for c in itertools.combinations(range(n+k-1), k-1):
+        positions = []
+        safe = True
+        for a, b, limit in zip((-1,)+c, c+(n+k-1,), max_position):
+            position = b-a-1
+            if position > limit:
+                safe = False
+                break
+            else:
+                positions.append(position)
+        if safe:
+            yield positions
+
+def breadth_first_product(*sequences):
+    """Breadth First Search Cartesian Product"""
+    sequences = [list(seq) for seq in sequences]
+
+    max_position = [len(i)-1 for i in sequences]
+    for i in range(sum(max_position)):
+        for positions in breadth_first_partitions(i, len(sequences), max_position):
+            yield tuple(map(lambda seq, pos: seq[pos], sequences, positions))
+    yield tuple(map(lambda seq, pos: seq[pos], sequences, max_position))
+
+def reorder_for_bfs(seq, elt):
+    """Reorder a list to contain the closest things to some starting point first.
+
+    The starting point must be an element of the list.
+    If it is the first item, return the list as-is.
+    If it is the last item, reverse the list.
+    Otherwise, return the representative first, then the item after it,
+    then the one before it, then the next one after it, and so on.
+
+    Returns an iterator for the list (or reversed list, or the interleaved reordering)
+    """
+    seq = list(seq)
+    idx = seq.index(elt)
+    if idx == 0:
+        yield from iter(seq)
+    elif idx == len(seq) - 1:
+        yield from reversed(seq)
+    else:
+        yield seq[idx]
+        for i in range(1, len(seq)):
+            upper = idx + i
+            if upper < len(seq):
+                yield seq[upper]
+            lower = idx - i
+            if lower >= 0:
+                yield seq[lower]
+
+def nearby_points(cfg, neighbor_fns, combine=False, product=False, randomize=False):
+    """Generator function to yield "nearby" configurations to cfg.
+    Each neighbor generator in neighbor_fns will be called individually,
+    and a new configuration yielded that replaces that element of cfg
+    with each possible neighbor.
+
+    If combine is True, also yield "combined" neighbor configurations
+    that call all of the neighbor generators at once.
+
+    If product is True, instead yield the full cartesian product
+    of every possible neighbor point.
+    Neighbors are iterated in believable way,
+    so that consuming part of the generator makes sense
+    in order to reach for more nearby points to explore.
+    """
+    if product:
+        # pick an order to iterate
+        if randomize:
+            all_neighbors = [list(f(x)) for x, f in zip(cfg, neighbor_fns)]
+            for neighbors in all_neighbors:
+                random.shuffle(neighbors)
+        else:
+            all_neighbors = [reorder_for_bfs(f(x), x) for x, f in zip(cfg, neighbor_fns)]
+
+        # and go
+        yield from breadth_first_product(*all_neighbors)
+    else:
+        for i, (x, f) in enumerate(zip(cfg, neighbor_fns)):
+            for nearby_x in f(x):
+                if nearby_x != x:
+                    nearby_cfg = list(cfg)
+                    nearby_cfg[i] = nearby_x
+                    yield tuple(nearby_cfg)
+        if combine:
+            all_neighbors = [f(x) for x, f in zip(cfg, neighbor_fns)]
+            # to explain the opaque yield from call below:
+            # We start with a list of "nearby" parameters, for each variable in the cfg:
+            # [[1,2,3], [7], [5,6]]
+            # center_ranges pads this out so each list is the same length:
+            # [[1,2,3], [7,7,7], [5,6,6]]
+            # and then the zip(*) idiom re-slices this list of possible parameters into a list of configurations:
+            # [[1,7,5], [2,7,6], [3,7,6]]
+            # The zip generator yields new tuples, so we don't need to do anything else to package its outputs.
+            yield from zip(*center_ranges(all_neighbors))
+
+
+# new genetic algorithm stuff
+# this general idea was brought to me by Max Willsey
+
+# we have roughly 3 ways to generate configurations to explore:
+# 1. completely at random
+# 2. by "mutating" existing points:
+#   a. randomly (taking some subset of the values and changing them to random values)
+#   b. in a local way "exploring the neighborhood"
+#      as an aside, we believe that this local, exhaustive search is good from previous experiments
+# 3. by "crossover", where we trade values between existing configurations
+
+# some strategies to use these generators:
+
+# "exhaustive local search with restarts"
+# 1. when no progress is made (or to start) run a controlled size generation of purely random configurations
+# 2. while progress is being made, explore locally
+# 3. repeat for a quantity of random restarts
+# this is what we were doing before, but a little smarter in retrospect
+
+# "balanced mixed search"
+# for each generation, try to ensure an equal mix of the following kinds of points:
+# 1. random
+# 2. crossed
+# 3. points on the frontier
+# each should be forced up to some minimum, probably the number of threads for efficient parallelism,
+# possibly capped
+
+# local exploration could be substituted for 3 to limit it, or allowed to run without a limit
+# 3 isn't really controllable, but we can increase the minimum sizes to match it if the frontier grows
+
+# obviously we start with an initial gen of the minimum size of random points,
+# and the frontier develops from there.
+
+# halt the search when some number of generations (which at the end will be just random, and possibly crossed)
+# fail to make any improvements.
+
+
+class SearchSettings(object):
+    """Settings container for QuantiFind search."""
+
+    initial_gen_size = 1
+
+    restart_size_target = 0
+    restart_gen_target = 0
+
+    pop_random_weight = 0
+    pop_mutant_weight = 0
+    pop_local_weight = 1
+    pop_crossed_weight = 0
+
+    pop_random_target = None
+    pop_mutant_target = None
+    pop_local_target = None
+    pop_crossed_target = None
+
+    mutation_probability = 0.5
+    crossover_probability = 0.5
+
+    def __init__(self, profile=None,
+                 initial_gen_size=None,
+                 restart_size_target = None,
+                 restart_gen_target = None,
+                 pop_weights = None,
+                 pop_targets = None,
+                 mutation_probability = None,
+                 crossover_probability = None):
+        # set defaults based on profile
+        if profile is None or profile == 'local': # default
+            self.initial_gen_size = 1
+            self.restart_size_target = 0
+            self.restart_gen_target = 0
+            self.pop_random_weight = 0
+            self.pop_mutant_weight = 0
+            self.pop_local_weight = 1
+            self.pop_crossed_weight = 0
+            self.pop_random_target = None
+            self.pop_mutant_target = None
+            self.pop_local_target = None
+            self.pop_crossed_target = None
+            self.mutation_probability = 0.5
+            self.crossover_probability = 0.5
+        elif profile == 'balanced':
+            self.initial_gen_size = 1
+            self.restart_size_target = 0
+            self.restart_gen_target = 0
+            self.pop_random_weight = 1
+            self.pop_mutant_weight = 1
+            self.pop_local_weight = 3
+            self.pop_crossed_weight = 1
+            self.pop_random_target = None
+            self.pop_mutant_target = None
+            self.pop_local_target = None
+            self.pop_crossed_target = None
+            self.mutation_probability = 0.5
+            self.crossover_probability = 0.5
+        else:
+            raise ValueError(f'unknown search profile {repr(profile)}')
+
+        if initial_gen_size is not None:
+            self.initial_gen_size = initial_gen_size
+        if restart_size_target is not None:
+            self.restart_size_target = restart_size_target
+        if restart_gen_target is not None:
+            self.restart_gen_target = restart_gen_target
+        if pop_weights is not None:
+            self.pop_random_weight, self.pop_mutant_weight, self.pop_local_weight, self.pop_crossed_weight = pop_weights
+        if pop_targets is not None:
+            self.pop_random_target, self.pop_mutant_target, self.pop_local_target, self.pop_crossed_target = pop_targets
+        if mutation_probability is not None:
+            self.mutation_probability = mutation_probability
+        if crossover_probability is not None:
+            self.crossover_probability = crossover_probability
+
+    def __repr__(self):
+        cls = type(self)
+        fields = []
+        if self.initial_gen_size != cls.initial_gen_size:
+            fields.append(f'initial_gen_size={repr(self.initial_gen_size)}')
+        if self.restart_size_target != cls.restart_size_target:
+            fields.append(f'restart_size_target={repr(self.restart_size_target)}')
+        if self.restart_gen_target != cls.restart_gen_target:
+            fields.append(f'restart_gen_target={repr(self.restart_gen_target)}')
+        if (self.pop_random_weight != cls.pop_random_weight or
+            self.pop_mutant_weight != cls.pop_mutant_weight or
+            self.pop_local_weight != cls.pop_local_weight or
+            self.pop_crossed_weight != cls.pop_crossed_weight):
+            fields.append(f'pop_weights=({repr(self.pop_random_weight)},'
+                          f'{repr(self.pop_random_weight)},'
+                          f'{repr(self.pop_local_weight)},'
+                          f'{repr(self.pop_crossed_weight)})')
+        if (self.pop_random_target != cls.pop_random_target or
+            self.pop_mutant_target != cls.pop_mutant_target or
+            self.pop_local_target != cls.pop_local_target or
+            self.pop_crossed_target != cls.pop_crossed_target):
+            fields.append(f'pop_targets=({repr(self.pop_random_target)},'
+                          f'{repr(self.pop_random_target)},'
+                          f'{repr(self.pop_local_target)},'
+                          f'{repr(self.pop_crossed_target)})')            
+        if self.mutation_probability != cls.mutation_probability:
+            fields.append(f'mutation_probability={repr(self.mutation_probability)}')
+        if self.crossover_probability != cls.crossover_probability:
+            fields.append(f'crossover_probability={repr(self.crossover_probability)}')
+        sep = ', '
+        return f'{cls.__name__}({sep.join(fields)})'
+
+    def __str__(self):
+        cls = type(self)
+        fields = []
+        if self.initial_gen_size != cls.initial_gen_size:
+            fields.append(f'  initial_gen_size: {str(self.initial_gen_size)}')
+        if self.restart_size_target != cls.restart_size_target:
+            fields.append(f'  restart_size_target: {str(self.restart_size_target)}')
+        if self.restart_gen_target != cls.restart_gen_target:
+            fields.append(f'  restart_gen_target: {str(self.restart_gen_target)}')
+        if (self.pop_random_weight != cls.pop_random_weight or
+            self.pop_mutant_weight != cls.pop_mutant_weight or
+            self.pop_local_weight != cls.pop_local_weight or
+            self.pop_crossed_weight != cls.pop_crossed_weight):
+            fields.append(f'  pop_weights:\n'
+                          f'    random:  {str(self.pop_random_weight)}\n'
+                          f'    mutant:  {str(self.pop_random_weight)}\n'
+                          f'    local:   {str(self.pop_local_weight)}\n'
+                          f'    crossed: {str(self.pop_crossed_weight)}')
+        if (self.pop_random_target != cls.pop_random_target or
+            self.pop_mutant_target != cls.pop_mutant_target or
+            self.pop_local_target != cls.pop_local_target or
+            self.pop_crossed_target != cls.pop_crossed_target):
+            fields.append(f'  pop_targets:\n'
+                          f'    random:  {str(self.pop_random_target)}\n'
+                          f'    mutant:  {str(self.pop_random_target)}\n'
+                          f'    local:   {str(self.pop_local_target)}\n'
+                          f'    crossed: {str(self.pop_crossed_target)}')
+        if self.mutation_probability != cls.mutation_probability:
+            fields.append(f'  mutation_probability: {str(self.mutation_probability)}')
+        if self.crossover_probability != cls.crossover_probability:
+            fields.append(f'  crossover_probability: {str(self.crossover_probability)}')
+        sep = '\n'
+        return f'{cls.__name__}\n{sep.join(fields)}'
+            
+    @classmethod
+    def from_dict(cls, d):
+        new_settings = cls.__new__(cls)
+        new_settings.__dict__.update(d)
+        return new_settings
+        
+
+
+def sweep_genetic(stage_fn, inits, neighbors, metrics, verbosity=3):
+    if verbosity >= 1:
+        print(f'Multi-sweep: sweeping over {max_inits!s} random initializations, and up to {max_retries!s} ignored points')
+
+    improved, visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
+
+    visited_points = [(0, a, b) for a, b in visited_points]
+
+    attempts = 0
+    successes = 0
+    failures = 0
+    while successes < max_inits and failures < max_retries:
+        if verbosity >= 2:
+            print(f'\n == attempt {attempts+1!s}, {len(cfgs)!s} cfgs, {len(frontier)!s} elements in frontier ==\n')
+
+        improved, new_visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
+                                                                               previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
+
+        visited_points.extend((attempts, a, b) for a, b in new_visited_points)
+
+        if verbosity >= 2:
+            print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
+
+        attempts += 1
+        if improved:
+            successes += 1
+        else:
+            failures += 1
+
+    return gens, visited_points, frontier
