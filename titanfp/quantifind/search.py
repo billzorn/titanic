@@ -57,6 +57,7 @@
 
 
 import itertools
+import operator
 import multiprocessing
 import random
 import math
@@ -477,32 +478,81 @@ def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=Fals
 
 # this bfs cartesian product is adapted from here:
 # https://stackoverflow.com/questions/42288203/generate-itertools-product-in-different-order
-#
-# filtering out of bounds points in the partitioning scheme,
-# instead of using a try/catch, improves performance by ~2x for "believable" cases...
-def breadth_first_partitions(n, k, max_position):
-    for c in itertools.combinations(range(n+k-1), k-1):
-        positions = []
-        safe = True
-        for a, b, limit in zip((-1,)+c, c+(n+k-1,), max_position):
-            position = b-a-1
-            if position > limit:
-                safe = False
-                break
-            else:
-                positions.append(position)
-        if safe:
-            yield positions
+# but the partitioning scheme is rewritten to be at least ~50x faster
+def _partition_rec(n, max_position, total, idx, prefix):
+    """Recursive helper for the breadth first partitioning scheme.
+    Takes n and a total weight for the rest of the max_position list,
+    as well as the current idx to work on,
+    and the prefix of the configuration assembled so far.
+
+    Yields all continuations from that prefix;
+    the yield itself is in tail position.
+
+    Assumes the rest of the list has at least two positions to work on.
+    """
+    this_pos = max_position[idx]
+    total_rest = total - this_pos
+    if idx == len(max_position) - 2:
+        # base case, unrolled once
+        for i in range(max(n - total_rest, 0), min(n, this_pos) + 1):
+            yield prefix + (i, n-i)
+    else:
+        # recursive case
+        for i in range(max(n - total_rest, 0), min(n, this_pos) + 1):
+            yield from _partition_rec(n-i, max_position, total_rest, idx+1, prefix+(i,))
+
+def breadth_first_partitions(n, max_position):
+    """Split n total weight (will be used to compute index values)
+    over k different buckets, where k is the len(max_position),
+    such that no bucket i has weight > max_position[i].
+
+    Yield every possible partitioning.
+    """
+
+    # to explain the idiom:
+    #   range(max(n - total_rest, 0), min(n, this_pos) + 1)
+    #
+    # there are only so many ways to take things.
+    #
+    # say we will take i things for a bucket with size this_pos.
+    # there will be total-this_pos things to take in the rest of the array (total_rest)
+    # and we will need to take n - i of them (n_rest)
+    # this is only possible if 0 <= n_rest <= total_rest
+    #
+    # for that to hold, we have 0 <= n - i <= total - this_pos
+    # -->  -n <= -i <= total - this_pos - n
+    # -->  n >= i >= n + this_pos - total
+    #
+    # so i is at least (n - total_rest), and at most n
+    # at the low end, we can't take negative things, so it is bounded by 0,
+    # and at the high end, it is also limited by our bound this_pos on the current value
+    #
+    # that wasn't so hard now was it
+
+    if len(max_position) == 1:
+        # true base case
+        if 0 <= n <= max_position[0]:
+            yield (n,)
+    elif len(max_position) == 2:
+        # base case, unrolled once
+        this_pos, total_rest = max_position
+        for i in range(max(n - total_rest, 0), min(n, this_pos) + 1):
+            yield (i, n-i)
+    elif len(max_position) >= 3:
+        # recursive case, unrolled once
+        total = sum(max_position)
+        this_pos = max_position[0]
+        total_rest = total - this_pos
+        for i in range(max(n - total_rest, 0), min(n, this_pos) + 1):
+            yield from _partition_rec(n-i, max_position, total_rest, 1, (i,))
 
 def breadth_first_product(*sequences):
     """Breadth First Search Cartesian Product"""
     sequences = [list(seq) for seq in sequences]
-
     max_position = [len(i)-1 for i in sequences]
-    for i in range(sum(max_position)):
-        for positions in breadth_first_partitions(i, len(sequences), max_position):
-            yield tuple(map(lambda seq, pos: seq[pos], sequences, positions))
-    yield tuple(map(lambda seq, pos: seq[pos], sequences, max_position))
+    for i in range(sum(max_position) + 1):
+        for positions in breadth_first_partitions(i, max_position):
+            yield tuple(map(operator.getitem, sequences, positions))
 
 def reorder_for_bfs(seq, elt):
     """Reorder a list to contain the closest things to some starting point first.
@@ -714,7 +764,7 @@ class SearchSettings(object):
             fields.append(f'pop_targets=({repr(self.pop_random_target)},'
                           f'{repr(self.pop_random_target)},'
                           f'{repr(self.pop_local_target)},'
-                          f'{repr(self.pop_crossed_target)})')            
+                          f'{repr(self.pop_crossed_target)})')
         if self.mutation_probability != cls.mutation_probability:
             fields.append(f'mutation_probability={repr(self.mutation_probability)}')
         if self.crossover_probability != cls.crossover_probability:
@@ -755,13 +805,13 @@ class SearchSettings(object):
             fields.append(f'  crossover_probability: {str(self.crossover_probability)}')
         sep = '\n'
         return f'{cls.__name__}\n{sep.join(fields)}'
-            
+
     @classmethod
     def from_dict(cls, d):
         new_settings = cls.__new__(cls)
         new_settings.__dict__.update(d)
         return new_settings
-        
+
 
 
 def sweep_genetic(stage_fn, inits, neighbors, metrics, verbosity=3):
