@@ -57,6 +57,7 @@
 
 
 import itertools
+import collections
 import operator
 import multiprocessing
 import random
@@ -581,11 +582,15 @@ def reorder_for_bfs(seq, elt):
             if lower >= 0:
                 yield seq[lower]
 
-def nearby_points(cfg, neighbor_fns, combine=False, product=False, randomize=False):
+def nearby_points(cfg, neighbor_fns,
+                  bfs_neighbors=False, combine=False, product=False, randomize=False):
     """Generator function to yield "nearby" configurations to cfg.
     Each neighbor generator in neighbor_fns will be called individually,
     and a new configuration yielded that replaces that element of cfg
     with each possible neighbor.
+
+    If bfs_neighbors is True, then do this in BFS order
+    (first change the first parameter by one step, then the next one by one step, etc.)
 
     If combine is True, also yield "combined" neighbor configurations
     that call all of the neighbor generators at once.
@@ -608,15 +613,48 @@ def nearby_points(cfg, neighbor_fns, combine=False, product=False, randomize=Fal
         # and go
         yield from breadth_first_product(*all_neighbors)
     else:
-        for i, (x, f) in enumerate(zip(cfg, neighbor_fns)):
-            for nearby_x in f(x):
-                if nearby_x != x:
-                    nearby_cfg = list(cfg)
-                    nearby_cfg[i] = nearby_x
-                    yield tuple(nearby_cfg)
+        if bfs_neighbors:
+            # this horrible code visits the "axial hypercube" neighbors in bfs order
+            stopiter_sentinel = object()
+            gens = [(i, reorder_for_bfs(f(x), x))
+                    for i, (x, f) in enumerate(zip(cfg, neighbor_fns))]
+            new_gens = []
+            if randomize:
+                while gens:
+                    new_gens.clear()
+                    random.shuffle(gens)
+                    for i, gen in gens:
+                        elt = next(gen, stopiter_sentinel)
+                        if elt is not stopiter_sentinel:
+                            new_gens.append((i, gen))
+                            if elt != cfg[i]:
+                                nearby_cfg = list(cfg)
+                                nearby_cfg[i] = elt
+                                yield tuple(nearby_cfg)
+                    gens, new_gens = new_gens, gens
+            else:
+                while gens:
+                    new_gens.clear()
+                    for i, gen in gens:
+                        elt = next(gen, stopiter_sentinel)
+                        if elt is not stopiter_sentinel:
+                            new_gens.append((i, gen))
+                            if elt != cfg[i]:
+                                nearby_cfg = list(cfg)
+                                nearby_cfg[i] = elt
+                                yield tuple(nearby_cfg)
+                    gens, new_gens = new_gens, gens
+        else:
+            # equivalent for the exhaustive case, but not in bfs order
+            for i, (x, f) in enumerate(zip(cfg, neighbor_fns)):
+                for nearby_x in f(x):
+                    if nearby_x != x:
+                        nearby_cfg = list(cfg)
+                        nearby_cfg[i] = nearby_x
+                        yield tuple(nearby_cfg)
         if combine:
             all_neighbors = [f(x) for x, f in zip(cfg, neighbor_fns)]
-            # to explain the opaque yield from call below:
+            # to explain the opaque zip(*) logic below:
             # We start with a list of "nearby" parameters, for each variable in the cfg:
             # [[1,2,3], [7], [5,6]]
             # center_ranges pads this out so each list is the same length:
@@ -804,13 +842,352 @@ class SearchSettings(object):
         if self.crossover_probability != cls.crossover_probability:
             fields.append(f'  crossover_probability: {str(self.crossover_probability)}')
         sep = '\n'
-        return f'{cls.__name__}\n{sep.join(fields)}'
+        return f'{cls.__name__}:\n{sep.join(fields)}'
 
     @classmethod
     def from_dict(cls, d):
         new_settings = cls.__new__(cls)
         new_settings.__dict__.update(d)
         return new_settings
+
+class SearchState(object):
+    """State container for QuantiFind search."""
+
+    def __init__(self):
+        # The key search state breaks down into two main pools of configurations:
+        #   the "frontier" is the pareto frontier of configurations we have explored so far,
+        self.frontier = []
+        #   and the "horizon" is the set of configurations we have decided to explore next.
+        self.horizon = collections.deque()
+
+        # We also keep around a list of every configuration we have ever run, in order,
+        self.history = []
+        # and an index to look them up by configuration parameters (partly for caching reasons):
+        self.cache = {}
+
+        # Finally, we can track the history of the frontier:
+        # each time we add a point, we track it, as well as the set of points it replaced.
+        self.frontier_log = []
+
+        # Informal type information and invariants:
+        #
+        # self.frontier contains pairs of tuples (config_parameters, metric_values)
+        # as does self.history.
+        #
+        # self.frontier_log is a list of tuples:
+        #   [(config_parameters, metric_values), replaced, replaced_by]
+        # where replaced is a list of configurations this one replaced in the frontier
+        # (stored by index in the cache),
+        # and replaced_by is None if this point is still on the live frontier,
+        # or the index of the point that replaced it if it isn't.
+        #
+        # self.horizon is a deque of configurations (just config_parameters) to explore next.
+        # self.cache is a dict that maps each config_parameters to its current position:
+        #   [history_idx, frontier_log_idx, hits]
+        # if history_idx is None, then this configuration is still on the horizon (being run).
+        # if frontier_log_idx is None, then this configuration never made it into the frontier.
+        # hits is the number of times we found this configuration in local/random search,
+        # and tried to add it to the horizon.
+        #
+        # A single configuration (i.e. config_parameters) can be found:
+        #   in self.cache once, if we've ever thought of running it
+        #   in self.horizon, if we've planned to run it but haven't tried putting it into the frontier yet
+        #   in self.history exactly once, if we have run it and tried putting it into the frontier
+        #   in self.frontier_log up to once, if it made it into the frontier
+        #
+        # self.frontier is essentially a cache of the current frontier,
+        # and is entirely reproducibly from self.frontier_log.
+
+        # some other misc record keepting:
+
+        # count of new frontier points found for each generation
+        self.generations = []
+
+        # for the stopping criteria: the count of "initial" configs run and "initial" generations
+        #   A generation is initial if it was created while the search was exhausted;
+        #   i.e. the previous generation failed to add anything to the Pareto frontier.
+        #   A configuration is initial if it was part of an initial generation.
+        self.initial_cfgs = 0
+        self.initial_gens = 0
+
+        # additional data specific to this search, e.g. serializable test inputs
+        self.additional_data = {}
+
+    def __repr__(self):
+        return f'<{type(self).__name__} object at {hex(id(self))} with {len(self.cache)} configurations>'
+
+    def __str__(self):
+        return (
+            f'{type(self).__name__}:\n'
+            f'  total cfgs:    {len(self.cache)}\n'
+            f'  horizon:       {len(self.horizon)}\n'
+            f'  run:           {len(self.history)}\n'
+            f'  frontier size: {len(self.frontier)}\n'
+            f'  running for {len(self.generations)} generations'
+        )
+
+    def __getitem__(self, i):
+        # try to look something up in the history
+        if isinstance(i, int):
+            # if it's an integer, assume they mean a history index
+            return self.history[i]
+        else:
+            # otherwise, assume it's a tuple of config_parameters, and look up in the cache
+            hidx, fidx, hits = self.cache[i]
+            if hidx is None:
+                # it hasn't been run yet, so put in None for metric_values
+                return (i, None)
+            else:
+                return self.history[hidx]
+
+    def poke_cache(cfg):
+        """Poke the cache to see if this configuration has been seen.
+        If cfg is new, add it to the cache with one hit and return True.
+        Else, increment the hit count and return False.
+        """
+        if cfg in self.cache:
+            self.cache[cfg][2] += 1
+            return False
+        else:
+            self.cache[cfg] = [None, None, 1]
+            return True
+
+
+class Sweep(object):
+    """QuantiFind search driver object."""
+
+    def __init__(self, eval_fn, init_fns, neighbor_fns, metric_fns,
+                 settings=None, state=None, cores=None, retry_attempts=0,
+                 verbosity=3):
+        self.eval_fn = eval_fn
+        self.init_fns = init_fns
+        self.neighbor_fns = neighbor_fns
+        self.metric_fns = metric_fns
+        if settings is None:
+            self.settings = SearchSettings()
+        else:
+            self.settings = settings
+        if state is None:
+            self.state = SearchState()
+        else:
+            self.state = state
+        self.cores = cores
+        self.retry_attempts = retry_attempts
+        self.verbosity = verbosity
+
+    # batch generation methods will "poke" the current cache state,
+    # but do not create any new entries or add things to the horizon.
+
+    def random_batch(size):
+        """Return a new batch of completely random configurations to explore."""
+        if self.verbosity >= 2:
+            print(f'  generating a new batch of {size} random configurations...')
+
+        batch = set()
+        hits = 0
+        for _ in range(self.retry_attempts + 1):
+            for _ in range(size):
+                cfg = tuple(f() for f in self.init_fns)
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= size:
+                        break
+                else:
+                    hits += 1
+            if len(batch) >= size:
+                break
+
+        if self.verbosity >= 2:
+            print(f'  generated {len(batch)} random configurations ({hits} hit cache).')
+        return batch
+
+    def mutant_batch(size):
+        """Return a new batch of mutated configurations, based on the current frontier."""
+        if len(self.state.frontier) < 1:
+            if self.verbosity >= 2:
+                print(f'  unable to generate mutated configurations; no configurations in frontier')
+            return set()
+
+        if self.verbosity >= 2:
+            print(f'  generating a new batch of {size} mutated configurations...')
+
+        batch = set()
+        hits = 0
+        for _ in range(self.retry_attempts + 1):
+            for _ in range(size):
+                old_cfg, _ = random.sample(self.state.frontier, 1)
+                # mutate
+                p = self.settings.mutation_probability
+                cfg = tuple(f() if random.random() < p else x
+                            for x, f in zip(old_cfg, self.init_fns))
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= size:
+                        break
+                else:
+                    hits += 1
+            if len(batch) >= size:
+                break
+
+        if self.verbosity >= 2:
+            print(f'  generated {len(batch)} mutated configurations ({hits} hit cache).')
+        return batch
+
+    def neighborhood(axes_first=True):
+        """Generator for the full space of configurations "nearby" to the Pareto frontier.
+        May produce the same configuration multiple times, but not too many times.
+        If axes_first is False, then skip the pre-pass that explores hypercubes
+        defined by extending along axes.
+        """
+        stopiter_sentinel = object()
+        if axes_first:
+            gens = [nearby_points(cfg, self.neighbor_fns, bfs_neighbors=True, combine=True, product=False)
+                    for cfg, _ in self.state.frontier]
+            new_gens = []
+            while gens:
+                random.shuffle(gens)
+                new_gens.clear()
+                for gen in gens:
+                    elt = next(gen, stopiter_sentinel)
+                    if elt is not stopiter_sentinel:
+                        new_gens.append(gen)
+                        yield elt
+                # swap lists in place
+                gens, new_gens = new_gens, gens
+        # now go through the full (breadth-first) cartesian product
+        # in the same way
+        gens = [nearby_points(cfg, self.neighbor_fns, product=True)
+                for cfg, _ in self.state.frontier]
+        new_gens = []
+        while gens:
+            random.shuffle(gens)
+            new_gens.clear()
+            for gen in gens:
+                elt = next(gen, stopiter_sentinel)
+                if elt is not stopiter_sentinel:
+                    new_gens.append(gen)
+                    yield elt
+            # swap lists in place
+            gens, new_gens = new_gens, gens
+
+    def local_neighborhood(min_size=None, max_size=None):
+        """Explore the local neighborhood of the current pareto frontier.
+        First return points by extending each axis, then all axes together.
+        Stop early if max_size is hit.
+        If min_size is still not hit, look for additional points
+        in the full cartesian products of neighbors of the frontier.
+        """
+        if len(self.state.frontier) < 1:
+            if self.verbosity >= 2:
+                print(f'  unable to generate neighboring configurations; no configurations in frontier')
+            return set()
+
+        if self.verbosity >= 2:
+            if min_size is not None or max_size is not None:
+                print(f'  generating local neighborhood ({min_size} - {max_size})...')
+            else:
+                print(f'  generating local neighborhood...')
+
+        gens = [nearby_points(cfg, self.neighbor_fns, bfs_neighbors=(max_size is not None), combine=True, product=False)
+                for cfg, _ in self.state.frontier]
+
+        batch = set()
+        hits = 0
+        if max_size is None:
+            for cfg in itertools.chain(*gens):
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                else:
+                    hits += 1
+        else: # max_size is not None
+             for cfg in itertools.chain(*gens):
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= max_size:
+                        break
+                else:
+                    hits += 1
+
+        if min_size is not None and len(batch) < min_size:
+            if self.verbosity >= 2:
+                print(f'  local search only found {len(batch)} points, exploring full cartesian product...')
+
+            for cfg in self.neighborhood(axes_first=False):
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= max_size:
+                        break
+                else:
+                    hits += 1
+
+        if self.verbosity >= 2:
+            print(f'  generated local neighborhood of {len(batch)} configurations ({hits} hit cache).')
+        return batch
+
+    def local_batch(size, axes_first=True):
+        """Return a new batch of nearby configurations, based on the current frontier.
+        If axes_first is True, first explore along the parameter axes.
+        """
+        if len(self.state.frontier) < 1:
+            if self.verbosity >= 2:
+                print(f'  unable to generate neighboring configurations; no configurations in frontier')
+            return set()
+
+        if self.verbosity >= 2:
+            print(f'  generating a new batch of {size} neighboring configurations...')
+
+        batch = set()
+        hits = 0
+        for cfg in self.neighborhood(axes_first=axes_first):
+            if self.state.poke_cache(cfg) and cfg not in batch:
+                batch.add(cfg)
+                if len(batch) >= size:
+                    break
+            else:
+                hits += 1
+
+        if self.verbosity >= 2:
+            print(f'  generated {len(batch)} nieghboring configurations ({hits} hit cache).')
+        return batch
+
+    def cross_batch(size):
+        """Return a new batch of configurations using crossover, based on the current frontier."""
+        if len(self.state.frontier) < 2:
+            if self.verbosity >= 2:
+                print(f'  unable to generate configurations with crossover; must have at least two configurations in frontier')
+            return set()
+
+        if self.verbosity >= 2:
+            print(f'  generating a new batch of {size} crossed configurations...')
+
+        batch = set()
+        hits = 0
+        for _ in range(self.retry_attempts + 1):
+            for _ in range(size):
+                cfg1, cfg2 = map(operator.itemgetter(0), random.sample(self.state.frontier, 2))
+                # crossover
+                p = self.settings.crossover_probability
+                cfg = tuple(y if random.random() < p else x
+                            for x, y in zip(cfg1, cfg2))
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= size:
+                        break
+                else:
+                    hits += 1
+            if len(batch) >= size:
+                break
+
+        if self.verbosity >= 2:
+            print(f'  generated {len(batch)} crossed configurations ({hits} hit cache).')
+        return batch
+
+
+
+    def expand_horizon():
+        frontier = self.state.frontier
+
+
 
 
 
