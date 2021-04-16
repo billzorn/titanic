@@ -665,43 +665,6 @@ def nearby_points(cfg, neighbor_fns,
             yield from zip(*center_ranges(all_neighbors))
 
 
-# new genetic algorithm stuff
-# this general idea was brought to me by Max Willsey
-
-# we have roughly 3 ways to generate configurations to explore:
-# 1. completely at random
-# 2. by "mutating" existing points:
-#   a. randomly (taking some subset of the values and changing them to random values)
-#   b. in a local way "exploring the neighborhood"
-#      as an aside, we believe that this local, exhaustive search is good from previous experiments
-# 3. by "crossover", where we trade values between existing configurations
-
-# some strategies to use these generators:
-
-# "exhaustive local search with restarts"
-# 1. when no progress is made (or to start) run a controlled size generation of purely random configurations
-# 2. while progress is being made, explore locally
-# 3. repeat for a quantity of random restarts
-# this is what we were doing before, but a little smarter in retrospect
-
-# "balanced mixed search"
-# for each generation, try to ensure an equal mix of the following kinds of points:
-# 1. random
-# 2. crossed
-# 3. points on the frontier
-# each should be forced up to some minimum, probably the number of threads for efficient parallelism,
-# possibly capped
-
-# local exploration could be substituted for 3 to limit it, or allowed to run without a limit
-# 3 isn't really controllable, but we can increase the minimum sizes to match it if the frontier grows
-
-# obviously we start with an initial gen of the minimum size of random points,
-# and the frontier develops from there.
-
-# halt the search when some number of generations (which at the end will be just random, and possibly crossed)
-# fail to make any improvements.
-
-
 class SearchSettings(object):
     """Settings container for QuantiFind search."""
 
@@ -720,6 +683,8 @@ class SearchSettings(object):
     pop_local_target = None
     pop_crossed_target = None
 
+    pop_weight_scale = 0
+
     mutation_probability = 0.5
     crossover_probability = 0.5
 
@@ -729,6 +694,7 @@ class SearchSettings(object):
                  restart_gen_target = None,
                  pop_weights = None,
                  pop_targets = None,
+                 pop_weight_scale = None,
                  mutation_probability = None,
                  crossover_probability = None):
         # set defaults based on profile
@@ -744,6 +710,7 @@ class SearchSettings(object):
             self.pop_mutant_target = None
             self.pop_local_target = None
             self.pop_crossed_target = None
+            self.pop_weight_scale = 0
             self.mutation_probability = 0.5
             self.crossover_probability = 0.5
         elif profile == 'balanced':
@@ -758,6 +725,7 @@ class SearchSettings(object):
             self.pop_mutant_target = None
             self.pop_local_target = None
             self.pop_crossed_target = None
+            self.pop_weight_scale = 0
             self.mutation_probability = 0.5
             self.crossover_probability = 0.5
         else:
@@ -773,6 +741,8 @@ class SearchSettings(object):
             self.pop_random_weight, self.pop_mutant_weight, self.pop_local_weight, self.pop_crossed_weight = pop_weights
         if pop_targets is not None:
             self.pop_random_target, self.pop_mutant_target, self.pop_local_target, self.pop_crossed_target = pop_targets
+        if mutation_probability is not None:
+            self.pop_weight_scale = pop_weight_scale
         if mutation_probability is not None:
             self.mutation_probability = mutation_probability
         if crossover_probability is not None:
@@ -803,6 +773,8 @@ class SearchSettings(object):
                           f'{repr(self.pop_random_target)},'
                           f'{repr(self.pop_local_target)},'
                           f'{repr(self.pop_crossed_target)})')
+        if self.pop_weight_scale != cls.pop_weight_scale:
+            fields.append(f'pop_weight_scale={repr(self.pop_weight_scale)}')
         if self.mutation_probability != cls.mutation_probability:
             fields.append(f'mutation_probability={repr(self.mutation_probability)}')
         if self.crossover_probability != cls.crossover_probability:
@@ -837,6 +809,8 @@ class SearchSettings(object):
                           f'    mutant:  {str(self.pop_random_target)}\n'
                           f'    local:   {str(self.pop_local_target)}\n'
                           f'    crossed: {str(self.pop_crossed_target)}')
+        if self.pop_weight_scale != cls.pop_weight_scale:
+            fields.append(f'  pop_weight_scale: {str(self.pop_weight_scale)}')
         if self.mutation_probability != cls.mutation_probability:
             fields.append(f'  mutation_probability: {str(self.mutation_probability)}')
         if self.crossover_probability != cls.crossover_probability:
@@ -883,11 +857,18 @@ class SearchState(object):
         #
         # self.horizon is a deque of configurations (just config_parameters) to explore next.
         # self.cache is a dict that maps each config_parameters to its current position:
-        #   [history_idx, frontier_log_idx, hits]
+        #   [history_idx, frontier_log_idx, hits, source_id]
         # if history_idx is None, then this configuration is still on the horizon (being run).
         # if frontier_log_idx is None, then this configuration never made it into the frontier.
         # hits is the number of times we found this configuration in local/random search,
         # and tried to add it to the horizon.
+        # source_id is an integer indicating how we first came to add this configuration
+        # to the horizon:
+        #   0 - random
+        #   1 - mutant
+        #   2 - crossover
+        #   3 - local search
+        #   4 - target exhaustive search
         #
         # A single configuration (i.e. config_parameters) can be found:
         #   in self.cache once, if we've ever thought of running it
@@ -919,12 +900,12 @@ class SearchState(object):
     def __str__(self):
         return (
             f'{type(self).__name__}:\n'
-            f'  total cfgs:    {len(self.cache)}\n'
-            f'  horizon:       {len(self.horizon)}\n'
-            f'  run:           {len(self.history)}\n'
-            f'  frontier size: {len(self.frontier)}\n'
+            f'  total cfgs: {len(self.cache)}\n'
+            f'  horizon:    {len(self.horizon)}\n'
+            f'  history:    {len(self.history)}\n'
+            f'  frontier:   {len(self.frontier)}\n'
             f'  running for {len(self.generations)} generations'
-        )
+        ) + (f'\n  {len(self.additional_data)} additional data records' if len(self.additional_data) > 0 else '')
 
     def __getitem__(self, i):
         # try to look something up in the history
@@ -933,24 +914,87 @@ class SearchState(object):
             return self.history[i]
         else:
             # otherwise, assume it's a tuple of config_parameters, and look up in the cache
-            hidx, fidx, hits = self.cache[i]
+            hidx, fidx, hits, reason = self.cache[i]
             if hidx is None:
                 # it hasn't been run yet, so put in None for metric_values
                 return (i, None)
             else:
                 return self.history[hidx]
 
-    def poke_cache(cfg):
+    def poke_cache(self, cfg):
         """Poke the cache to see if this configuration has been seen.
-        If cfg is new, add it to the cache with one hit and return True.
-        Else, increment the hit count and return False.
+        If cfg has been seen before, increment the hit count and return False.
+        Else if cfg is new, return True.
         """
         if cfg in self.cache:
             self.cache[cfg][2] += 1
             return False
         else:
-            self.cache[cfg] = [None, None, 1]
             return True
+
+    def add_to_horizon(self, batch, reason, check=True, verbose=False):
+        """Add batch configurations to the horizon, also recording them in the cache for reason.
+        If check is True, first check if the configurations are already in the cache and skip them;
+        Otherwise replace any existing configurations with new cache records.
+        """
+        if check:
+            for cfg in batch:
+                repeat_cfgs = 0
+                if cfg in self.cache:
+                    if verbose:
+                        print(f'-- configuration {repr(cfg)} is already in the cache --')
+                    self.cache[cfg][2] += 1
+                    repeat_cfgs += 1
+                else:
+                    self.cache[cfg] = [None, None, 1, reason]
+            if repeat_cfgs > 0:
+                print(f'WARNING: skipped {repeat_cfgs} configurations that were already in the cache')
+            return repeat_cfgs
+        else:
+            for cfg in batch:
+                repeat_cfgs = 0
+                if cfg in self.cache:
+                    if verbose and self.cache[cfg][0] is not None:
+                        print(f'!!! WARNING: configuration {repr(cfg)} has been run before !!!')
+                    repeat_cfgs += 1
+                self.cache[cfg] = [None, None, 1, reason]
+            return repeat_cfgs
+
+# new search algo, inspired by "GOFAI" and specifically genetic algorithms
+# this general idea was brought to me by Max Willsey
+
+# we have roughly 3 ways to generate configurations to explore:
+# 1. completely at random
+# 2. by "mutating" existing points:
+#   a. randomly (taking some subset of the values and changing them to random values)
+#   b. in a local way "exploring the neighborhood"
+#      as an aside, we believe that this local, exhaustive search is good from previous experiments
+# 3. by "crossover", where we trade values between existing configurations
+
+# some strategies to use these generators:
+
+# "exhaustive local search with restarts"
+# 1. when no progress is made (or to start) run a controlled size generation of purely random configurations
+# 2. while progress is being made, explore locally
+# 3. repeat for a quantity of random restarts
+# this is what we were doing before, but a little smarter in retrospect
+
+# "balanced mixed search"
+# for each generation, try to ensure an equal mix of the following kinds of points:
+# 1. random
+# 2. crossed
+# 3. points on the frontier
+# each should be forced up to some minimum, probably the number of threads for efficient parallelism,
+# possibly capped
+
+# local exploration could be substituted for 3 to limit it, or allowed to run without a limit
+# 3 isn't really controllable, but we can increase the minimum sizes to match it if the frontier grows
+
+# obviously we start with an initial gen of the minimum size of random points,
+# and the frontier develops from there.
+
+# halt the search when some number of generations (which at the end will be just random, and possibly crossed)
+# fail to make any improvements.
 
 
 class Sweep(object):
@@ -1182,12 +1226,129 @@ class Sweep(object):
             print(f'  generated {len(batch)} crossed configurations ({hits} hit cache).')
         return batch
 
-
+    def relative_pop(this_weight, ref_weight, ref_size, target_bounds):
+        """Scale ref_size as a fraction this_weight of ref_weight.
+        If target_bounds are provided as a tuple (min_bound, max_bound),
+        then return a number in that range.
+        Never return less than 1, unless ref_size or this_weight is 0.
+        """
+        unbounded = ref_size * this_weight
+        if unbounded != 0:
+            unbounded = (unbounded // ref_weight) + 1
+        if target_bounds is not None:
+            min_bound, max_bound = target_bounds
+            return min(max(min_bound, unbounded), max_bound)
+        else:
+            return unbounded
 
     def expand_horizon():
-        frontier = self.state.frontier
+        """Expand the horizon by adding new configurations.
 
+        This is the only place that self.state.horizon is modified,
+        besides the exhaustive and random search methods;
+        batches are generated sequentially for each population
+        based on the population constraints
+        and individually added to the horizon (and the cache) in order:
+          - local
+          - crossed
+          - mutant
+          - purely random
 
+        In addition to modifying the state, returns the number of configurations
+        added to the horizon;
+        if this is zero (i.e. we couldn't expand the horizon)
+        the search should probably end, as it's hard to see how it will make progress.
+        """
+        settings = self.settings
+        pop_random_weight = settings.pop_random_weight
+        pop_mutant_weight = settings.pop_mutant_weight
+        pop_local_weight = settings.pop_local_weight
+        pop_crossed_weigh = settings.pop_crossed_weight
+        pop_weight = pop_random_weight + pop_mutant_weight +  pop_local_weight + pop_crossed_weight
+        pop_weight_scale = settings.pop_weight_scale
+        if pop_weight <= 0:
+            if self.verbosity >= 1:
+                print(f' Unable to expand horizon; zero population weight')
+            return 0
+
+        if self.verbosity >= 1:
+            print(f' Expanding the horizon...')
+
+        # decide on a population scheme
+        if pop_weight_scale <= 0:
+            # weight relatively so that pop_local_weight ~= size of the local neighborhood
+            if pop_local_weight <= 0:
+                if self.verbosity >= 1:
+                    print(f' Unable to expand horizon; no local population to weight against')
+                return 0
+
+            # first we need the local neighborhood
+            if settings.pop_local_target:
+                min_size, max_size = settings.pop_local_target
+            else:
+                min_size, max_size = None, None
+            neighbors = self.local_neighborhood(min_size, max_size)
+            new_cfg_count = len(neighbors)
+            self.state.add_to_horizon(neighbors, 3)
+
+            if pop_random_weight + pop_mutant_weight + pop_crossed_weight == 0:
+                if self.verbosity >= 1:
+                    print(' Added {new_cfg_count} new configurations from the local neighborhood.')
+                return new_cfg_count
+            else:
+                pop_ref_size = len(neighbors)
+                pop_ref_weight = pop_local_weight
+        else:
+            # weight relatively so that pop_weight / pop_weight_scale ~= size of the frontier
+            pop_ref_size = len(self.state.frontier) * pop_weight_scale
+            pop_ref_weight = pop_weight
+            # placeholder - the code will handle this later
+            neighbors = None
+            new_cfg_count = 0
+
+        if neighbors is not None:
+            local_size = len(neighbors)
+        else:
+            local_size = relative_pop(pop_local_weight, pop_ref_weight, pop_ref_size, settings.pop_local_target)
+        crossed_size = relative_pop(pop_crossed_weight, pop_ref_weight, pop_ref_size, settings.pop_crossed_target)
+        mutant_size = relative_pop(pop_mutant_weight, pop_ref_weight, pop_ref_size, settings.pop_mutant_target)
+        random_size = relative_pop(pop_random_weight, pop_ref_weight, pop_ref_size, settings.pop_random_target)
+
+        if self.verbosity >= 1:
+            print(f' Looking for about {pop_ref_size} new configurations...')
+            if self.verbosity >= 2:
+                if local_size > 0:
+                    if neighbors is not None:
+                        print(f'  - Local:   {local_size} (already added)')
+                    else:
+                        print(f'  - Local:   {local_size}')
+                if crossed_size > 0:
+                    print(f'  - Crossed: {crossed_size}')
+                if mutant_size > 0:
+                    print(f'  - Mutant:  {mutant_size}')
+                if random_size > 0:
+                    print(f'  - Random:  {random_size}')
+
+        if neighbors is None and local_size > 0:
+            batch = self.local_batch(local_size)
+            new_cfg_count += len(batch)
+            self.state.add_to_horizon(batch, 3)
+        if crossed_size > 0:
+            batch = self.cross_batch(crossed_size)
+            new_cfg_count += len(batch)
+            self.state.add_to_horizon(batch, 2)
+        if mutant_size > 0:
+            batch = self.mutant_batch(mutant_size)
+            new_cfg_count += len(batch)
+            self.state.add_to_horizon(batch, 1)
+        if random_size > 0:
+            batch = self.random_batch(random_size)
+            new_cfg_count += len(batch)
+            self.state.add_to_horizon(batch, 0)
+
+        if self.verbosity >= 1:
+            print(' Added {new_cfg_count} new configurations to the horizon.')
+        return new_cfg_count
 
 
 
