@@ -932,7 +932,7 @@ class SearchState(object):
         else:
             return True
 
-    def add_to_horizon(self, batch, reason, check=True, verbose=False):
+    def add_to_horizon(self, batch, reason, check=True, verbose=True):
         """Add batch configurations to the horizon, also recording them in the cache for reason.
         If check is True, first check if the configurations are already in the cache and skip them;
         Otherwise replace any existing configurations with new cache records.
@@ -961,6 +961,55 @@ class SearchState(object):
                 self.cache[cfg] = [None, None, 1, reason]
                 self.horizon.append(cfg)
             return repeat_cfgs
+
+    def get_from_horizon(self, n=None):
+        """Get n configurations from the horizon to work on next;
+        presumably this is a batch to process,
+        and after retrieving them they will be committed.
+        """
+        if n is None:
+            return list(self.horizon)
+        else:
+            # turn the islice generator into a list immediately,
+            # so that we can't break it by mutating the deque
+            return list(itertools.islice(self.horizon, n))
+
+    def commit_to_history(self, result, verbose=True):
+        """Commit an evaluated configuration to the history,
+        updating the Pareto frontier in the process.
+        Does not update the state's generation info.
+        """
+        cfg, qos = result
+        if len(self.horizon) > 0:
+            horizon_cfg = self.horizon.popleft()
+        else:
+            horizon_cfg = None
+        if verbose and cfg != horizon_cfg:
+            print(f'-- configuration {repr(cfg)} is not equal to {repr(horizon_cfg)} from the horizon --')
+
+        if cfg in self.cache:
+            record = self.cache[cfg]
+        else:
+            record = [None, None, 0, -1]
+            self.cache[cfg] = record
+            if verbose:
+                print(f'-- configuration {repr(cfg)} was never seen in the cache; adding --')
+
+        hidx = len(self.history)
+        self.history.append(cfg)
+        record[0] = hidx
+
+        keep, new_frontier = update_frontier(self.frontier, result, self.metric_fns)
+        if keep:
+            fidx = len(self.frontier_log)
+            # TODO: we need update_frontier to track what got removed
+            self.frontier_log.append([result, [], None])
+            record[1] = fidx
+            new_frontier_points += 1
+
+        self.frontier = new_frontier
+        return keep
+
 
 # new search algo, inspired by "GOFAI" and specifically genetic algorithms
 # this general idea was brought to me by Max Willsey
@@ -1003,7 +1052,7 @@ class Sweep(object):
     """QuantiFind search driver object."""
 
     def __init__(self, eval_fn, init_fns, neighbor_fns, metric_fns,
-                 settings=None, state=None, cores=None, retry_attempts=0,
+                 settings=None, state=None, cores=None, batch=None, retry_attempts=1,
                  verbosity=3):
         self.eval_fn = eval_fn
         self.init_fns = init_fns
@@ -1018,8 +1067,11 @@ class Sweep(object):
         else:
             self.state = state
         self.cores = cores
+        self.batch = batch
         self.retry_attempts = retry_attempts
         self.verbosity = verbosity
+
+        self.pool = multiprocessing.Pool(cores)
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
@@ -1255,7 +1307,7 @@ class Sweep(object):
                 else:
                     hits += 1
         else:
-              for cfg in gen:
+            for cfg in gen:
                 if self.state.poke_cache(cfg) and cfg not in batch:
                     batch.add(cfg)
                     if len(batch) >= max_size:
@@ -1422,6 +1474,87 @@ class Sweep(object):
         if self.verbosity >= 1:
             print(' Added {len(batch)} exhaustive configurations to the horizon.')
         return len(batch)
+
+    def process_batch(self):
+        """Run a batch of configurations from the horizon,
+        and commit the results to the state."""
+        if self.verbosity >= 2:
+            if self.batch is not None:
+                print(f'  processing a batch of {self.batch} configurations...')
+            else:
+                print(f'  processing the entire horizon...')
+
+        cfgs = self.state.get_from_horizon(self.batch)
+        async_results = []
+        for cfg in cfgs:
+            async_results.append(self.pool.apply_async(self.eval_fn, cfg))
+
+        if self.verbosity >= 2:
+            print(f'  dispatched {len(async_results)} evaluations...')
+
+        new_frontier_points = 0
+        for cfg, ares in zip(cfgs, async_results):
+            qos = ares.get()
+            result = cfg, qos
+            if self.state.commit_to_history(result):
+                new_frontier_points += 1
+                if self.verbosity >= 3:
+                    print('!', end='', flush=True)
+            else:
+                if self.verbosity >= 3:
+                    print('.', end='', flush=True)
+        if self.verbosity >= 3:
+            print(flush=True)
+
+        if self.verbosity >= 2:
+            print(f'  processed {len(async_results)} configurations, added {new_frontier_points} to the frontier.')
+        return new_frontier_points
+
+    def run_generation(self):
+        """Run the next generation of configurations currently on the horizon.
+        Handles the generation records in the state.
+        """
+        horizon_size = len(self.state.horizon)
+        gen_idx = len(self.state.generations)
+        self.state.generations.append(0)
+
+        if self.verbosity >= 1:
+            print(f' Evaluating the horizon for generation {len(self.state.generations)}...')
+
+        while len(self.state.horizon) > 0:
+            new_frontier_points = self.process_batch()
+            self.state.generations[gen_idx] += new_frontier_points
+
+        if self.verbosity >= 1:
+            print(f' Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
+        return self.state.generations[gen_idx]
+
+    def cleanup_horizon(self):
+        """Empty the horizon, in case only part of a generation was evaluated.
+        This is almost the same as running a generation,
+        but it doesn't append a new generation record.
+        """
+        horizon_size = len(self.state.horizon)
+        if horizon_size == 0:
+            return 0
+
+        gen_idx = len(self.state.generations) - 1
+        if gen_idx < 0:
+            gen_idx = 0
+            self.state.generations.append(0)
+
+        elif self.verbosity >= 1:
+            print(f' Cleaning up {horizon_size} configurations left on the horizon at generation {gen_idx}...')
+
+        total_new_points = 0
+        while len(self.state.horizon) > 0:
+            new_frontier_points = self.process_batch()
+            total_new_points += new_frontier_points
+            self.state.generations[gen_idx] += new_frontier_points
+
+        if self.verbosity >= 1:
+            print(f' Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
+        return total_new_points
 
 
 
