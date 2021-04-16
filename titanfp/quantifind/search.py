@@ -1,5 +1,6 @@
 """Common code for parameter search."""
 
+DONT_HAMMER_LEVIATHAN=32
 
 # Goal: find a distribution of "good" configurations according to a set of metrics
 
@@ -816,7 +817,10 @@ class SearchSettings(object):
         if self.crossover_probability != cls.crossover_probability:
             fields.append(f'  crossover_probability: {str(self.crossover_probability)}')
         sep = '\n'
-        return f'{cls.__name__}:\n{sep.join(fields)}'
+        if len(fields) > 0:
+            return f'{cls.__name__}:\n{sep.join(fields)}'
+        else:
+            return f'{cls.__name__}:'
 
     @classmethod
     def from_dict(cls, d):
@@ -1053,7 +1057,7 @@ class Sweep(object):
     """QuantiFind search driver object."""
 
     def __init__(self, eval_fn, init_fns, neighbor_fns, metric_fns,
-                 settings=None, state=None, cores=None, batch=None, retry_attempts=1,
+                 settings=None, state=None, cores=DONT_HAMMER_LEVIATHAN, batch=None, retry_attempts=1,
                  verbosity=3):
         self.eval_fn = eval_fn
         self.init_fns = init_fns
@@ -1078,10 +1082,33 @@ class Sweep(object):
         self.pool = multiprocessing.Pool(self.cores)
         return self
 
-    def __exit__(self):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         if self.pool is not None:
             self.pool.close()
             self.pool.join()
+
+    def __repr__(self):
+        return f'<{type(self).__name__} object at {hex(id(self))} with {len(self.state.cache)} configurations>'
+
+    def __str__(self):
+        lines = []
+        lines.append(f'{type(self).__name__}:')
+        lines.append(f'  evaluation function: {repr(self.eval_fn)}')
+        for line in str(self.settings).split('\n'):
+            lines.append('  ' + line)
+        for line in str(self.state).split('\n'):
+            lines.append('  ' + line)
+        if self.cores is not None:
+            lines.append(f'  cores:      {self.cores}')
+        if self.batch is not None:
+            lines.append(f'  batch size: {self.batch}')
+        if self.retry_attempts > 0:
+            lines.append(f'  retries:    {self.retry_attempts}')
+        if self.verbosity >= 0:
+            lines.append(f'  verbosity:  {self.verbosity}')
+        if self.pool is not None:
+            lines.append(f'  with worker pool {repr(self.pool)}')
+        return '\n'.join(lines)
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
@@ -1487,7 +1514,9 @@ class Sweep(object):
 
     def process_batch(self, pool):
         """Run a batch of configurations from the horizon,
-        and commit the results to the state."""
+        and commit the results to the state.
+        This should probably? be reimplemented to take advantage of the appropriate
+        Pool.map or Pool.imap / async functionality. Or not."""
         if self.verbosity >= 2:
             if self.batch is not None:
                 print(f'  processing a batch of {self.batch} configurations...')
@@ -1583,35 +1612,45 @@ class Sweep(object):
             print(f' Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
         return total_new_points
 
+    def run_search():
+        """Run the Pareto frontier exploration sweep!"""
+        if self.verbosity >= 0:
+            print('Running QuantiFind sweep...')
+            if self.verbosity >= 2:
+                print(self)
 
+        self.cleanup_horizon()
+        is_initial_gen = (len(self.state.history) == 0)
 
-def sweep_genetic(stage_fn, inits, neighbors, metrics, verbosity=3):
-    if verbosity >= 1:
-        print(f'Multi-sweep: sweeping over {max_inits!s} random initializations, and up to {max_retries!s} ignored points')
+        while True:
+            # try to expand the horizon
+            new_cfgs = self.expand_horizon()
 
-    improved, visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
+            # no normal way to expand locally; try randomly as a backup
+            if new_cfgs <= 0:
+                new_cfgs = self.explore_randomly(self.settings.initial_gen_size)
 
-    visited_points = [(0, a, b) for a, b in visited_points]
+            if new_cfgs <= 0:
+                if self.verbosity >= 0:
+                    print('Exhausted the search space. Done.')
+                return self.state.frontier
 
-    attempts = 0
-    successes = 0
-    failures = 0
-    while successes < max_inits and failures < max_retries:
-        if verbosity >= 2:
-            print(f'\n == attempt {attempts+1!s}, {len(cfgs)!s} cfgs, {len(frontier)!s} elements in frontier ==\n')
+            if is_initial_gen:
+                self.state.initial_gens += 1
+                self.state.initial_cfgs += new_cfgs
 
-        improved, new_visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
-                                                                               previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
+            new_frontier_points = self.run_generation()
+            is_initial_gen = (new_frontier_points == 0)
 
-        visited_points.extend((attempts, a, b) for a, b in new_visited_points)
-
-        if verbosity >= 2:
-            print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
-
-        attempts += 1
-        if improved:
-            successes += 1
-        else:
-            failures += 1
-
-    return gens, visited_points, frontier
+            # stopping criteria
+            if is_initial_gen:
+                if (self.state.initial_gens >= self.state.restart_gen_target and
+                    self.state.initial_cfgs >= self.state.restart_size_target):
+                    if self.verbosity >= 0:
+                        print(f'Searched for {self.state.initial_gens} initial generations '
+                              f'with {self.state.initial_cfgs} total initial configurations. Done.')
+                    return self.state.frontier
+            else:
+                if self.verbosity >= 3:
+                    print('The frontier changed.')
+                    print_frontier(self.state.frontier)
