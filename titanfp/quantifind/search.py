@@ -938,8 +938,8 @@ class SearchState(object):
         Otherwise replace any existing configurations with new cache records.
         """
         if check:
+            repeat_cfgs = 0
             for cfg in batch:
-                repeat_cfgs = 0
                 if cfg in self.cache:
                     if verbose:
                         print(f'-- configuration {repr(cfg)} is already in the cache --')
@@ -952,13 +952,14 @@ class SearchState(object):
                 print(f'WARNING: skipped {repeat_cfgs} configurations that were already in the cache')
             return repeat_cfgs
         else:
+            repeat_cfgs = 0
             for cfg in batch:
-                repeat_cfgs = 0
                 if cfg in self.cache:
-                    if verbose and self.cache[cfg][0] is not None:
-                        print(f'!!! WARNING: configuration {repr(cfg)} has been run before !!!')
+                    hits = self.cache[cfg][2] + 1
                     repeat_cfgs += 1
-                self.cache[cfg] = [None, None, 1, reason]
+                else:
+                    hits = 1
+                self.cache[cfg] = [None, None, hits, reason]
                 self.horizon.append(cfg)
             return repeat_cfgs
 
@@ -1070,8 +1071,17 @@ class Sweep(object):
         self.batch = batch
         self.retry_attempts = retry_attempts
         self.verbosity = verbosity
+        # handle this with a context manager
+        self.pool = None
 
-        self.pool = multiprocessing.Pool(cores)
+    def __enter__(self):
+        self.pool = multiprocessing.Pool(self.cores)
+        return self
+
+    def __exit__(self):
+        if self.pool is not None:
+            self.pool.close()
+            self.pool.join()
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
@@ -1382,7 +1392,7 @@ class Sweep(object):
                 min_size, max_size = None, None
             neighbors = self.local_neighborhood(min_size, max_size)
             new_cfg_count = len(neighbors)
-            self.state.add_to_horizon(neighbors, 3)
+            self.state.add_to_horizon(neighbors, 3, verbose=self.verbosity>=3)
 
             if pop_random_weight + pop_mutant_weight + pop_crossed_weight == 0:
                 if self.verbosity >= 1:
@@ -1425,19 +1435,19 @@ class Sweep(object):
         if neighbors is None and local_size > 0:
             batch = self.local_batch(local_size)
             new_cfg_count += len(batch)
-            self.state.add_to_horizon(batch, 3)
+            self.state.add_to_horizon(batch, 3, verbose=self.verbosity>=3)
         if crossed_size > 0:
             batch = self.cross_batch(crossed_size)
             new_cfg_count += len(batch)
-            self.state.add_to_horizon(batch, 2)
+            self.state.add_to_horizon(batch, 2, verbose=self.verbosity>=3)
         if mutant_size > 0:
             batch = self.mutant_batch(mutant_size)
             new_cfg_count += len(batch)
-            self.state.add_to_horizon(batch, 1)
+            self.state.add_to_horizon(batch, 1, verbose=self.verbosity>=3)
         if random_size > 0:
             batch = self.random_batch(random_size)
             new_cfg_count += len(batch)
-            self.state.add_to_horizon(batch, 0)
+            self.state.add_to_horizon(batch, 0, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
             print(' Added {new_cfg_count} new configurations to the horizon.')
@@ -1452,7 +1462,7 @@ class Sweep(object):
             print(f' Looking for {n} random configurations to add to the horizon...')
 
         batch = self.random_batch(n)
-        self.state.add_to_horizon(batch, 0)
+        self.state.add_to_horizon(batch, 0, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
             print(' Added {len(batch)} new random configurations to the horizon.')
@@ -1469,13 +1479,13 @@ class Sweep(object):
             print(f' Exploring exhaustively...')
 
         batch = self.exhaustive_batch(searchspace, center_cfg=center_cfg, max_size=max_size)
-        self.state.add_to_horizon(batch, 4)
+        self.state.add_to_horizon(batch, 4, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
             print(' Added {len(batch)} exhaustive configurations to the horizon.')
         return len(batch)
 
-    def process_batch(self):
+    def process_batch(self, pool):
         """Run a batch of configurations from the horizon,
         and commit the results to the state."""
         if self.verbosity >= 2:
@@ -1487,7 +1497,7 @@ class Sweep(object):
         cfgs = self.state.get_from_horizon(self.batch)
         async_results = []
         for cfg in cfgs:
-            async_results.append(self.pool.apply_async(self.eval_fn, cfg))
+            async_results.append(pool.apply_async(self.eval_fn, cfg))
 
         if self.verbosity >= 2:
             print(f'  dispatched {len(async_results)} evaluations...')
@@ -1496,7 +1506,7 @@ class Sweep(object):
         for cfg, ares in zip(cfgs, async_results):
             qos = ares.get()
             result = cfg, qos
-            if self.state.commit_to_history(result):
+            if self.state.commit_to_history(result, verbose=self.verbosity>=3):
                 new_frontier_points += 1
                 if self.verbosity >= 3:
                     print('!', end='', flush=True)
@@ -1510,7 +1520,7 @@ class Sweep(object):
             print(f'  processed {len(async_results)} configurations, added {new_frontier_points} to the frontier.')
         return new_frontier_points
 
-    def run_generation(self):
+    def run_generation(self, pool=None):
         """Run the next generation of configurations currently on the horizon.
         Handles the generation records in the state.
         """
@@ -1521,15 +1531,23 @@ class Sweep(object):
         if self.verbosity >= 1:
             print(f' Evaluating the horizon for generation {len(self.state.generations)}...')
 
-        while len(self.state.horizon) > 0:
-            new_frontier_points = self.process_batch()
-            self.state.generations[gen_idx] += new_frontier_points
+        if pool is None:
+            pool = self.pool
+        if pool is None:
+            with multiprocessing.Pool(self.cores) as pool:
+                while len(self.state.horizon) > 0:
+                        new_frontier_points = self.process_batch(pool)
+                        self.state.generations[gen_idx] += new_frontier_points
+        else:
+            while len(self.state.horizon) > 0:
+                new_frontier_points = self.process_batch(pool)
+                self.state.generations[gen_idx] += new_frontier_points
 
         if self.verbosity >= 1:
             print(f' Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
         return self.state.generations[gen_idx]
 
-    def cleanup_horizon(self):
+    def cleanup_horizon(self, pool=None):
         """Empty the horizon, in case only part of a generation was evaluated.
         This is almost the same as running a generation,
         but it doesn't append a new generation record.
@@ -1547,10 +1565,19 @@ class Sweep(object):
             print(f' Cleaning up {horizon_size} configurations left on the horizon at generation {gen_idx}...')
 
         total_new_points = 0
-        while len(self.state.horizon) > 0:
-            new_frontier_points = self.process_batch()
-            total_new_points += new_frontier_points
-            self.state.generations[gen_idx] += new_frontier_points
+        if pool is None:
+            pool = self.pool
+        if pool is None:
+            with multiprocessing.Pool(self.cores) as pool:
+                while len(self.state.horizon) > 0:
+                    new_frontier_points = self.process_batch(pool)
+                    total_new_points += new_frontier_points
+                    self.state.generations[gen_idx] += new_frontier_points
+        else:
+            while len(self.state.horizon) > 0:
+                new_frontier_points = self.process_batch(pool)
+                total_new_points += new_frontier_points
+                self.state.generations[gen_idx] += new_frontier_points
 
         if self.verbosity >= 1:
             print(f' Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
