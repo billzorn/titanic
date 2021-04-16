@@ -868,7 +868,7 @@ class SearchState(object):
         #   1 - mutant
         #   2 - crossover
         #   3 - local search
-        #   4 - target exhaustive search
+        #   4 - targeted exhaustive search
         #
         # A single configuration (i.e. config_parameters) can be found:
         #   in self.cache once, if we've ever thought of running it
@@ -1228,6 +1228,45 @@ class Sweep(object):
             print(f'  generated {len(batch)} crossed configurations ({hits} hit cache).')
         return batch
 
+    def exhaustive_batch(self, searchspace, center_cfg=None, max_size=None):
+        """Return a new batch of configurations, exhaustively exploring searchspace.
+        If center_cfg is provided, explore manhattan spheres around it in order;
+        if max_size is provided, then stop after that many points.
+        """
+        if self.verbosity >= 2:
+            if max_size is None:
+                print(f'  exhaustively enumerating configurations...')
+            else:
+                print(f'  exhaustively enumerating up to {max_size} configurations...')
+
+        if center_cfg is None:
+            space = [list(parameter_axis) for parameter_axis in searchspace]
+            gen = itertools.product(*space)
+        else:
+            space = [reorder_for_bfs(parameter_axis, x) for parameter_axis, x in zip(searchspace, center_cfg)]
+            gen = breadth_first_product(*space)
+
+        batch = set()
+        hits = 0
+        if max_size is None:
+            for cfg in gen:
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                else:
+                    hits += 1
+        else:
+              for cfg in gen:
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= max_size:
+                        break
+                else:
+                    hits += 1
+
+        if self.verbosity >= 2:
+            print(f'  exhaustively generated {len(batch)} configurations ({hits} hit cache).')
+        return batch
+
     def relative_pop(self, this_weight, ref_weight, ref_size, target_bounds):
         """Scale ref_size as a fraction this_weight of ref_weight.
         If target_bounds are provided as a tuple (min_bound, max_bound),
@@ -1351,6 +1390,38 @@ class Sweep(object):
         if self.verbosity >= 1:
             print(' Added {new_cfg_count} new configurations to the horizon.')
         return new_cfg_count
+
+    def explore_randomly(self, n):
+        """Try to add up to n random configurations to the frontier.
+        This is a good fallback if we have no current frontier to guide the search,
+        or the entire local area has been exhausted.
+        """
+        if self.verbosity >= 1:
+            print(f' Looking for {n} random configurations to add to the horizon...')
+
+        batch = self.random_batch(n)
+        self.state.add_to_horizon(batch, 0)
+
+        if self.verbosity >= 1:
+            print(' Added {len(batch)} new random configurations to the horizon.')
+        return len(batch)
+
+    def explore_exhaustively(self, searchspace, center_cfg=None, max_size=None):
+        """Explore a space of parameters exhaustively.
+        Searchspace should be a list of generators, one for each parameter,
+        giving every possible value in order.
+        If center_cfg is provided, then order the search outward (in terms of manhattan spheres)
+        from that point.
+        """
+        if self.verbosity >= 1:
+            print(f' Exploring exhaustively...')
+
+        batch = self.exhaustive_batch(searchspace, center_cfg=center_cfg, max_size=max_size)
+        self.state.add_to_horizon(batch, 4)
+
+        if self.verbosity >= 1:
+            print(' Added {len(batch)} exhaustive configurations to the horizon.')
+        return len(batch)
 
 
 
