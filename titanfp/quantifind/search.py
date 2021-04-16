@@ -947,6 +947,7 @@ class SearchState(object):
                     repeat_cfgs += 1
                 else:
                     self.cache[cfg] = [None, None, 1, reason]
+                    self.horizon.append(cfg)
             if repeat_cfgs > 0:
                 print(f'WARNING: skipped {repeat_cfgs} configurations that were already in the cache')
             return repeat_cfgs
@@ -958,6 +959,7 @@ class SearchState(object):
                         print(f'!!! WARNING: configuration {repr(cfg)} has been run before !!!')
                     repeat_cfgs += 1
                 self.cache[cfg] = [None, None, 1, reason]
+                self.horizon.append(cfg)
             return repeat_cfgs
 
 # new search algo, inspired by "GOFAI" and specifically genetic algorithms
