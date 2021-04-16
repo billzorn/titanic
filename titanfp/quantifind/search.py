@@ -1024,7 +1024,7 @@ class Sweep(object):
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
 
-    def random_batch(size):
+    def random_batch(self, size):
         """Return a new batch of completely random configurations to explore."""
         if self.verbosity >= 2:
             print(f'  generating a new batch of {size} random configurations...')
@@ -1047,7 +1047,7 @@ class Sweep(object):
             print(f'  generated {len(batch)} random configurations ({hits} hit cache).')
         return batch
 
-    def mutant_batch(size):
+    def mutant_batch(self, size):
         """Return a new batch of mutated configurations, based on the current frontier."""
         if len(self.state.frontier) < 1:
             if self.verbosity >= 2:
@@ -1079,7 +1079,7 @@ class Sweep(object):
             print(f'  generated {len(batch)} mutated configurations ({hits} hit cache).')
         return batch
 
-    def neighborhood(axes_first=True):
+    def neighborhood(self, axes_first=True):
         """Generator for the full space of configurations "nearby" to the Pareto frontier.
         May produce the same configuration multiple times, but not too many times.
         If axes_first is False, then skip the pre-pass that explores hypercubes
@@ -1116,7 +1116,7 @@ class Sweep(object):
             # swap lists in place
             gens, new_gens = new_gens, gens
 
-    def local_neighborhood(min_size=None, max_size=None):
+    def local_neighborhood(self, min_size=None, max_size=None):
         """Explore the local neighborhood of the current pareto frontier.
         First return points by extending each axis, then all axes together.
         Stop early if max_size is hit.
@@ -1170,7 +1170,7 @@ class Sweep(object):
             print(f'  generated local neighborhood of {len(batch)} configurations ({hits} hit cache).')
         return batch
 
-    def local_batch(size, axes_first=True):
+    def local_batch(self, size, axes_first=True):
         """Return a new batch of nearby configurations, based on the current frontier.
         If axes_first is True, first explore along the parameter axes.
         """
@@ -1196,7 +1196,7 @@ class Sweep(object):
             print(f'  generated {len(batch)} nieghboring configurations ({hits} hit cache).')
         return batch
 
-    def cross_batch(size):
+    def cross_batch(self, size):
         """Return a new batch of configurations using crossover, based on the current frontier."""
         if len(self.state.frontier) < 2:
             if self.verbosity >= 2:
@@ -1228,7 +1228,7 @@ class Sweep(object):
             print(f'  generated {len(batch)} crossed configurations ({hits} hit cache).')
         return batch
 
-    def relative_pop(this_weight, ref_weight, ref_size, target_bounds):
+    def relative_pop(self, this_weight, ref_weight, ref_size, target_bounds):
         """Scale ref_size as a fraction this_weight of ref_weight.
         If target_bounds are provided as a tuple (min_bound, max_bound),
         then return a number in that range.
@@ -1243,7 +1243,7 @@ class Sweep(object):
         else:
             return unbounded
 
-    def expand_horizon():
+    def expand_horizon(self):
         """Expand the horizon by adding new configurations.
 
         This is the only place that self.state.horizon is modified,
@@ -1311,10 +1311,10 @@ class Sweep(object):
         if neighbors is not None:
             local_size = len(neighbors)
         else:
-            local_size = relative_pop(pop_local_weight, pop_ref_weight, pop_ref_size, settings.pop_local_target)
-        crossed_size = relative_pop(pop_crossed_weight, pop_ref_weight, pop_ref_size, settings.pop_crossed_target)
-        mutant_size = relative_pop(pop_mutant_weight, pop_ref_weight, pop_ref_size, settings.pop_mutant_target)
-        random_size = relative_pop(pop_random_weight, pop_ref_weight, pop_ref_size, settings.pop_random_target)
+            local_size = self.relative_pop(pop_local_weight, pop_ref_weight, pop_ref_size, settings.pop_local_target)
+        crossed_size = self.relative_pop(pop_crossed_weight, pop_ref_weight, pop_ref_size, settings.pop_crossed_target)
+        mutant_size = self.relative_pop(pop_mutant_weight, pop_ref_weight, pop_ref_size, settings.pop_mutant_target)
+        random_size = self.relative_pop(pop_random_weight, pop_ref_weight, pop_ref_size, settings.pop_random_target)
 
         if self.verbosity >= 1:
             print(f' Looking for about {pop_ref_size} new configurations...')
