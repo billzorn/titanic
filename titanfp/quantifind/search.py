@@ -979,7 +979,7 @@ class SearchState(object):
             # so that we can't break it by mutating the deque
             return list(itertools.islice(self.horizon, n))
 
-    def commit_to_history(self, result, verbose=True):
+    def commit_to_history(self, result, metric_fns, verbose=True):
         """Commit an evaluated configuration to the history,
         updating the Pareto frontier in the process.
         Does not update the state's generation info.
@@ -1004,13 +1004,12 @@ class SearchState(object):
         self.history.append(cfg)
         record[0] = hidx
 
-        keep, new_frontier = update_frontier(self.frontier, result, self.metric_fns)
+        keep, new_frontier = update_frontier(self.frontier, result, metric_fns)
         if keep:
             fidx = len(self.frontier_log)
             # TODO: we need update_frontier to track what got removed
             self.frontier_log.append([result, [], None])
             record[1] = fidx
-            new_frontier_points += 1
 
         self.frontier = new_frontier
         return keep
@@ -1116,7 +1115,7 @@ class Sweep(object):
     def random_batch(self, size):
         """Return a new batch of completely random configurations to explore."""
         if self.verbosity >= 2:
-            print(f'  generating a new batch of {size} random configurations...')
+            print(f'    generating a new batch of {size} random configurations...')
 
         batch = set()
         hits = 0
@@ -1133,18 +1132,18 @@ class Sweep(object):
                 break
 
         if self.verbosity >= 2:
-            print(f'  generated {len(batch)} random configurations ({hits} hit cache).')
+            print(f'    generated {len(batch)} random configurations ({hits} hit cache).')
         return batch
 
     def mutant_batch(self, size):
         """Return a new batch of mutated configurations, based on the current frontier."""
         if len(self.state.frontier) < 1:
             if self.verbosity >= 2:
-                print(f'  unable to generate mutated configurations; no configurations in frontier')
+                print(f'    unable to generate mutated configurations; no configurations in frontier')
             return set()
 
         if self.verbosity >= 2:
-            print(f'  generating a new batch of {size} mutated configurations...')
+            print(f'    generating a new batch of {size} mutated configurations...')
 
         batch = set()
         hits = 0
@@ -1165,7 +1164,7 @@ class Sweep(object):
                 break
 
         if self.verbosity >= 2:
-            print(f'  generated {len(batch)} mutated configurations ({hits} hit cache).')
+            print(f'    generated {len(batch)} mutated configurations ({hits} hit cache).')
         return batch
 
     def neighborhood(self, axes_first=True):
@@ -1214,14 +1213,14 @@ class Sweep(object):
         """
         if len(self.state.frontier) < 1:
             if self.verbosity >= 2:
-                print(f'  unable to generate neighboring configurations; no configurations in frontier')
+                print(f'    unable to generate neighboring configurations; no configurations in frontier')
             return set()
 
         if self.verbosity >= 2:
             if min_size is not None or max_size is not None:
-                print(f'  generating local neighborhood ({min_size} - {max_size})...')
+                print(f'    generating local neighborhood ({min_size} - {max_size})...')
             else:
-                print(f'  generating local neighborhood...')
+                print(f'    generating local neighborhood...')
 
         gens = [nearby_points(cfg, self.neighbor_fns, bfs_neighbors=(max_size is not None), combine=True, product=False)
                 for cfg, _ in self.state.frontier]
@@ -1245,7 +1244,7 @@ class Sweep(object):
 
         if min_size is not None and len(batch) < min_size:
             if self.verbosity >= 2:
-                print(f'  local search only found {len(batch)} points, exploring full cartesian product...')
+                print(f'    local search only found {len(batch)} points, exploring full cartesian product...')
 
             for cfg in self.neighborhood(axes_first=False):
                 if self.state.poke_cache(cfg) and cfg not in batch:
@@ -1256,7 +1255,7 @@ class Sweep(object):
                     hits += 1
 
         if self.verbosity >= 2:
-            print(f'  generated local neighborhood of {len(batch)} configurations ({hits} hit cache).')
+            print(f'    generated local neighborhood of {len(batch)} configurations ({hits} hit cache).')
         return batch
 
     def local_batch(self, size, axes_first=True):
@@ -1265,11 +1264,11 @@ class Sweep(object):
         """
         if len(self.state.frontier) < 1:
             if self.verbosity >= 2:
-                print(f'  unable to generate neighboring configurations; no configurations in frontier')
+                print(f'    unable to generate neighboring configurations; no configurations in frontier')
             return set()
 
         if self.verbosity >= 2:
-            print(f'  generating a new batch of {size} neighboring configurations...')
+            print(f'    generating a new batch of {size} neighboring configurations...')
 
         batch = set()
         hits = 0
@@ -1282,18 +1281,18 @@ class Sweep(object):
                 hits += 1
 
         if self.verbosity >= 2:
-            print(f'  generated {len(batch)} nieghboring configurations ({hits} hit cache).')
+            print(f'    generated {len(batch)} nieghboring configurations ({hits} hit cache).')
         return batch
 
     def cross_batch(self, size):
         """Return a new batch of configurations using crossover, based on the current frontier."""
         if len(self.state.frontier) < 2:
             if self.verbosity >= 2:
-                print(f'  unable to generate configurations with crossover; must have at least two configurations in frontier')
+                print(f'    unable to generate configurations with crossover; must have at least two configurations in frontier')
             return set()
 
         if self.verbosity >= 2:
-            print(f'  generating a new batch of {size} crossed configurations...')
+            print(f'    generating a new batch of {size} crossed configurations...')
 
         batch = set()
         hits = 0
@@ -1314,7 +1313,7 @@ class Sweep(object):
                 break
 
         if self.verbosity >= 2:
-            print(f'  generated {len(batch)} crossed configurations ({hits} hit cache).')
+            print(f'    generated {len(batch)} crossed configurations ({hits} hit cache).')
         return batch
 
     def exhaustive_batch(self, searchspace, center_cfg=None, max_size=None):
@@ -1324,9 +1323,9 @@ class Sweep(object):
         """
         if self.verbosity >= 2:
             if max_size is None:
-                print(f'  exhaustively enumerating configurations...')
+                print(f'    exhaustively enumerating configurations...')
             else:
-                print(f'  exhaustively enumerating up to {max_size} configurations...')
+                print(f'    exhaustively enumerating up to {max_size} configurations...')
 
         if center_cfg is None:
             space = [list(parameter_axis) for parameter_axis in searchspace]
@@ -1353,7 +1352,7 @@ class Sweep(object):
                     hits += 1
 
         if self.verbosity >= 2:
-            print(f'  exhaustively generated {len(batch)} configurations ({hits} hit cache).')
+            print(f'    exhaustively generated {len(batch)} configurations ({hits} hit cache).')
         return batch
 
     def relative_pop(self, this_weight, ref_weight, ref_size, target_bounds):
@@ -1393,23 +1392,23 @@ class Sweep(object):
         pop_random_weight = settings.pop_random_weight
         pop_mutant_weight = settings.pop_mutant_weight
         pop_local_weight = settings.pop_local_weight
-        pop_crossed_weigh = settings.pop_crossed_weight
+        pop_crossed_weight = settings.pop_crossed_weight
         pop_weight = pop_random_weight + pop_mutant_weight +  pop_local_weight + pop_crossed_weight
         pop_weight_scale = settings.pop_weight_scale
         if pop_weight <= 0:
             if self.verbosity >= 1:
-                print(f' Unable to expand horizon; zero population weight')
+                print(f'  Unable to expand horizon; zero population weight')
             return 0
 
         if self.verbosity >= 1:
-            print(f' Expanding the horizon...')
+            print(f'  Expanding the horizon...')
 
         # decide on a population scheme
         if pop_weight_scale <= 0:
             # weight relatively so that pop_local_weight ~= size of the local neighborhood
             if pop_local_weight <= 0:
                 if self.verbosity >= 1:
-                    print(f' Unable to expand horizon; no local population to weight against')
+                    print(f'  Unable to expand horizon; no local population to weight against')
                 return 0
 
             # first we need the local neighborhood
@@ -1423,7 +1422,7 @@ class Sweep(object):
 
             if pop_random_weight + pop_mutant_weight + pop_crossed_weight == 0:
                 if self.verbosity >= 1:
-                    print(' Added {new_cfg_count} new configurations from the local neighborhood.')
+                    print(f'  Added {new_cfg_count} new configurations from the local neighborhood.')
                 return new_cfg_count
             else:
                 pop_ref_size = len(neighbors)
@@ -1445,7 +1444,7 @@ class Sweep(object):
         random_size = self.relative_pop(pop_random_weight, pop_ref_weight, pop_ref_size, settings.pop_random_target)
 
         if self.verbosity >= 1:
-            print(f' Looking for about {pop_ref_size} new configurations...')
+            print(f'  Looking for about {pop_ref_size} new configurations...')
             if self.verbosity >= 2:
                 if local_size > 0:
                     if neighbors is not None:
@@ -1477,7 +1476,7 @@ class Sweep(object):
             self.state.add_to_horizon(batch, 0, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
-            print(' Added {new_cfg_count} new configurations to the horizon.')
+            print(f'  Added {new_cfg_count} new configurations to the horizon.')
         return new_cfg_count
 
     def explore_randomly(self, n):
@@ -1486,13 +1485,13 @@ class Sweep(object):
         or the entire local area has been exhausted.
         """
         if self.verbosity >= 1:
-            print(f' Looking for {n} random configurations to add to the horizon...')
+            print(f'  Looking for {n} random configurations to add to the horizon...')
 
         batch = self.random_batch(n)
         self.state.add_to_horizon(batch, 0, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
-            print(' Added {len(batch)} new random configurations to the horizon.')
+            print(f'  Added {len(batch)} new random configurations to the horizon.')
         return len(batch)
 
     def explore_exhaustively(self, searchspace, center_cfg=None, max_size=None):
@@ -1503,13 +1502,13 @@ class Sweep(object):
         from that point.
         """
         if self.verbosity >= 1:
-            print(f' Exploring exhaustively...')
+            print(f'  Exploring exhaustively...')
 
         batch = self.exhaustive_batch(searchspace, center_cfg=center_cfg, max_size=max_size)
         self.state.add_to_horizon(batch, 4, verbose=self.verbosity>=3)
 
         if self.verbosity >= 1:
-            print(' Added {len(batch)} exhaustive configurations to the horizon.')
+            print(f'  Added {len(batch)} exhaustive configurations to the horizon.')
         return len(batch)
 
     def process_batch(self, pool):
@@ -1519,9 +1518,9 @@ class Sweep(object):
         Pool.map or Pool.imap / async functionality. Or not."""
         if self.verbosity >= 2:
             if self.batch is not None:
-                print(f'  processing a batch of {self.batch} configurations...')
+                print(f'    processing a batch of {self.batch} configurations...')
             else:
-                print(f'  processing the entire horizon...')
+                print(f'    processing the entire horizon...')
 
         cfgs = self.state.get_from_horizon(self.batch)
         async_results = []
@@ -1529,13 +1528,13 @@ class Sweep(object):
             async_results.append(pool.apply_async(self.eval_fn, cfg))
 
         if self.verbosity >= 2:
-            print(f'  dispatched {len(async_results)} evaluations...')
+            print(f'    dispatched {len(async_results)} evaluations...')
 
         new_frontier_points = 0
         for cfg, ares in zip(cfgs, async_results):
             qos = ares.get()
             result = cfg, qos
-            if self.state.commit_to_history(result, verbose=self.verbosity>=3):
+            if self.state.commit_to_history(result, self.metric_fns, verbose=self.verbosity>=3):
                 new_frontier_points += 1
                 if self.verbosity >= 3:
                     print('!', end='', flush=True)
@@ -1546,7 +1545,7 @@ class Sweep(object):
             print(flush=True)
 
         if self.verbosity >= 2:
-            print(f'  processed {len(async_results)} configurations, added {new_frontier_points} to the frontier.')
+            print(f'    processed {len(async_results)} configurations, added {new_frontier_points} to the frontier.')
         return new_frontier_points
 
     def run_generation(self, pool=None):
@@ -1558,7 +1557,7 @@ class Sweep(object):
         self.state.generations.append(0)
 
         if self.verbosity >= 1:
-            print(f' Evaluating the horizon for generation {len(self.state.generations)}...')
+            print(f'  Evaluating the horizon for generation {len(self.state.generations)}...')
 
         if pool is None:
             pool = self.pool
@@ -1573,7 +1572,7 @@ class Sweep(object):
                 self.state.generations[gen_idx] += new_frontier_points
 
         if self.verbosity >= 1:
-            print(f' Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
+            print(f'  Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
         return self.state.generations[gen_idx]
 
     def cleanup_horizon(self, pool=None):
@@ -1591,7 +1590,7 @@ class Sweep(object):
             self.state.generations.append(0)
 
         elif self.verbosity >= 1:
-            print(f' Cleaning up {horizon_size} configurations left on the horizon at generation {gen_idx}...')
+            print(f'  Cleaning up {horizon_size} configurations left on the horizon at generation {gen_idx}...')
 
         total_new_points = 0
         if pool is None:
@@ -1609,10 +1608,10 @@ class Sweep(object):
                 self.state.generations[gen_idx] += new_frontier_points
 
         if self.verbosity >= 1:
-            print(f' Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
+            print(f'  Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
         return total_new_points
 
-    def run_search():
+    def run_search(self):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
             print('Running QuantiFind sweep...')
@@ -1623,6 +1622,9 @@ class Sweep(object):
         is_initial_gen = (len(self.state.history) == 0)
 
         while True:
+            if self.verbosity >= 1:
+                print(flush=True)
+
             # try to expand the horizon
             new_cfgs = self.expand_horizon()
 
@@ -1639,13 +1641,16 @@ class Sweep(object):
                 self.state.initial_gens += 1
                 self.state.initial_cfgs += new_cfgs
 
+            if self.verbosity >= 1:
+                print(flush=True)
+
             new_frontier_points = self.run_generation()
             is_initial_gen = (new_frontier_points == 0)
 
             # stopping criteria
             if is_initial_gen:
-                if (self.state.initial_gens >= self.state.restart_gen_target and
-                    self.state.initial_cfgs >= self.state.restart_size_target):
+                if (self.state.initial_gens >= self.settings.restart_gen_target and
+                    self.state.initial_cfgs >= self.settings.restart_size_target):
                     if self.verbosity >= 0:
                         print(f'Searched for {self.state.initial_gens} initial generations '
                               f'with {self.state.initial_cfgs} total initial configurations. Done.')
