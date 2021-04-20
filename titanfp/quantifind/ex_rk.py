@@ -172,10 +172,20 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
     rk_inits = (init_ebits,) + (init_pbits,) * 6
     rk_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 6
 
+    cores = 128
+    sweep_settings = search.SearchSettings(
+        profile = 'local',
+        initial_gen_size = cores * inits,
+        restart_gen_target = retries,
+    )
+
     settings.cfg(eq_name, False)
     try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_' + eq_name + '.json', *sweep, settings=eq_name + ' with floats')
+        with search.Sweep(rk_stage, rk_inits, rk_neighbors, rk_metrics, settings=sweep_settings, cores=cores) as sweep:
+            frontier = sweep.run_search()
+            sweepdata = sweep.state.generations, sweep.state.history, frontier
+        #sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_rk_' + eq_name + '.json', *sweepdata, settings=eq_name + ' with floats')
     except Exception:
         traceback.print_exc()
 
@@ -184,11 +194,14 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
 
     settings.cfg(eq_name, True)
     try:
-        sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_' + eq_name + '_p.json', *sweep, settings=eq_name + ' with posits')
+        with search.Sweep(rk_stage, rk_inits, rk_neighbors, rk_metrics, settings=sweep_settings, cores=cores) as sweep:
+            frontier = sweep.run_search()
+            sweepdata = sweep.state.generations, sweep.state.history, frontier
+        #sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
+        jsonlog(prefix + '_rk_' + eq_name + '_p.json', *sweepdata, settings=eq_name + ' with posits')
     except Exception:
         traceback.print_exc()
-        
+
 def rk_random(prefix, ebit_slice, pbit_slice, es_slice, points, eq_name='all'):
     if eq_name == 'all':
         rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='lorenz')
@@ -258,7 +271,7 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
-        
+
     settings.cfg('chua', False)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_float, rk_metrics)
@@ -273,7 +286,7 @@ def rk_baseline(prefix):
         traceback.print_exc()
 
     # again with posits
-        
+
     settings.cfg('lorenz', True)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)
@@ -300,7 +313,7 @@ def rk_baseline(prefix):
     except Exception:
         traceback.print_exc()
 
-        
+
     settings.cfg('chua', True)
     try:
         sweep = search.sweep_exhaustive(rk_ref_stage, rk_bc_posit, rk_metrics)

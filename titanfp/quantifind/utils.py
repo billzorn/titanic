@@ -57,6 +57,150 @@ def describe_ctx(ctx):
     else:
         return ctx.propstr()
 
+
+# import Pareto frontier manipulation logic
+
+def compare_with_metrics(x1, x2, metric_fns, distinguish_incomparable=False):
+    """Compare two points x1 and x2 by calling an element of metric_fns
+    for each coordinate.
+    If a metric_fn is None, then ignore the coordinate.
+
+    By default, return -1 if x1 is strictly less, 1 if x1 is strictly greater,
+    and 0 if the points are equal or unordered.
+
+    If distinguish_incomparable is True,
+    only return 0 for points that are equal;
+    for unordered but not equal ("incomparable") points return None instead.
+    """
+    lt = False
+    gt = False
+    for a1, a2, cmp_lt in zip(x1, x2, metric_fns):
+        if cmp_lt is not None:
+            if cmp_lt(a1, a2):
+                lt = True
+                if gt:
+                    break
+            elif cmp_lt(a2, a1):
+                gt = True
+                if lt:
+                    break
+
+    if lt:
+        if gt:
+            if distinguish_incomparable:
+                return None
+            else:
+                return 0
+        else: # not gt
+            return -1
+
+    else: # not lt
+        if gt:
+            return 1
+        else: # not gt
+            return 0
+
+def update_frontier(frontier, result, metric_fns, check=False):
+    """Given a Pareto frontier and a new point,
+    try to add that point to the frontier.
+
+    Return a triple of:
+      whether or not the new point changed the frontier,
+      the new frontier,
+      and a list of all the points that were removed from the frontier in the process.
+
+    Assuming a well-formed frontier, it should be impossible to remove points
+    if the new point is not on the new frontier;
+    passing check=True avoids exiting early based on this assumption.
+    """
+    cfg, qos = result
+
+    keep = True
+    new_frontier = []
+    removed_points = []
+
+    for i, frontier_result in enumerate(frontier):
+        frontier_cfg, frontier_qos = frontier_result
+        comparison = compare_with_metrics(qos, frontier_qos, metric_fns, distinguish_incomparable=True)
+
+        if comparison:
+            # the comparison is 1 or -1; these points are ordered
+
+            if comparison > 0:
+                # existing point is better; we don't need the new one
+                new_frontier.append(frontier_result)
+                keep = False
+            else: # comparison < 0
+                # existing point is strictly worse; get rid of it
+                removed_points.append(frontier_result)
+
+        else:
+            # the comparison is 0 or None; the points are unordered but may be equal
+
+            # we always keep the existing point in this case
+            new_frontier.append(frontier_result)
+
+            if comparison == 0 and cfg == frontier_cfg:
+                # if we have seen exactly this same point, avoid duplicating it
+                keep = False
+
+        if not (check or keep):
+            # we can return early, assuming this was indeed a Pareto frontier to begin with;
+            # keep the rest of the points
+            new_frontier.extend(frontier[i+1:])
+            return keep, new_frontier, removed_points
+
+    if keep:
+        new_frontier.append(result)
+    return keep, new_frontier, removed_points
+
+def reconstruct_frontier(frontier, metric_fns, check=False, verbose=True):
+    """Reconstruct the given frontier, possibly using a different set of metrics.
+    Pass the check option along to the underlying update_frontier function.
+    """
+    new_frontier = []
+    all_removed = []
+    for result in frontier:
+        changed, next_frontier, removed_points = update_frontier(new_frontier, result, metric_fns, check=check)
+        if check and verbose and not changed:
+            print(f'-- point {repr(result)} is not on the frontier --')
+        new_frontier = next_frontier
+        all_removed.extend(removed_points)
+    return new_frontier, all_removed
+
+def check_frontier(frontier, metric_fns, verbose=True):
+    """Quadratically check the frontier for well-formedness,
+    explaining any discrepancies and returning a count;
+    this should only be used for debugging.
+    """
+    badness = 0
+    for i1 in range(len(frontier)):
+        for i2 in range(i1+1, len(frontier)):
+            res1, res2 = frontier[i1], frontier[i2]
+            cfg1, qos1 = res1
+            cfg2, qos2 = res2
+            comparison = compare_with_metrics(qos1, qos2, metric_fns, distinguish_incomparable=True)
+            if comparison:
+                badness += 1
+                if verbose:
+                    if comparison < 0:
+                        print(f'-- Not a Pareto frontier! point {repr(res1)} < {repr(res2)} --')
+                    else: # comparison > 0
+                        print(f'-- Not a Pareto frontier! point {repr(res2)} < {repr(res1)} --')
+            else:
+                if comparison == 0 and cfg1 == cfg2:
+                    badness += 1
+                    if verbose:
+                        print(f'-- Duplicate point {repr(res1)} at index {i1} and {i2} --')
+    return badness
+
+def print_frontier(frontier):
+    print('[')
+    for frontier_data, frontier_m in frontier:
+        print(f'    ({frontier_data!r}, {frontier_m!r}),')
+    print(']')
+
+
 def linear_ulps(x, y):
     smaller_n = min(x.n, y.n)
     x_offset = x.n - smaller_n
@@ -81,6 +225,7 @@ def load_cores(interpreter, cores, analyses=None):
         interpreter.analyses = analyses
 
     return main
+
 
 def neighborhood(lo, hi, near):
     def neighbors(x):

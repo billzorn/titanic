@@ -1,7 +1,5 @@
 """Common code for parameter search."""
 
-DONT_HAMMER_LEVIATHAN=32
-
 # Goal: find a distribution of "good" configurations according to a set of metrics
 
 # Kinds of metrics:
@@ -64,7 +62,7 @@ import multiprocessing
 import random
 import math
 
-from .utils import describe_ctx
+from .utils import *
 
 
 def center_ranges(input_ranges):
@@ -93,338 +91,6 @@ def center_ranges(input_ranges):
 
     return output_ranges
 
-
-def compare_results(m1, m2, metrics):
-    lt = False
-    gt = False
-    for a1, a2, cmp_lt in zip(m1, m2, metrics):
-        if cmp_lt(a1, a2):
-            lt = True
-        elif cmp_lt(a2, a1):
-            gt = True
-
-    if lt:
-        if gt:
-            return None
-        else:
-            return -1
-    else:
-        if gt:
-            return 1
-        else:
-            return 0
-
-
-def update_frontier(frontier, result, metrics):
-
-    keep = True
-    new_frontier = []
-    frontier_cfgs = set()
-
-    result_data, result_m = result
-
-    for frontier_data, frontier_m in frontier:
-        comparison = compare_results(result_m, frontier_m, metrics)
-
-        if comparison is None or comparison == 0:
-            # the points are incomparable; keep both
-            if frontier_data not in frontier_cfgs:
-                new_frontier.append((frontier_data, frontier_m))
-                frontier_cfgs.add(frontier_data)
-
-
-        elif comparison > 0:
-            # some existing result is better than the new one;
-            # we don't need the new one
-            if frontier_data not in frontier_cfgs:
-                new_frontier.append((frontier_data, frontier_m))
-                frontier_cfgs.add(frontier_data)
-            keep = False
-
-        # else: # comparison < 0
-        #     pass
-        #     # new result is less, which is strictly better;
-        #     # keep it and throw out this result
-
-    if keep and result_data not in frontier_cfgs:
-        new_frontier.append(result)
-        frontier_cfgs.add(result_data)
-
-    #check_frontier(new_frontier, metrics)
-
-    return keep, new_frontier
-
-
-def check_frontier(frontier, metrics, verbosity=3):
-
-    broken = False
-    new_frontier = []
-    frontier_cfgs = set()
-
-    for i1 in range(len(frontier)):
-        res1_data, res1_m = frontier[i1]
-        keep = True
-
-        for i2 in range(len(frontier)):
-            if i1 != i2:
-
-                res2_data, res2_m = frontier[i2]
-
-                comparison = compare_results(res1_m, res2_m, metrics)
-
-                if not (comparison is None or comparison == 0):
-                    broken = True
-
-                    if comparison > 0:
-                        if verbosity >= 2:
-                            print(f'Discarding point {i1!s} {frontier[i1]!r} from frontier')
-                            print(f'  point {i2!s} {frontier[i2]!r} is strictly better')
-                        keep = False
-                        break
-
-        if keep and res1_data not in frontier_cfgs:
-            new_frontier.append((res1_data, res1_m))
-            frontier_cfgs.add(res1_data)
-
-    if broken and verbosity >= 1:
-        print(f'Discarded {len(frontier) - len(new_frontier)} points in total')
-
-    return broken, new_frontier
-
-
-def print_frontier(frontier):
-    print('[')
-    for frontier_data, frontier_m in frontier:
-        print(f'    ({frontier_data!r}, {frontier_m!r}),')
-    print(']')
-
-
-def sweep_random_init(stage_fn, inits, neighbors, metrics,
-                      previous_sweep=None, force_exploration=False, verbosity=3):
-    initial_cfg = tuple(f() for f in inits)
-    initial_result = stage_fn(*initial_cfg)
-    visited_points = [(initial_cfg, initial_result)]
-
-    if verbosity >= 1:
-        print(f'Random init: the initial point is {initial_cfg!r} : {initial_result!r}')
-
-    if previous_sweep is None:
-        all_cfgs = {initial_cfg}
-        frontier = [(initial_cfg, initial_result)]
-        gen_log = [0]
-        improved_frontier = True
-    else:
-        explore_area = False
-        gen_log, all_cfgs, frontier = previous_sweep
-        if initial_cfg in all_cfgs:
-            if verbosity >= 1:
-                print('  this point has already been explored, ', end='')
-            explore_area = True
-        else:
-            all_cfgs.add(initial_cfg)
-            updated, frontier = update_frontier(frontier, (initial_cfg, initial_result), metrics)
-            if updated:
-                gen_log.append(0)
-                improved_frontier = True
-            else:
-                if verbosity >= 1:
-                    print('  this point is not interesting, ', end='')
-                explore_area = True
-
-        if explore_area:
-            if force_exploration:
-                if verbosity >= 1:
-                    print('exploring anyway')
-                gen_log.append(-1)
-                frontier.append((initial_cfg, initial_result))
-                improved_frontier = True
-            else:
-                if verbosity >= 1:
-                    print('aborting')
-                return (False, visited_points, *previous_sweep)
-
-    with multiprocessing.Pool() as pool:
-        while improved_frontier:
-            improved_frontier = False
-
-            if verbosity >= 1:
-                print(f'generation {gen_log[-1]!s}: ({len(all_cfgs)!s} cfgs total) ')
-                print_frontier(frontier)
-                print(flush=True)
-
-            gen_log[-1] += 1
-
-            async_results = []
-            skipped = 0
-            for cfg, result in frontier:
-                # work on individual points
-                for i in range(len(cfg)):
-                    x = cfg[i]
-                    f = neighbors[i]
-                    for new_x in f(x):
-                        new_cfg = list(cfg)
-                        new_cfg[i] = new_x
-                        new_cfg = tuple(new_cfg)
-                        if new_cfg not in all_cfgs:
-                            async_results.append((new_cfg, pool.apply_async(stage_fn, new_cfg)))
-                            all_cfgs.add(new_cfg)
-                        else:
-                            skipped += 1
-
-                # work on all points together
-                for combined_cfg in zip(*center_ranges(f(x) for f, x in zip(neighbors, cfg))):
-                    if combined_cfg not in all_cfgs:
-                        async_results.append((combined_cfg, pool.apply_async(stage_fn, combined_cfg)))
-                        all_cfgs.add(combined_cfg)
-                    else:
-                        skipped += 1
-
-            if verbosity >= 2:
-                print(f'dispatched {len(async_results)!s} evaluations for generation {gen_log[-1]!s}, {skipped!s} skipped')
-
-            for i, (new_cfg, ares) in enumerate(async_results):
-                new_res = ares.get()
-                visited_points.append((new_cfg, new_res))
-                updated, frontier = update_frontier(frontier, (new_cfg, new_res), metrics)
-                improved_frontier |= updated
-
-                if verbosity >= 3:
-                    print(f' -- {i+1!s} -- ran {new_cfg!r}, got {new_res!r}')
-                    if updated:
-                        print('The frontier changed:')
-                        print_frontier(frontier)
-
-            broken, frontier = check_frontier(frontier, metrics, verbosity=verbosity)
-            if broken and explore_area and gen_log[-1] == 0 and verbosity >= 1:
-                print('  this is expected due to forced exploration')
-
-    if verbosity >= 1:
-        print(f'improvement stopped at generation {gen_log[-1]!s}: ')
-        print_frontier(frontier)
-        print(flush=True)
-
-    return (gen_log[-1] > 0), visited_points, gen_log, all_cfgs, frontier
-
-def sweep_multi(stage_fn, inits, neighbors, metrics, max_inits, max_retries,
-                force_exploration=False, verbosity=3):
-    if verbosity >= 1:
-        print(f'Multi-sweep: sweeping over {max_inits!s} random initializations, and up to {max_retries!s} ignored points')
-
-    improved, visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity)
-
-    visited_points = [(0, a, b) for a, b in visited_points]
-
-    attempts = 0
-    successes = 0
-    failures = 0
-    while successes < max_inits and failures < max_retries:
-        if verbosity >= 2:
-            print(f'\n == attempt {attempts+1!s}, {len(cfgs)!s} cfgs, {len(frontier)!s} elements in frontier ==\n')
-
-        improved, new_visited_points, gens, cfgs, frontier = sweep_random_init(stage_fn, inits, neighbors, metrics, verbosity=verbosity,
-                                                                               previous_sweep=(gens, cfgs, frontier), force_exploration=force_exploration)
-
-        visited_points.extend((attempts, a, b) for a, b in new_visited_points)
-
-        if verbosity >= 2:
-            print(f'\n == finished attempt {attempts+1!s}, improved? {improved!s} ==\n')
-
-        attempts += 1
-        if improved:
-            successes += 1
-        else:
-            failures += 1
-
-    return gens, visited_points, frontier
-
-def sweep_exhaustive(stage_fn, cfgs, metrics, verbosity=3):
-    if verbosity >= 1:
-        print(f'Exhaustive sweep for stage {stage_fn!r}')
-
-    all_cfgs = set()
-    visited_points = []
-    frontier = []
-    with multiprocessing.Pool() as pool:
-        async_results = []
-        for cfg in itertools.product(*cfgs):
-            str_cfg = tuple(describe_ctx(ctx) for ctx in cfg)
-            if str_cfg not in all_cfgs:
-                all_cfgs.add(str_cfg)
-                async_results.append((str_cfg, pool.apply_async(stage_fn, cfg)))
-
-        if verbosity >= 2:
-            print(f'dispatched {len(async_results)!s} evaluations')
-
-        for i, (cfg, ares) in enumerate(async_results):
-            res = ares.get()
-            visited_points.append((0, cfg, res))
-            updated, frontier = update_frontier(frontier, (cfg, res), metrics)
-
-            if verbosity >= 3:
-                print(f' -- {i+1!s} -- ran {cfg!r}, got {res!r}')
-                if updated:
-                    print('The frontier changed:')
-                    print_frontier(frontier)
-
-    if verbosity >= 1:
-        print('Done. final frontier:')
-        print_frontier(frontier)
-
-    return [1], visited_points, frontier
-
-def sweep_random(stage_fn, inits, metrics, points, batch_size=1000, verbosity=3):
-    if verbosity >= 1:
-        print(f'Random sweep over {points!s} points')
-
-    explored_points = set()
-    visited_points = []
-    frontier = []
-
-    with multiprocessing.Pool() as pool:
-        batchnum = 1
-        while len(explored_points) < points:
-            if verbosity >= 1:
-                print(f'starting batch {batchnum!s}, explored {len(explored_points)!s} so far')
-                print_frontier(frontier)
-                print(flush=True)
-
-            async_results = []
-            skipped = 0
-
-            for i in range(batch_size):
-                cfg = tuple(f() for f in inits)
-                if cfg in explored_points:
-                    skipped += 1
-                else:
-                    async_results.append((cfg, pool.apply_async(stage_fn, cfg)))
-                    explored_points.add(cfg)
-                    if len(explored_points) >= points:
-                        break
-
-            if async_results:
-                if verbosity >= 2:
-                    print(f'dispatched {len(async_results)!s} evaluations for batch {batchnum!s}, {skipped!s} skipped')
-
-                for cfg, ares in async_results:
-                    res = ares.get()
-                    visited_points.append((cfg, res))
-                    updated, frontier = update_frontier(frontier, (cfg, res), metrics)
-
-                    if verbosity >= 3:
-                        print(f' -- {len(visited_points)!s} -- ran {cfg!r}, got {res!r}')
-                        if updated:
-                            print('The frontier changed:')
-                            print_frontier(frontier)
-            else:
-                if verbosity >= 1:
-                    print('could not find any new configurations, aborting')
-                    break
-
-    if verbosity >= 1:
-        print('Done. final frontier:')
-        print_frontier(frontier)
-
-    return [1], visited_points, frontier
 
 def filter_metrics(points, metrics, allow_inf=False):
     new_points = []
@@ -456,24 +122,13 @@ def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=Fals
             filtered_data = data
 
         if allow_inf or all(map(math.isfinite, filtered_measures)):
-            _, new_frontier = update_frontier(new_frontier, (filtered_data, filtered_measures), new_metrics)
+            _, new_frontier, _ = update_frontier(new_frontier, (filtered_data, filtered_measures), new_metrics)
 
     if reconstruct_metrics:
         reconstructed_frontier = [frontier[i] for i, measures in new_frontier]
         new_frontier = reconstructed_frontier
 
     return new_frontier
-
-
-
-
-
-
-
-
-
-
-
 
 
 # new general utilities
@@ -855,7 +510,7 @@ class SearchState(object):
         # self.frontier_log is a list of tuples:
         #   [(config_parameters, metric_values), replaced, replaced_by]
         # where replaced is a list of configurations this one replaced in the frontier
-        # (stored by index in the cache),
+        # (stored by log index in the cache),
         # and replaced_by is None if this point is still on the live frontier,
         # or the index of the point that replaced it if it isn't.
         #
@@ -904,10 +559,11 @@ class SearchState(object):
     def __str__(self):
         return (
             f'{type(self).__name__}:\n'
-            f'  total cfgs: {len(self.cache)}\n'
-            f'  horizon:    {len(self.horizon)}\n'
-            f'  history:    {len(self.history)}\n'
-            f'  frontier:   {len(self.frontier)}\n'
+            f'  total cfgs:   {len(self.cache)}\n'
+            f'  horizon:      {len(self.horizon)}\n'
+            f'  history:      {len(self.history)}\n'
+            f'  frontier log: {len(self.frontier_log)}\n'
+            f'  frontier:     {len(self.frontier)}\n'
             f'  running for {len(self.generations)} generations'
         ) + (f'\n  {len(self.additional_data)} additional data records' if len(self.additional_data) > 0 else '')
 
@@ -924,6 +580,133 @@ class SearchState(object):
                 return (i, None)
             else:
                 return self.history[hidx]
+
+    def check(self, metric_fns=None, verbose=True):
+        """Check the search state for consistency."""
+        consistent = True
+
+        if verbose:
+            print('Checking horizon, history, and frontier log... ')
+
+        deduped_horizon = {}
+        for cfg in self.horizon:
+            if cfg in deduped_horizon:
+                if verbose:
+                    print(f'-- CHECK SEARCHSTATE: duplicated {repr(cfg)} in horizon --')
+                deduped_horizon[cfg][0] += 1
+            else:
+                deduped_horizon[cfg] = [1, False]
+
+        good_history = [False] * len(self.history)
+        deduped_history = {}
+        for i, (cfg, qos) in enumerate(self.history):
+            if verbose and cfg in deduped_history:
+                print(f'-- CHECK SEARCHSTATE: duplicated {repr(cfg)} in history --')
+            deduped_history[cfg] = i
+
+        good_frontier_log = [False] * len(self.frontier_log)
+        deduped_frontier_log = {}
+        for i, ((cfg, qos), replaced, replaced_by) in enumerate(self.frontier_log):
+            if verbose and cfg in deduped_frontier_log:
+                print(f'-- CHECK SEARCHSTATE: duplicated {repr(cfg)} in frontier log --')
+            deduped_frontier_log[cfg] = i
+
+        if verbose:
+            print(f'  ({len(deduped_horizon)} {len(deduped_history)} {len(deduped_frontier_log)}))')
+            print('Checking the cache... ')
+
+        for cfg, record in self.cache.items():
+            hidx, fidx, hits, source_id = record
+            actual_hidx = deduped_history.get(cfg, None)
+            actual_fidx = deduped_frontier_log.get(cfg, None)
+
+            # it's either on the horizon somewhere
+            if cfg in deduped_horizon:
+                # hopefully hidx and fidx are None
+                if verbose and (hidx is not None or cfg in deduped_history):
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} on the horizon '
+                          f'reports hidx={hidx}, last seen at {actual_hidx} --')
+                if verbose and (fidx is not None or cfg in deduped_frontier_log):
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} on the horizon '
+                          f'reports fidx={fidx}, last seen at {actual_fidx} --')
+            elif hidx is None:
+                # or, if it isn't on the horizon, and it has no hidx, something is wrong
+                consistent = False
+                if verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} is not recorded in history or on the horizon --')
+                    if cfg in deduped_history:
+                        print(f'--    why was it seen at {actual_hidx} ? --')
+                    if fidx is not None or cfg in deduped_frontier_log:
+                        print(f'--    why does it report fidx={fidx}, last seen at {actual_fidx} ? --')
+
+            # now check the consistency of the hidx and fidx, regardless of the horizon
+            if hidx != actual_hidx:
+                consistent = False
+                if verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
+                          f'reports hidx={hidx}, BUT was last seen at {actual_hidx} --')
+            elif hidx is not None:
+                good_history[hidx] = True
+
+            if fidx != actual_fidx:
+                consistent = False
+                if verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
+                          f'reports fidx={fidx}, BUT was last seen at {actual_fidx} --')
+            elif fidx is not None:
+                good_frontier_log[fidx] = True
+
+        for i, good in enumerate(good_history):
+            if not good:
+                cfg, qos = self.history[i]
+                if cfg not in self.cache:
+                    consistent = False
+                    if verbose:
+                        print(f'-- CHECK SEARCHSTATE: uncached configuration {repr(cfg)} at hidx {i} --')
+                elif verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} at hidx {i} is not linked from cache --')
+
+        for i, good in enumerate(good_frontier_log):
+            if not good:
+                (cfg, qos), replaced, replaced_by = self.frontier_log[i]
+                if cfg not in self.cache:
+                    consistent = False
+                    if verbose:
+                        print(f'-- CHECK SEARCHSTATE: uncached configuration {repr(cfg)} at fidx {i} --')
+                elif verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} at fidx {i} is not linked from cache --')
+
+        if verbose:
+            print(f'  ({len(self.cache)})')
+
+        # check the frontier
+        if metric_fns is not None:
+            if verbose:
+                print('Checking the frontier... ')
+
+            if self.frontier:
+                frontier, removed = reconstruct_frontier(self.frontier, metric_fns, check=True, verbose=verbose)
+                if removed:
+                    consistent = False
+                    if verbose:
+                        print('-- CHECK SEARCHSTATE: some configurations were removed while reconstructing the frontier --')
+                        for thing in removed:
+                            print('--> ', repr(thing))
+            else:
+                frontier = []
+
+            # maybe there should be more comprehensive checks...
+            # not clear how to make them fast.
+
+            if verbose:
+                print(f'  ({len(frontier)})')
+
+        if verbose:
+            if consistent:
+                print('Done. State is consistent.')
+            else:
+                print('WARNING! State is inconsistent!')
+        return consistent
 
     def poke_cache(self, cfg):
         """Poke the cache to see if this configuration has been seen.
@@ -1001,16 +784,26 @@ class SearchState(object):
                 print(f'-- configuration {repr(cfg)} was never seen in the cache; adding --')
 
         hidx = len(self.history)
-        self.history.append(cfg)
+        self.history.append(result)
         record[0] = hidx
 
-        keep, new_frontier = update_frontier(self.frontier, result, metric_fns)
+        keep, new_frontier, removed = update_frontier(self.frontier, result, metric_fns)
         if keep:
             fidx = len(self.frontier_log)
-            # TODO: we need update_frontier to track what got removed
-            self.frontier_log.append([result, [], None])
+            ridxs = []
             record[1] = fidx
 
+            for removed_result in removed:
+                removed_cfg, removed_qos = removed_result
+                removed_record = self.cache.get(removed_cfg, None)
+                if removed_record is not None:
+                    ridx = removed_record[1]
+                    ridxs.append(ridx)
+                    self.frontier_log[ridx][2] = fidx
+                elif verbose:
+                    print(f'-- cache is missing {repr(removed_result)} which was removed from the frontier --')
+
+            self.frontier_log.append([result, ridxs, None])
         self.frontier = new_frontier
         return keep
 
@@ -1056,7 +849,7 @@ class Sweep(object):
     """QuantiFind search driver object."""
 
     def __init__(self, eval_fn, init_fns, neighbor_fns, metric_fns,
-                 settings=None, state=None, cores=DONT_HAMMER_LEVIATHAN, batch=None, retry_attempts=1,
+                 settings=None, state=None, cores=None, batch=None, retry_attempts=1,
                  verbosity=3):
         self.eval_fn = eval_fn
         self.init_fns = init_fns
@@ -1557,7 +1350,7 @@ class Sweep(object):
         self.state.generations.append(0)
 
         if self.verbosity >= 1:
-            print(f'  Evaluating the horizon for generation {len(self.state.generations)}...')
+            print(f'  Evaluating the horizon for generation {gen_idx}...')
 
         if pool is None:
             pool = self.pool
@@ -1611,7 +1404,7 @@ class Sweep(object):
             print(f'  Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
         return total_new_points
 
-    def run_search(self):
+    def run_search(self, check=True):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
             print('Running QuantiFind sweep...')
@@ -1635,6 +1428,10 @@ class Sweep(object):
             if new_cfgs <= 0:
                 if self.verbosity >= 0:
                     print('Exhausted the search space. Done.')
+                if self.verbosity >= 2:
+                    print('final ', end='')
+                    print(self.state)
+                    print(flush=True)
                 return self.state.frontier
 
             if is_initial_gen:
@@ -1654,8 +1451,29 @@ class Sweep(object):
                     if self.verbosity >= 0:
                         print(f'Searched for {self.state.initial_gens} initial generations '
                               f'with {self.state.initial_cfgs} total initial configurations. Done.')
+                    if self.verbosity >= 2:
+                        print('final ', end='')
+                        print(self.state)
+                        print(flush=True)
                     return self.state.frontier
             else:
                 if self.verbosity >= 3:
                     print('The frontier changed.')
                     print_frontier(self.state.frontier)
+
+            if self.verbosity >= 2:
+                print(flush=True)
+                print('current ', end='')
+                print(self.state)
+
+                print(flush=True)
+                print('progress:')
+                print(f'  initial generations:    {self.state.initial_gens} / {self.settings.restart_gen_target}')
+                print(f'  initial configurations: {self.state.initial_cfgs} / {self.settings.restart_size_target}')
+
+            if check:
+                if self.verbosity >= 0:
+                    print(flush=True)
+                consistent = self.state.check(metric_fns=self.metric_fns, verbose=self.verbosity>=0)
+                if self.verbosity >= 0:
+                    print(flush=True)
