@@ -179,8 +179,12 @@ class Posit(mpnum.MPNum):
                 else:
                     cbits = unrounded.c.bit_length()
                     left_bits = 1
-                    half_bit = (unrounded.c >> (cbits - 2)) & 1
-                    low_bits = unrounded.c & bitmask(cbits - 2)
+                    if cbits == 1:
+                        half_bit = 0
+                        low_bits = 0
+                    else:
+                        half_bit = (unrounded.c >> (cbits - 2)) & 1
+                        low_bits = unrounded.c & bitmask(cbits - 2)
 
                 new_exp = unrounded.e
                 if half_bit > 0 or low_bits > 0 or unrounded.rc > 0:
