@@ -182,10 +182,10 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
     settings.cfg(eq_name, False)
     try:
         with search.Sweep(rk_stage, rk_inits, rk_neighbors, rk_metrics, settings=sweep_settings, cores=cores) as sweep:
-            frontier = sweep.run_search()
+            frontier = sweep.run_search(checkpoint_dir=prefix+'/float')
             sweepdata = sweep.state.generations, sweep.state.history, frontier
         #sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_' + eq_name + '.json', *sweepdata, settings=eq_name + ' with floats')
+        #jsonlog(prefix + '_rk_' + eq_name + '.json', *sweepdata, settings=eq_name + ' with floats')
     except Exception:
         traceback.print_exc()
 
@@ -195,10 +195,10 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
     settings.cfg(eq_name, True)
     try:
         with search.Sweep(rk_stage, rk_inits, rk_neighbors, rk_metrics, settings=sweep_settings, cores=cores) as sweep:
-            frontier = sweep.run_search()
+            frontier = sweep.run_search(checkpoint_dir=prefix+'/posit')
             sweepdata = sweep.state.generations, sweep.state.history, frontier
         #sweep = search.sweep_multi(rk_stage, rk_inits, rk_neighbors, rk_metrics, inits, retries, force_exploration=True)
-        jsonlog(prefix + '_rk_' + eq_name + '_p.json', *sweepdata, settings=eq_name + ' with posits')
+        #jsonlog(prefix + '_rk_' + eq_name + '_p.json', *sweepdata, settings=eq_name + ' with posits')
     except Exception:
         traceback.print_exc()
 

@@ -55,6 +55,7 @@
 # spin it as an advantage!
 
 
+import os
 import itertools
 import collections
 import operator
@@ -477,6 +478,11 @@ class SearchSettings(object):
         else:
             return f'{cls.__name__}:'
 
+    def to_dict(self):
+        d = {}
+        d.update(self.__dict__)
+        return d
+
     @classmethod
     def from_dict(cls, d):
         new_settings = cls.__new__(cls)
@@ -566,6 +572,34 @@ class SearchState(object):
             f'  frontier:     {len(self.frontier)}\n'
             f'  running for {len(self.generations)} generations'
         ) + (f'\n  {len(self.additional_data)} additional data records' if len(self.additional_data) > 0 else '')
+
+    def to_dict(self):
+        d = {
+            'frontier': list(self.frontier),
+            'horizon': list(self.horizon),
+            'history': list(self.history),
+            'cache': list(self.cache.items()),
+            'frontier_log': list(self.frontier_log),
+            'generations': list(self.generations),
+            'initial_cfgs': self.initial_cfgs,
+            'initial_gens': self.initial_gens,
+            'additional_data': self.additional_data,
+        }
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        new_state = cls.__new__(cls)
+        new_state.__dict__['frontier'] = [(tuple(a), tuple(b)) for a, b in d['frontier']]
+        new_state.__dict__['horizon'] = [(tuple(a), tuple(b)) for a, b in d['horizon']]
+        new_state.__dict__['history'] = [(tuple(a), tuple(b)) for a, b in d['history']]
+        new_state.__dict__['cache'] = dict((tuple(k), list(v)) for k, v in d['cache'])
+        new_state.__dict__['frontier_log'] = [[(tuple(a), tuple(b)), v1, v2] for (a, b), v1, v2 in d['frontier_log']]
+        new_state.__dict__['generations'] = list(d['generations'])
+        new_state.__dict__['initial_cfgs'] = d['initial_cfgs']
+        new_state.__dict__['initial_gens'] = d['initial_gens']
+        new_state.__dict__['additional_data'] = d['additional_data']
+        return new_state
 
     def __getitem__(self, i):
         # try to look something up in the history
@@ -901,6 +935,36 @@ class Sweep(object):
         if self.pool is not None:
             lines.append(f'  with worker pool {repr(self.pool)}')
         return '\n'.join(lines)
+
+    def checkpoint(self, logdir, name='checkpoint', overwrite=True):
+        """Save a checkpoint of the current settings and search state to the specified file."""
+        fname = f'{name}-gen{len(self.state.generations)}.json'
+        fpath = os.path.join(logdir, fname)
+
+        if self.verbosity >= 0:
+            print(f'Saving checkpoint for gen {len(self.state.generations)} to {logdir}...')
+
+        if os.path.exists(fpath):
+            if overwrite:
+                if self.verbosity >= 0:
+                    print('Checkpoint file already exists, overwriting...')
+            else:
+                if self.verbosity >= 0:
+                    print('Checkpoint file already exists, abort.')
+                return
+
+        data = {
+            'settings': self.settings.to_dict(),
+            'state': self.state.to_dict(),
+        }
+        os.makedirs(logdir, exist_ok=True)
+        with open(fpath, 'wt') as f:
+            json.dump(data, f, indent=False, separators=(',', ':'))
+            print(file=f, flush=True)
+
+        if self.verbosity >= 0:
+            print('Checkpoint saved, done.')
+
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
@@ -1404,7 +1468,7 @@ class Sweep(object):
             print(f'  Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
         return total_new_points
 
-    def run_search(self, check=True):
+    def run_search(self, checkpoint_dir=None, check=False):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
             print('Running QuantiFind sweep...')
@@ -1432,6 +1496,12 @@ class Sweep(object):
                     print('final ', end='')
                     print(self.state)
                     print(flush=True)
+                if checkpoint_dir is not None:
+                    if self.verbosity >= 0:
+                        print(flush=True)
+                    self.checkpoint(checkpoint_dir, name='final')
+                    if self.verbosity >= 0:
+                        print(flush=True)
                 return self.state.frontier
 
             if is_initial_gen:
@@ -1455,6 +1525,12 @@ class Sweep(object):
                         print('final ', end='')
                         print(self.state)
                         print(flush=True)
+                    if checkpoint_dir is not None:
+                        if self.verbosity >= 0:
+                            print(flush=True)
+                        self.checkpoint(checkpoint_dir, name='final')
+                        if self.verbosity >= 0:
+                            print(flush=True)
                     return self.state.frontier
             else:
                 if self.verbosity >= 3:
@@ -1475,5 +1551,12 @@ class Sweep(object):
                 if self.verbosity >= 0:
                     print(flush=True)
                 consistent = self.state.check(metric_fns=self.metric_fns, verbose=self.verbosity>=0)
+                if self.verbosity >= 0:
+                    print(flush=True)
+
+            if checkpoint_dir is not None:
+                if self.verbosity >= 0:
+                    print(flush=True)
+                self.checkpoint(checkpoint_dir)
                 if self.verbosity >= 0:
                     print(flush=True)
