@@ -1006,11 +1006,12 @@ class Sweep(object):
         hits = 0
         for _ in range(self.retry_attempts + 1):
             for _ in range(size):
-                old_cfg, _ = random.sample(self.state.frontier, 1)
+                res1, = random.sample(self.state.frontier, 1)
+                cfg1, qos1 = res1
                 # mutate
                 p = self.settings.mutation_probability
                 cfg = tuple(f() if random.random() < p else x
-                            for x, f in zip(old_cfg, self.init_fns))
+                            for x, f in zip(cfg1, self.init_fns))
                 if self.state.poke_cache(cfg) and cfg not in batch:
                     batch.add(cfg)
                     if len(batch) >= size:
@@ -1106,7 +1107,7 @@ class Sweep(object):
             for cfg in self.neighborhood(axes_first=False):
                 if self.state.poke_cache(cfg) and cfg not in batch:
                     batch.add(cfg)
-                    if len(batch) >= max_size:
+                    if len(batch) >= min_size:
                         break
                 else:
                     hits += 1
@@ -1155,7 +1156,9 @@ class Sweep(object):
         hits = 0
         for _ in range(self.retry_attempts + 1):
             for _ in range(size):
-                cfg1, cfg2 = map(operator.itemgetter(0), random.sample(self.state.frontier, 2))
+                res1, res2 = random.sample(self.state.frontier, 2)
+                cfg1, qos1 = res1
+                cfg2, qos2 = res2
                 # crossover
                 p = self.settings.crossover_probability
                 cfg = tuple(y if random.random() < p else x
@@ -1223,9 +1226,11 @@ class Sweep(object):
             unbounded = (unbounded // ref_weight) + 1
         if target_bounds is not None:
             min_bound, max_bound = target_bounds
-            return min(max(min_bound, unbounded), max_bound)
-        else:
-            return unbounded
+            if min_bound is not None:
+                unbounded = max(min_bound, unbounded)
+            if max_bound is not None:
+                unbounded = min(unbounded, max_bound)
+        return unbounded
 
     def expand_horizon(self):
         """Expand the horizon by adding new configurations.
