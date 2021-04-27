@@ -322,16 +322,16 @@ class SearchSettings(object):
             fields.append(f'restart_gen_target={repr(self.restart_gen_target)}')
         if (self.pop_random_weight != cls.pop_random_weight or
             self.pop_mutant_weight != cls.pop_mutant_weight or
-            self.pop_local_weight != cls.pop_local_weight or
-            self.pop_crossed_weight != cls.pop_crossed_weight):
+            self.pop_crossed_weight != cls.pop_crossed_weight or
+            self.pop_local_weight != cls.pop_local_weight):
             fields.append(f'pop_weights=({repr(self.pop_random_weight)},'
                           f'{repr(self.pop_mutant_weight)},'
                           f'{repr(self.pop_crossed_weight)},'
                           f'{repr(self.pop_local_weight)})')
         if (self.pop_random_target != cls.pop_random_target or
             self.pop_mutant_target != cls.pop_mutant_target or
-            self.pop_local_target != cls.pop_local_target or
-            self.pop_crossed_target != cls.pop_crossed_target):
+            self.pop_crossed_target != cls.pop_crossed_target or
+            self.pop_local_target != cls.pop_local_target):
             fields.append(f'pop_targets=({repr(self.pop_random_target)},'
                           f'{repr(self.pop_mutant_target)},'
                           f'{repr(self.pop_crossed_target)},'
@@ -356,22 +356,22 @@ class SearchSettings(object):
             fields.append(f'  restart_gen_target: {str(self.restart_gen_target)}')
         if (self.pop_random_weight != cls.pop_random_weight or
             self.pop_mutant_weight != cls.pop_mutant_weight or
-            self.pop_local_weight != cls.pop_local_weight or
-            self.pop_crossed_weight != cls.pop_crossed_weight):
+            self.pop_crossed_weight != cls.pop_crossed_weight or
+            self.pop_local_weight != cls.pop_local_weight):
             fields.append(f'  pop_weights:\n'
                           f'    random:  {str(self.pop_random_weight)}\n'
-                          f'    mutant:  {str(self.pop_random_weight)}\n'
-                          f'    crossed: {str(self.pop_local_weight)}\n'
-                          f'    local:   {str(self.pop_crossed_weight)}')
+                          f'    mutant:  {str(self.pop_mutant_weight)}\n'
+                          f'    crossed: {str(self.pop_crossed_weight)}\n'
+                          f'    local:   {str(self.pop_local_weight)}')
         if (self.pop_random_target != cls.pop_random_target or
             self.pop_mutant_target != cls.pop_mutant_target or
-            self.pop_local_target != cls.pop_local_target or
-            self.pop_crossed_target != cls.pop_crossed_target):
+            self.pop_crossed_target != cls.pop_crossed_target or
+            self.pop_local_target != cls.pop_local_target):
             fields.append(f'  pop_targets:\n'
                           f'    random:  {str(self.pop_random_target)}\n'
-                          f'    mutant:  {str(self.pop_random_target)}\n'
-                          f'    crossed: {str(self.pop_local_target)}\n'
-                          f'    local:   {str(self.pop_crossed_target)}')
+                          f'    mutant:  {str(self.pop_mutant_target)}\n'
+                          f'    crossed: {str(self.pop_crossed_target)}\n'
+                          f'    local:   {str(self.pop_local_target)}')
         if self.pop_weight_scale != cls.pop_weight_scale:
             fields.append(f'  pop_weight_scale: {str(self.pop_weight_scale)}')
         if self.mutation_probability != cls.mutation_probability:
