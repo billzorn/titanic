@@ -93,6 +93,14 @@ def center_ranges(input_ranges):
     return output_ranges
 
 
+def filter_pred(points, metric_fns):
+    new_points = []
+    for point in points:
+        cfg, qos = point
+        if all(f(x) for x, f in zip(qos, metric_fns) if f is not None):
+            new_points.append(point)
+    return new_points
+
 def filter_metrics(points, metrics, allow_inf=False):
     new_points = []
 
@@ -108,7 +116,6 @@ def filter_metrics(points, metrics, allow_inf=False):
             if allow_inf or all(map(math.isfinite, filtered_measures)):
                 new_points.append((gen, data, filtered_measures))
     return new_points
-
 
 def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=False):
     new_metrics = [m for m in metrics if m is not None]
@@ -332,13 +339,13 @@ class SearchSettings(object):
 
     pop_random_weight = 0
     pop_mutant_weight = 0
-    pop_local_weight = 1
     pop_crossed_weight = 0
+    pop_local_weight = 1
 
     pop_random_target = None
     pop_mutant_target = None
-    pop_local_target = None
     pop_crossed_target = None
+    pop_local_target = None
 
     pop_weight_scale = 0
 
@@ -361,12 +368,12 @@ class SearchSettings(object):
             self.restart_gen_target = 0
             self.pop_random_weight = 0
             self.pop_mutant_weight = 0
-            self.pop_local_weight = 1
             self.pop_crossed_weight = 0
+            self.pop_local_weight = 1
             self.pop_random_target = None
             self.pop_mutant_target = None
-            self.pop_local_target = None
             self.pop_crossed_target = None
+            self.pop_local_target = None
             self.pop_weight_scale = 0
             self.mutation_probability = 0.5
             self.crossover_probability = 0.5
@@ -376,12 +383,12 @@ class SearchSettings(object):
             self.restart_gen_target = 0
             self.pop_random_weight = 1
             self.pop_mutant_weight = 1
-            self.pop_local_weight = 3
             self.pop_crossed_weight = 1
+            self.pop_local_weight = 3
             self.pop_random_target = None
             self.pop_mutant_target = None
-            self.pop_local_target = None
             self.pop_crossed_target = None
+            self.pop_local_target = None
             self.pop_weight_scale = 0
             self.mutation_probability = 0.5
             self.crossover_probability = 0.5
@@ -395,9 +402,9 @@ class SearchSettings(object):
         if restart_gen_target is not None:
             self.restart_gen_target = restart_gen_target
         if pop_weights is not None:
-            self.pop_random_weight, self.pop_mutant_weight, self.pop_local_weight, self.pop_crossed_weight = pop_weights
+            self.pop_random_weight, self.pop_mutant_weight, self.pop_crossed_weight, self.pop_local_weight = pop_weights
         if pop_targets is not None:
-            self.pop_random_target, self.pop_mutant_target, self.pop_local_target, self.pop_crossed_target = pop_targets
+            self.pop_random_target, self.pop_mutant_target, self.pop_crossed_target, self.pop_local_target = pop_targets
         if mutation_probability is not None:
             self.pop_weight_scale = pop_weight_scale
         if mutation_probability is not None:
@@ -419,17 +426,17 @@ class SearchSettings(object):
             self.pop_local_weight != cls.pop_local_weight or
             self.pop_crossed_weight != cls.pop_crossed_weight):
             fields.append(f'pop_weights=({repr(self.pop_random_weight)},'
-                          f'{repr(self.pop_random_weight)},'
-                          f'{repr(self.pop_local_weight)},'
-                          f'{repr(self.pop_crossed_weight)})')
+                          f'{repr(self.pop_mutant_weight)},'
+                          f'{repr(self.pop_crossed_weight)},'
+                          f'{repr(self.pop_local_weight)})')
         if (self.pop_random_target != cls.pop_random_target or
             self.pop_mutant_target != cls.pop_mutant_target or
             self.pop_local_target != cls.pop_local_target or
             self.pop_crossed_target != cls.pop_crossed_target):
             fields.append(f'pop_targets=({repr(self.pop_random_target)},'
-                          f'{repr(self.pop_random_target)},'
-                          f'{repr(self.pop_local_target)},'
-                          f'{repr(self.pop_crossed_target)})')
+                          f'{repr(self.pop_mutant_target)},'
+                          f'{repr(self.pop_crossed_target)},'
+                          f'{repr(self.pop_local_target)})')
         if self.pop_weight_scale != cls.pop_weight_scale:
             fields.append(f'pop_weight_scale={repr(self.pop_weight_scale)}')
         if self.mutation_probability != cls.mutation_probability:
@@ -455,8 +462,8 @@ class SearchSettings(object):
             fields.append(f'  pop_weights:\n'
                           f'    random:  {str(self.pop_random_weight)}\n'
                           f'    mutant:  {str(self.pop_random_weight)}\n'
-                          f'    local:   {str(self.pop_local_weight)}\n'
-                          f'    crossed: {str(self.pop_crossed_weight)}')
+                          f'    crossed: {str(self.pop_local_weight)}\n'
+                          f'    local:   {str(self.pop_crossed_weight)}')
         if (self.pop_random_target != cls.pop_random_target or
             self.pop_mutant_target != cls.pop_mutant_target or
             self.pop_local_target != cls.pop_local_target or
@@ -464,8 +471,8 @@ class SearchSettings(object):
             fields.append(f'  pop_targets:\n'
                           f'    random:  {str(self.pop_random_target)}\n'
                           f'    mutant:  {str(self.pop_random_target)}\n'
-                          f'    local:   {str(self.pop_local_target)}\n'
-                          f'    crossed: {str(self.pop_crossed_target)}')
+                          f'    crossed: {str(self.pop_local_target)}\n'
+                          f'    local:   {str(self.pop_crossed_target)}')
         if self.pop_weight_scale != cls.pop_weight_scale:
             fields.append(f'  pop_weight_scale: {str(self.pop_weight_scale)}')
         if self.mutation_probability != cls.mutation_probability:
@@ -1025,6 +1032,40 @@ class Sweep(object):
             print(f'    generated {len(batch)} mutated configurations ({hits} hit cache).')
         return batch
 
+    def cross_batch(self, size):
+        """Return a new batch of configurations using crossover, based on the current frontier."""
+        if len(self.state.frontier) < 2:
+            if self.verbosity >= 2:
+                print(f'    unable to generate configurations with crossover; must have at least two configurations in frontier')
+            return set()
+
+        if self.verbosity >= 2:
+            print(f'    generating a new batch of {size} crossed configurations...')
+
+        batch = set()
+        hits = 0
+        for _ in range(self.retry_attempts + 1):
+            for _ in range(size):
+                res1, res2 = random.sample(self.state.frontier, 2)
+                cfg1, qos1 = res1
+                cfg2, qos2 = res2
+                # crossover
+                p = self.settings.crossover_probability
+                cfg = tuple(y if random.random() < p else x
+                            for x, y in zip(cfg1, cfg2))
+                if self.state.poke_cache(cfg) and cfg not in batch:
+                    batch.add(cfg)
+                    if len(batch) >= size:
+                        break
+                else:
+                    hits += 1
+            if len(batch) >= size:
+                break
+
+        if self.verbosity >= 2:
+            print(f'    generated {len(batch)} crossed configurations ({hits} hit cache).')
+        return batch
+
     def neighborhood(self, axes_first=True):
         """Generator for the full space of configurations "nearby" to the Pareto frontier.
         May produce the same configuration multiple times, but not too many times.
@@ -1142,40 +1183,6 @@ class Sweep(object):
             print(f'    generated {len(batch)} nieghboring configurations ({hits} hit cache).')
         return batch
 
-    def cross_batch(self, size):
-        """Return a new batch of configurations using crossover, based on the current frontier."""
-        if len(self.state.frontier) < 2:
-            if self.verbosity >= 2:
-                print(f'    unable to generate configurations with crossover; must have at least two configurations in frontier')
-            return set()
-
-        if self.verbosity >= 2:
-            print(f'    generating a new batch of {size} crossed configurations...')
-
-        batch = set()
-        hits = 0
-        for _ in range(self.retry_attempts + 1):
-            for _ in range(size):
-                res1, res2 = random.sample(self.state.frontier, 2)
-                cfg1, qos1 = res1
-                cfg2, qos2 = res2
-                # crossover
-                p = self.settings.crossover_probability
-                cfg = tuple(y if random.random() < p else x
-                            for x, y in zip(cfg1, cfg2))
-                if self.state.poke_cache(cfg) and cfg not in batch:
-                    batch.add(cfg)
-                    if len(batch) >= size:
-                        break
-                else:
-                    hits += 1
-            if len(batch) >= size:
-                break
-
-        if self.verbosity >= 2:
-            print(f'    generated {len(batch)} crossed configurations ({hits} hit cache).')
-        return batch
-
     def exhaustive_batch(self, searchspace, center_cfg=None, max_size=None):
         """Return a new batch of configurations, exhaustively exploring searchspace.
         If center_cfg is provided, explore manhattan spheres around it in order;
@@ -1253,9 +1260,9 @@ class Sweep(object):
         settings = self.settings
         pop_random_weight = settings.pop_random_weight
         pop_mutant_weight = settings.pop_mutant_weight
-        pop_local_weight = settings.pop_local_weight
         pop_crossed_weight = settings.pop_crossed_weight
-        pop_weight = pop_random_weight + pop_mutant_weight +  pop_local_weight + pop_crossed_weight
+        pop_local_weight = settings.pop_local_weight
+        pop_weight = pop_random_weight + pop_mutant_weight + pop_crossed_weight + pop_local_weight
         pop_weight_scale = settings.pop_weight_scale
         if pop_weight <= 0:
             if self.verbosity >= 1:

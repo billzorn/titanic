@@ -174,9 +174,15 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
 
     cores = 128
     sweep_settings = search.SearchSettings(
-        profile = 'local',
+        profile = 'balanced',
         initial_gen_size = cores * inits,
         restart_gen_target = retries,
+        pop_targets = [
+            (cores//2, None),
+            (cores//2, None),
+            (cores//2, None),
+            ((cores*3)//2, None),
+        ]
     )
 
     settings.cfg(eq_name, False)
