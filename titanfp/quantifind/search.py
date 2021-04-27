@@ -66,33 +66,6 @@ import math
 from .utils import *
 
 
-def center_ranges(input_ranges):
-    maxlen = 0
-    output_ranges = []
-
-    # turn the generator into a list, so we can iterate it multiple times
-    input_ranges = [tuple(r) for r in input_ranges]
-    for rng in input_ranges:
-        new_range = list(rng)
-        if len(new_range) == 0:
-            raise ValueError('cannot center an empty range')
-            # return input_ranges
-        if len(new_range) > maxlen:
-            maxlen = len(new_range)
-        output_ranges.append(new_range)
-
-    for i in range(len(output_ranges)):
-        rng = output_ranges[i]
-        if len(rng) < maxlen:
-            pad_count = maxlen - len(rng)
-            left_pad = right_pad = pad_count // 2
-            if left_pad + right_pad < pad_count:
-                right_pad += 1
-            output_ranges[i] = ([rng[0]] * left_pad) + rng + ([rng[-1]] * right_pad)
-
-    return output_ranges
-
-
 def filter_pred(points, metric_fns):
     new_points = []
     for point in points:
@@ -245,6 +218,33 @@ def reorder_for_bfs(seq, elt):
             lower = idx - i
             if lower >= 0:
                 yield seq[lower]
+
+def center_ranges(input_ranges):
+    """Given a list of sequences, create a list of new sequences
+    which are all the same length, by repeating the element
+    on the ends of any sequences shorter than the max length.
+    If any of the sequences is empty, they must all be empty
+    or a ValueError is raised (since there is nothing to pad with).
+    """
+    ranges = [tuple(r) for r in input_ranges]
+    maxlen = 0
+    empty = False
+    for rng in ranges:
+        if len(rng) > maxlen:
+            maxlen = len(rng)
+        elif len(rng) == 0:
+            empty = True
+    if empty and maxlen > 0:
+        raise ValueError(f'cannot center empty range: {repr(ranges)}')
+    for i in range(len(ranges)):
+        rng = ranges[i]
+        if len(rng) < maxlen:
+            pad_count = maxlen - len(rng)
+            left_pad = right_pad = pad_count // 2
+            if left_pad + right_pad < pad_count:
+                right_pad += 1
+            ranges[i] = ((rng[0],) * left_pad) + rng + ((rng[-1],) * right_pad)
+    return ranges
 
 def nearby_points(cfg, neighbor_fns,
                   bfs_neighbors=False, combine=False, product=False, randomize=False):
