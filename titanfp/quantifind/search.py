@@ -1,60 +1,5 @@
 """Common code for parameter search."""
 
-# Goal: find a distribution of "good" configurations according to a set of metrics
-
-# Kinds of metrics:
-# - quality
-# - cost
-# Ways to search:
-# - quality must be with in bound, find best cost (the most common way)
-# - cost must be wtihin bound, do as well as you can
-
-# This means each metric either has a bound or doesn't
-# When evaluating a configuration, there are two modes:
-# - bound metric is satisfied
-#   - improve "cost" metrics
-# - bound metric not satisfied
-#   - improve bound metric
-
-# Search procedure
-#
-# Shotgun: pick a random configuration, based on a set of annotation sites and format hints
-# Evaluate: check the configuration's evaluation
-# Hillclimb: Look at nearby configurations (move each annotation [up to]? k steps)
-#   Among those configurations, look for the "most passing" configuration
-#   - if there is a passing configuration, use the cheapest
-#   - otherwise, use the least bad
-#   probably move each point at least k1 steps, and at most k2 steps, in each direction
-#   - start by moving k1
-#   - then, if there isn't a passing configuration, keep going up to k2?
-#   - no, just search fixed k in each direction, it's simpler
-#   Now update our evaluated starting config and keep climbing
-
-# Keeping a set of "good" configurations
-#
-# We have a set of metrics, some of which have hard bounds
-# Most of them we can also order
-# Our goal is to only consider options that satisfy all the bounds; of those we want the best
-# Obviously, only keep configurations that satisfy the bounds
-# Of those that do, look at all other cost metrics we care about
-# keep a "frontier set" that are each better at some subset of metrics than any other member of frontier
-# search until no point is near a point that can be improved, and after a certain number of random inits
-
-
-# functions we need:
-# init - randomly pick a starting point, based on a precision hint
-# next/prev on types - get higher and lower precision, in a sequence
-# compare metric - given two values, which is better
-# bound metric - given a value, is it ok
-
-# there's an optimization frontier - things might split
-
-# Hillclimbing with random restarts
-
-# cost metric isn't about the chip - we have proxies
-# spin it as an advantage!
-
-
 import os
 import itertools
 import collections
@@ -66,53 +11,7 @@ import math
 from .utils import *
 
 
-def filter_pred(points, metric_fns):
-    new_points = []
-    for point in points:
-        cfg, qos = point
-        if all(f(x) for x, f in zip(qos, metric_fns) if f is not None):
-            new_points.append(point)
-    return new_points
-
-def filter_metrics(points, metrics, allow_inf=False):
-    new_points = []
-
-    for point in points:
-        if len(point) == 2:
-            data, measures = point
-            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
-            if allow_inf or all(map(math.isfinite, filtered_measures)):
-                new_points.append((data, filtered_measures))
-        if len(point) == 3:
-            gen, data, measures = point
-            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
-            if allow_inf or all(map(math.isfinite, filtered_measures)):
-                new_points.append((gen, data, filtered_measures))
-    return new_points
-
-def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=False):
-    new_metrics = [m for m in metrics if m is not None]
-
-    new_frontier = []
-    for i, (data, measures) in enumerate(frontier):
-        filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
-
-        if reconstruct_metrics:
-            filtered_data = i
-        else:
-            filtered_data = data
-
-        if allow_inf or all(map(math.isfinite, filtered_measures)):
-            _, new_frontier, _ = update_frontier(new_frontier, (filtered_data, filtered_measures), new_metrics)
-
-    if reconstruct_metrics:
-        reconstructed_frontier = [frontier[i] for i, measures in new_frontier]
-        new_frontier = reconstructed_frontier
-
-    return new_frontier
-
-
-# new general utilities
+# general utilities
 
 # this bfs cartesian product is adapted from here:
 # https://stackoverflow.com/questions/42288203/generate-itertools-product-in-different-order
@@ -495,6 +394,7 @@ class SearchSettings(object):
         new_settings = cls.__new__(cls)
         new_settings.__dict__.update(d)
         return new_settings
+
 
 class SearchState(object):
     """State container for QuantiFind search."""

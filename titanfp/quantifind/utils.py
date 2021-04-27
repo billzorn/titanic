@@ -8,6 +8,7 @@ from ..arithmetic import ieee754, posit, evalctx
 
 
 # convenient rounding contexts
+
 f8 = ieee754.ieee_ctx(3, 8)
 f16 = ieee754.ieee_ctx(5, 16)
 bf16 = ieee754.ieee_ctx(8, 16)
@@ -168,6 +169,23 @@ def reconstruct_frontier(frontier, metric_fns, check=False, verbose=True):
         all_removed.extend(removed_points)
     return new_frontier, all_removed
 
+def filter_frontier(frontier, pred_fns, cfg_pred_fns=None):
+    """Filter out points from the frontier that don't pass all the pred_fns.
+    If a pred_fn is None, ignore that metric.
+    """
+    new_frontier = []
+    for result in frontier:
+        cfg, qos = result
+        keep = True
+        if not all(f(x) for x, f in zip(qos, pred_fns) if f is not None):
+            keep = False
+        if cfg_pred_fns is not None:
+            if not all(f(x) for x, f in zip(cfg, cfg_pred_fns) if f is not None):
+                keep = False
+        if keep:
+            new_frontier.append(result)
+    return new_frontier
+
 def check_frontier(frontier, metric_fns, verbose=True):
     """Quadratically check the frontier for well-formedness,
     explaining any discrepancies and returning a count;
@@ -200,6 +218,8 @@ def print_frontier(frontier):
         print(f'    ({frontier_data!r}, {frontier_m!r}),')
     print(']')
 
+
+# other random stuff
 
 def linear_ulps(x, y):
     smaller_n = min(x.n, y.n)
