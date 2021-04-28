@@ -15,7 +15,7 @@ from .utils import *
 from . import search
 
 here = os.path.dirname(os.path.realpath(__file__))
-data_dir = os.path.join(here, 'results')
+data_dir = os.path.join(here, 'new_again')
 
 def nd_getter(*idxs):
     def nd_get(thing):
@@ -63,11 +63,13 @@ class ExperimentData(object):
             with open(os.path.join(data_dir, fname), 'rt') as f:
                 result_dict = json.load(f)
 
-                frontier_as_lists = result_dict['frontier']
-                frontier_as_tuples = [(tuple(a), tuple(b)) for (a, b) in frontier_as_lists]
-                result_dict['frontier'] = frontier_as_tuples
+                # frontier_as_lists = result_dict['frontier']
+                # frontier_as_tuples = [(tuple(a), tuple(b)) for (a, b) in frontier_as_lists]
+                # result_dict['frontier'] = frontier_as_tuples
+                # self.__dict__[result_name] = result_dict
 
-                self.__dict__[result_name] = result_dict
+                searchstate = search.SearchState.from_dict(result_dict['state'])
+                self.__dict__[result_name] = searchstate
 
 data = ExperimentData()
 # # yes this is horrible
@@ -85,6 +87,47 @@ def set_plot_settings(ax):
     ax.title.set_fontsize(16)
     ax.xaxis.label.set_fontsize(15)
     ax.yaxis.label.set_fontsize(15)
+
+
+# make it work again temporarily
+
+def filter_metrics(points, metrics, allow_inf=False):
+    new_points = []
+
+    for point in points:
+        if len(point) == 2:
+            data, measures = point
+            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+            if allow_inf or all(map(math.isfinite, filtered_measures)):
+                new_points.append((data, filtered_measures))
+        if len(point) == 3:
+            gen, data, measures = point
+            filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+            if allow_inf or all(map(math.isfinite, filtered_measures)):
+                new_points.append((gen, data, filtered_measures))
+    return new_points
+
+def filter_frontier(frontier, metrics, allow_inf=False, reconstruct_metrics=False):
+    new_metrics = [m for m in metrics if m is not None]
+
+    new_frontier = []
+    for i, (data, measures) in enumerate(frontier):
+        filtered_measures = tuple(meas for meas, m in zip(measures, metrics) if m is not None)
+
+        if reconstruct_metrics:
+            filtered_data = i
+        else:
+            filtered_data = data
+
+        if allow_inf or all(map(math.isfinite, filtered_measures)):
+            _, new_frontier, _ = update_frontier(new_frontier, (filtered_data, filtered_measures), new_metrics)
+
+    if reconstruct_metrics:
+        reconstructed_frontier = [frontier[i] for i, measures in new_frontier]
+        new_frontier = reconstructed_frontier
+
+    return new_frontier
+
 
 
 def plot_density(fname, sources, metrics, plot_settings = [],
@@ -136,7 +179,7 @@ def plot_density(fname, sources, metrics, plot_settings = [],
                 label = 'floats, '
             else:
                 label = 'posits, '
-                
+
             x, y_size, y_final = zip(*plot_points)
             ax.plot(x, y_size, opts, fillstyle='none', zorder=zidx, label=label + 'current frontier size')
             ax.plot(x, y_final, opts, zorder=zidx, label=label + 'points from final frontier')
@@ -248,7 +291,7 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
         plot_count = 0
         for source, opts in zip(sources, plot_settings):
             all_points = source['configs']
-            final_frontier = search.filter_frontier(source['frontier'], new_metrics)
+            final_frontier = filter_frontier(source['frontier'], new_metrics)
             frontier = []
             plot_points = []
             plot_points_capped = []
@@ -360,16 +403,16 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
         plot_count = 0
         for source, metric_group, plot_settings_group in zip(sources, new_metrics, plot_settings):
             plot_count += 1
-            frontier = source['frontier']
-            all_points = source['configs']
+            frontier = source.frontier
+            all_points = source.history
 
-            print(f'{source["settings"]}--f: {len(frontier)!s}, all: {len(all_points)!s}')
+            print(f'f: {len(frontier)!s}, all: {len(all_points)!s}')
 
             # print(end='  ')
             linend = '\n'
 
             for metrics, opts in zip(metric_group, plot_settings_group):
-                filtered_frontier = search.filter_frontier(frontier, metrics)
+                filtered_frontier = filter_frontier(frontier, metrics)
                 print('filtered:', len(filtered_frontier), end=linend)
 
                 x, y = [], []
@@ -394,7 +437,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
                 ax.plot(x, y, opts, ds='steps-post', zorder=zidx)
 
                 if complete_frontier:
-                    filtered_points = search.filter_metrics(frontier, metrics)
+                    filtered_points = filter_metrics(frontier, metrics)
                     print('complete:', len(filtered_points), end=linend)
                     alpha = 0.5
                     x, y = [], []
@@ -418,7 +461,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
                     ax.plot(x, y, ghost_opts, alpha=alpha, zorder=zidx)
 
                 if draw_ghosts:
-                    filtered_points = search.filter_metrics(all_points, metrics)
+                    filtered_points = filter_metrics(all_points, metrics)
                     print('ghosts:', len(filtered_points), end=linend)
                     ghost_count = len(filtered_points)
                     alpha = min(100, math.sqrt(ghost_count)) / ghost_count
@@ -500,7 +543,7 @@ def plot_frontier(fname, sources, new_metrics, plot_settings = [],
 
 def label_fenceposts(sweep, new_metrics):
     points = sweep['frontier']
-    filtered = search.filter_metrics(points, new_metrics)
+    filtered = filter_metrics(points, new_metrics)
 
     fenceposts = []
     for data, measures in filtered:
@@ -544,8 +587,8 @@ chua_davg_ceiling = 8.330294319415229
 
 # output location
 
-plot_dir = os.path.join(here, 'paper/new/figs')
-table_dir = os.path.join(here, 'paper/new/tables')
+plot_dir = os.path.join(here, 'paper/tmp/figs')
+table_dir = os.path.join(here, 'paper/tmp/tables')
 
 # Table labels
 
@@ -919,10 +962,10 @@ def dump_tex_table(fname, source, labels=None, filter_metrics=None, display_metr
     frontier = source['frontier']
 
     if filter_metrics is not None:
-        frontier = search.filter_frontier(frontier, filter_metrics, allow_inf=False, reconstruct_metrics=True)
+        frontier = filter_frontier(frontier, filter_metrics, allow_inf=False, reconstruct_metrics=True)
 
     if display_metrics is not None:
-        frontier = search.filter_metrics(frontier, display_metrics, allow_inf=True)
+        frontier = filter_metrics(frontier, display_metrics, allow_inf=True)
 
     left_cols, right_cols = 0, 0
     rows = []
@@ -1106,4 +1149,24 @@ def test():
 
 
 if __name__ == '__main__':
-    all_figs()
+    #all_figs()
+
+    # plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+    #               [data.sweep_rk_lorenz],
+    #               [[rk_avg_metrics],] * 4,
+    #               plot_settings = [['C0s--']],
+    #               extra_pts=lorenz_pts_extra,
+    #               #ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+    #               ref_lines=[lorenz_avg_ceiling],
+    #               draw_ghosts = True,
+    #               axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+
+    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+                  [data.final_gen109, data.final_gen142],
+                  [[rk_avg_metrics],] * 4,
+                  plot_settings = [['C0s--'], ['C1^:']],
+                  extra_pts=lorenz_pts_extra,
+                  #ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+                  ref_lines=[lorenz_avg_ceiling],
+                  draw_ghosts = True,
+                  axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
