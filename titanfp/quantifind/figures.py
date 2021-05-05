@@ -140,8 +140,8 @@ def plot_density(fname, sources, metrics, plot_settings = [],
     try:
         plot_count = 0
         for source, opts in zip(sources, plot_settings):
-            all_points = source['configs']
-            final_frontier = source['frontier']
+            all_points = source.history
+            final_frontier = source.frontier
             frontier = []
             plot_points = []
             gen_bounds = []
@@ -159,7 +159,7 @@ def plot_density(fname, sources, metrics, plot_settings = [],
                         print('regressed a generation???')
                         print(i, point)
 
-                changed, frontier = search.update_frontier(frontier, (tuple(data), tuple(measures)), metrics)
+                changed, frontier, _ = update_frontier(frontier, (tuple(data), tuple(measures)), metrics)
                 if changed or i == len(all_points) - 1:
                     points_from_final = 0
                     for current_point in frontier:
@@ -290,8 +290,8 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
     try:
         plot_count = 0
         for source, opts in zip(sources, plot_settings):
-            all_points = source['configs']
-            final_frontier = filter_frontier(source['frontier'], new_metrics)
+            all_points = source.history
+            final_frontier = filter_frontier(source.frontier, new_metrics)
             frontier = []
             plot_points = []
             plot_points_capped = []
@@ -317,7 +317,7 @@ def plot_progress(fname, sources, new_metrics, ceiling=None,
 
                 filtered_measures = tuple(meas for meas, m in zip(measures, new_metrics) if m is not None)
 
-                changed, frontier = search.update_frontier(frontier, (tuple(data), filtered_measures), update_metrics)
+                changed, frontier, _ = update_frontier(frontier, (tuple(data), filtered_measures), update_metrics)
                 if changed or i == len(all_points) - 1:
                     x_left_current, x_right_current, y_floor_current, current_area = integrate_frontier(
                         frontier, x_left=x_left, x_right=x_right, y_floor=y_floor, y_ceil=None, x_idx=x_idx, y_idx=y_idx,
@@ -1168,5 +1168,29 @@ if __name__ == '__main__':
                   extra_pts=lorenz_pts_extra,
                   #ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
                   ref_lines=[lorenz_avg_ceiling],
+                  draw_ghosts = False,
+                  axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+
+    plot_frontier(os.path.join(plot_dir, 'rk_lorenz'),
+                  [data.final_gen109, data.final_gen142],
+                  [[rk_avg_metrics],] * 4,
+                  plot_settings = [['C0s--'], ['C1^:']],
+                  extra_pts=lorenz_pts_extra,
+                  #ref_pts=label_fenceposts(data.baseline_rk_lorenz_fenceposts, rk_avg_metrics),
+                  ref_lines=[lorenz_avg_ceiling],
                   draw_ghosts = True,
                   axis_titles = ["Lorenz attractor, RK4", "bitcost", "bits of accuracy, final position"])
+
+    plot_density(os.path.join(plot_dir, 'rk_lorenz_density'),
+                 [data.final_gen109, data.final_gen142],
+                 rk_metrics,
+                 ['C0s--', 'C1^:'],
+                 axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier size"])
+
+    plot_progress(os.path.join(plot_dir, 'rk_lorenz_progress'),
+                  [data.final_gen109, data.final_gen142],
+                  rk_avg_metrics,
+                  #ceiling = lorenz_avg_ceiling,
+                  ceiling = None,
+                  plot_settings = ['C0s--', 'C1^:'],
+                  axis_titles = ["Lorenz attractor, RK4", "configurations searched", "frontier coverage (position)"])
