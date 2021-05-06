@@ -169,6 +169,29 @@ def reconstruct_frontier(frontier, metric_fns, check=False, verbose=True):
         all_removed.extend(removed_points)
     return new_frontier, all_removed
 
+def merge_frontiers(frontier1, frontier2, metric_fns, check=False):
+    """Combine two frontiers into a single new frontier.
+    Equivalent to reconstructing the two frontiers appended together,
+    but more efficient.
+    """
+    if len(frontier1) >= len(frontier2):
+        larger = frontier1
+        smaller = frontier2
+    else:
+        larger = frontier2
+        smaller = frontier1
+
+    if check:
+        frontier, all_removed = reconstruct_frontier(larger, metric_fns, check=check)
+    else:
+        frontier, all_removed = larger, []
+
+    for result in smaller:
+        changed, frontier, removed = update_frontier(frontier, result, metric_fns, check=check)
+        all_removed.extend(removed)
+
+    return frontier, all_removed
+
 def filter_frontier(frontier, pred_fns, cfg_pred_fns=None):
     """Filter out points from the frontier that don't pass all the pred_fns.
     If a pred_fn is None, ignore that metric.
