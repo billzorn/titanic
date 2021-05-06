@@ -640,10 +640,27 @@ class SearchState(object):
                         for thing in removed:
                             print('--> ', repr(thing))
             else:
-                frontier = []
+                frontier, removed = reconstruct_frontier(self.history, metric_fns, check=False, verbose=verbose)
 
-            # maybe there should be more comprehensive checks...
-            # not clear how to make them fast.
+            frontier_cfgs = set(map(operator.itemgetter(0), frontier))
+
+            # note that this isn't a true consistency check between the frontier, the history, and the frontier log...
+            # we only check that the frontier agrees with the log,
+            # and only rebuild from history if there is not provided frontier at all.
+
+            for i, record in enumerate(self.frontier_log):
+                (cfg, qos), replaced, replaced_by = record
+                for replaced_idx in replaced:
+                    _, _, replaced_by_me = self.frontier_log[replaced_idx]
+                    if replaced_by_me != i:
+                        if verbose:
+                            print(f'-- CHECK SEARCHSTATE: fidx {i} replaced {replaced_idx}, which claims to have been replaced by {replaced_by_me} --')
+                # only checking replaced -> replaced by, not the other way
+                if replaced_by is None:
+                    if cfg not in frontier_cfgs:
+                        consistent = False
+                        if verbose:
+                            print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} at fidx {i} is missing from the frontier --')
 
             if verbose:
                 print(f'  ({len(frontier)})')
