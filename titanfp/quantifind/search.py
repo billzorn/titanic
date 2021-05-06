@@ -453,7 +453,7 @@ class SearchState(object):
 
         # some other misc record keepting:
 
-        # count of new frontier points found for each generation
+        # count of total points explored, and new frontier points found, for each generation
         self.generations = []
 
         # for the stopping criteria: the count of "initial" configs run and "initial" generations
@@ -502,7 +502,7 @@ class SearchState(object):
         new_state.__dict__['history'] = [(tuple(a), tuple(b)) for a, b in d['history']]
         new_state.__dict__['cache'] = dict((tuple(k), list(v)) for k, v in d['cache'])
         new_state.__dict__['frontier_log'] = [[(tuple(a), tuple(b)), v1, v2] for (a, b), v1, v2 in d['frontier_log']]
-        new_state.__dict__['generations'] = list(d['generations'])
+        new_state.__dict__['generations'] = [tuple(a) for a in d['generations']]
         new_state.__dict__['initial_cfgs'] = d['initial_cfgs']
         new_state.__dict__['initial_gens'] = d['initial_gens']
         new_state.__dict__['additional_data'] = d['additional_data']
@@ -553,7 +553,7 @@ class SearchState(object):
             deduped_frontier_log[cfg] = i
 
         if verbose:
-            print(f'  ({len(deduped_horizon)} {len(deduped_history)} {len(deduped_frontier_log)}))')
+            print(f'  ({len(deduped_horizon)} {len(deduped_history)} {len(deduped_frontier_log)})')
             print('Checking the cache... ')
 
         for cfg, record in self.cache.items():
@@ -587,6 +587,9 @@ class SearchState(object):
                     print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
                           f'reports hidx={hidx}, BUT was last seen at {actual_hidx} --')
             elif hidx is not None:
+                if good_history[hidx] and verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
+                          f'at hidx={hidx} has already been recorded --')
                 good_history[hidx] = True
 
             if fidx != actual_fidx:
@@ -595,6 +598,9 @@ class SearchState(object):
                     print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
                           f'reports fidx={fidx}, BUT was last seen at {actual_fidx} --')
             elif fidx is not None:
+                if good_frontier_log[fidx] and verbose:
+                    print(f'-- CHECK SEARCHSTATE: configuration {repr(cfg)} '
+                          f'at fidx={fidx} has already been recorded --')
                 good_frontier_log[fidx] = True
 
         for i, good in enumerate(good_history):
@@ -641,6 +647,43 @@ class SearchState(object):
 
             if verbose:
                 print(f'  ({len(frontier)})')
+
+        if verbose:
+            print('Checking generations...')
+
+        total_cfgs = 0
+        frontier_cfgs = 0
+        initial_gens = 0
+        initial_cfgs = 0
+
+        is_initial_gen = True
+        for horizon_size, new_frontier_points in self.generations:
+            total_cfgs += horizon_size
+            frontier_cfgs += new_frontier_points
+            if is_initial_gen:
+                initial_gens += 1
+                initial_cfgs += horizon_size
+            is_initial_gen = (new_frontier_points == 0)
+
+        if total_cfgs != len(self.history):
+            consistent = False
+            if verbose:
+                print(f'-- CHECK SEARCHSTATE: generation log reports {total_cfgs} configurations were run, '
+                      f'but history only has {len(self.history)} --')
+        # less important checks don't have to trip consistent
+        if frontier_cfgs != len(self.frontier_log):
+            if verbose:
+                print(f'-- CHECK SEARCHSTATE: generation log reports {frontier_cfgs} configurations were added to the frontier, '
+                      f'but frontier log only has {len(self.frontier_log)} --')
+        if initial_gens != self.initial_gens:
+            if verbose:
+                print(f'-- CHECK SEARCHSTATE: generation log reports {initial_gens} initial generations, state has {self.initial_gens} --')
+        if initial_cfgs != self.initial_cfgs:
+            if verbose:
+                print(f'-- CHECK SEARCHSTATE: generation log reports {initial_cfgs} total initial configurations, state has {self.initial_cfgs} --')
+
+        if verbose:
+            print(f'  ({len(self.generations)})')
 
         if verbose:
             if consistent:
@@ -1321,63 +1364,67 @@ class Sweep(object):
         """Run the next generation of configurations currently on the horizon.
         Handles the generation records in the state.
         """
-        horizon_size = len(self.state.horizon)
         gen_idx = len(self.state.generations)
-        self.state.generations.append(0)
+        horizon_size = len(self.state.horizon)
+        new_frontier_points = 0
+        self.state.generations.append((horizon_size, new_frontier_points))
 
         if self.verbosity >= 1:
             print(f'  Evaluating the horizon for generation {gen_idx}...')
 
         if pool is None:
             pool = self.pool
+
         if pool is None:
             with multiprocessing.Pool(self.cores) as pool:
                 while len(self.state.horizon) > 0:
-                        new_frontier_points = self.process_batch(pool)
-                        self.state.generations[gen_idx] += new_frontier_points
+                    new_frontier_points += self.process_batch(pool)
+                    self.state.generations[gen_idx] = (horizon_size, new_frontier_points)
         else:
             while len(self.state.horizon) > 0:
-                new_frontier_points = self.process_batch(pool)
-                self.state.generations[gen_idx] += new_frontier_points
+                new_frontier_points += self.process_batch(pool)
+                self.state.generations[gen_idx] = (horizon_size, new_frontier_points)
 
         if self.verbosity >= 1:
             print(f'  Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
-        return self.state.generations[gen_idx]
+
+        return new_frontier_points
 
     def cleanup_horizon(self, pool=None):
         """Empty the horizon, in case only part of a generation was evaluated.
         This is almost the same as running a generation,
         but it doesn't append a new generation record.
         """
-        horizon_size = len(self.state.horizon)
-        if horizon_size == 0:
+        horizon_remaining = len(self.state.horizon)
+        if horizon_remaining == 0:
             return 0
 
         gen_idx = len(self.state.generations) - 1
         if gen_idx < 0:
             gen_idx = 0
-            self.state.generations.append(0)
+            self.state.generations.append((horizon_remaining, 0))
 
-        elif self.verbosity >= 1:
-            print(f'  Cleaning up {horizon_size} configurations left on the horizon at generation {gen_idx}...')
+        horizon_size, old_frontier_points = self.state.generations[gen_idx]
+        new_frontier_points = 0
 
-        total_new_points = 0
+        if self.verbosity >= 1:
+            print(f'  Cleaning up {horizon_remaining} configurations left on the horizon at generation {gen_idx}...')
+
         if pool is None:
             pool = self.pool
+
         if pool is None:
             with multiprocessing.Pool(self.cores) as pool:
                 while len(self.state.horizon) > 0:
-                    new_frontier_points = self.process_batch(pool)
-                    total_new_points += new_frontier_points
-                    self.state.generations[gen_idx] += new_frontier_points
+                    new_frontier_points += self.process_batch(pool)
+                    self.state.generations[gen_idx] = (horizon_size, old_frontier_points + new_frontier_points)
         else:
             while len(self.state.horizon) > 0:
-                new_frontier_points = self.process_batch(pool)
-                total_new_points += new_frontier_points
-                self.state.generations[gen_idx] += new_frontier_points
+                new_frontier_points += self.process_batch(pool)
+                self.state.generations[gen_idx] = (horizon_size, old_frontier_points + new_frontier_points)
 
         if self.verbosity >= 1:
-            print(f'  Cleaned up {horizon_size} configurations for generation {gen_idx}, adding {total_new_points} to the frontier.')
+            print(f'  Cleaned up {horizon_remaining} configurations for generation {gen_idx}, adding {new_frontier_points} to the frontier.')
         return total_new_points
 
     def run_search(self, checkpoint_dir=None, check=False):
