@@ -1,5 +1,6 @@
 """Sweep helpers."""
 
+import os
 import random
 import json
 
@@ -240,6 +241,35 @@ def print_frontier(frontier):
     for frontier_data, frontier_m in frontier:
         print(f'    ({frontier_data!r}, {frontier_m!r}),')
     print(']')
+
+
+# safe json logging (suitable for calling in a thread)
+
+def log_and_copy(data, fname, work_dir='.tmp', target_dir='.', link=None,
+                 cleanup_re=None, keep_files=None, key=None):
+    """Write data as json to fname.
+    Do this in a way that is safe for async readers,
+    i.e. by writing a temporary file first (in work_dir)
+    and then renaming it to that actual fname in the target dir.
+
+    If link is not None, also create a symlink to the final file.
+    The path for the link is independent of work_dir and target_dir.
+
+    If cleanup_re is specified, then remove all but keep_files
+    with names matching the re from the target dir,
+    keeping the most recent files if key is None,
+    or otherwise the "greatest" files sorting by that key.
+    """
+    os.makedirs(work_dir, exist_ok=True)
+    work_path = os.path.join(work_dir, fname)
+
+    with open(work_path, 'wt') as f:
+        json.dump(data, f, indent=None, separators=(',', ':'))
+        print(file=f, flush=True)
+
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, fname)
+    os.replace(work_path, target_path)
 
 
 # other random stuff

@@ -1,10 +1,12 @@
 """Common code for parameter search."""
 
 import os
+import time
 import itertools
 import collections
 import operator
 import multiprocessing
+import threading
 import random
 import math
 
@@ -870,6 +872,8 @@ class Sweep(object):
         self.verbosity = verbosity
         # handle this with a context manager
         self.pool = None
+        # currently set in the run method
+        self.logdir = None
 
     def __enter__(self):
         self.pool = multiprocessing.Pool(self.cores)
@@ -903,35 +907,40 @@ class Sweep(object):
             lines.append(f'  with worker pool {repr(self.pool)}')
         return '\n'.join(lines)
 
-    def checkpoint(self, logdir, name='checkpoint', overwrite=True):
-        """Save a checkpoint of the current settings and search state to the specified file."""
-        fname = f'{name}-gen{len(self.state.generations)}.json'
-        fpath = os.path.join(logdir, fname)
+    def checkpoint(self, logdir, name='checkpoints', overwrite=True):
+        """Save a checkpoint of the current settings and search state somewhere under the specified directory."""
+        fname = f'gen{len(self.state.generations)}.json'
+        work_dir = os.path.join(logdir, '.tmp')
+        cp_dir = os.path.join(logdir, name)
 
         if self.verbosity >= 0:
-            print(f'Saving checkpoint for gen {len(self.state.generations)} to {logdir}...')
-
-        if os.path.exists(fpath):
-            if overwrite:
-                if self.verbosity >= 0:
-                    print('Checkpoint file already exists, overwriting...')
-            else:
-                if self.verbosity >= 0:
-                    print('Checkpoint file already exists, abort.')
-                return
+            print(f'Saving checkpoint for gen {len(self.state.generations)} to {cp_dir}...')
 
         data = {
             'settings': self.settings.to_dict(),
             'state': self.state.to_dict(),
         }
-        os.makedirs(logdir, exist_ok=True)
-        with open(fpath, 'wt') as f:
-            json.dump(data, f, indent=False, separators=(',', ':'))
-            print(file=f, flush=True)
+        log_and_copy(data, fname, work_dir=work_dir, target_dir=cp_dir)
 
         if self.verbosity >= 0:
             print('Checkpoint saved, done.')
 
+    def snapshot_frontier(self, logdir):
+        """Save a snapshot of the current frontier."""
+        fname = 'frontier.json'
+        work_dir = os.path.join(logdir, '.tmp')
+        cp_dir = logdir
+
+        # if self.verbosity >= 0:
+        #     print(f'Saving snapshot at gen {len(self.state.generations)} to {cp_dir}...')
+
+        data = {
+            'frontier': list(self.state.frontier),
+        }
+        log_and_copy(data, fname, work_dir=work_dir, target_dir=cp_dir)
+
+        # if self.verbosity >= 0:
+        #     print('Snapshot saved, done.')
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
@@ -1360,16 +1369,33 @@ class Sweep(object):
             print(f'    dispatched {len(async_results)} evaluations...')
 
         new_frontier_points = 0
+        pending_point = False
+        last_snapshot = time.time()
         for cfg, ares in zip(cfgs, async_results):
             qos = ares.get()
             result = cfg, qos
             if self.state.commit_to_history(result, self.metric_fns, verbose=self.verbosity>=3):
                 new_frontier_points += 1
+                pending_point = True
                 if self.verbosity >= 3:
                     print('!', end='', flush=True)
             else:
                 if self.verbosity >= 3:
                     print('.', end='', flush=True)
+
+            if self.logdir is not None:
+                now = time.time()
+                if pending_point and now > last_snapshot + 2.0:
+                    pending_point = False
+                    last_snapshot = now
+                    self.snapshot_frontier(self.logdir)
+                    print('X', end='', flush=True)
+
+        if self.logdir is not None:
+            if pending_point:
+                self.snapshot_frontier(self.logdir)
+                print('X', end='', flush=True)
+
         if self.verbosity >= 3:
             print(flush=True)
 
@@ -1448,8 +1474,12 @@ class Sweep(object):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
             print('Running QuantiFind sweep...')
+            if checkpoint_dir is not None:
+                print(f'Saving checkpoints to {checkpoint_dir}.')
             if self.verbosity >= 2:
                 print(self)
+
+        self.logdir = checkpoint_dir
 
         self.cleanup_horizon()
         is_initial_gen = (len(self.state.history) == 0)
