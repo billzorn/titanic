@@ -919,7 +919,7 @@ class Sweep(object):
             lines.append(f'  with worker pool {repr(self.pool)}')
         return '\n'.join(lines)
 
-    def checkpoint(self, logdir, name='latest', overwrite=True):
+    def checkpoint(self, logdir, name=None, overwrite=True):
         """Save a checkpoint of the current settings and search state somewhere under the specified directory."""
         fname = self.checkpoint_fmt.format(len(self.state.generations))
         work_dir = os.path.join(logdir, self.checkpoint_tmpdir)
@@ -1490,6 +1490,29 @@ class Sweep(object):
             print(f'  Cleaned up {horizon_remaining} configurations for generation {gen_idx}, adding {new_frontier_points} to the frontier.')
         return total_new_points
 
+    def _do_checkpoint(self):
+        """used in run_search"""
+        if self.verbosity >= 0:
+            print(flush=True)
+        self.checkpoint(self.logdir, name='latest')
+        if self.verbosity >= 0:
+            print(flush=True)
+    def _final_checkpoint(self):
+        """used in run_search"""
+        if self.logdir is not None:
+            self._do_checkpoint()
+            out_dir = os.path.join(self.logdir, self.checkpoint_outdir)
+            outname = self.checkpoint_fmt.format(len(self.state.generations))
+            out_path = os.path.join(out_dir, outname)
+            if os.path.exists(out_path):
+                # do the symlink thing
+                tmp_dir = os.path.join(self.logdir, self.checkpoint_tmpdir)
+                linkname = 'final' + self.checkpoint_suffix
+                tmp_path = os.path.join(tmp_dir, linkname)
+                link_target = os.path.relpath(out_path, self.logdir)
+                link_path = os.path.join(self.logdir, linkname)
+                os.symlink(link_target, tmp_path)
+                os.replace(tmp_path, link_path)
     def run_search(self, checkpoint_dir=None, check=False):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
@@ -1522,12 +1545,7 @@ class Sweep(object):
                     print('final ', end='')
                     print(self.state)
                     print(flush=True)
-                if checkpoint_dir is not None:
-                    if self.verbosity >= 0:
-                        print(flush=True)
-                    self.checkpoint(checkpoint_dir, name='final')
-                    if self.verbosity >= 0:
-                        print(flush=True)
+                self._final_checkpoint()
                 return self.state.frontier
 
             if is_initial_gen:
@@ -1551,12 +1569,7 @@ class Sweep(object):
                         print('final ', end='')
                         print(self.state)
                         print(flush=True)
-                    if checkpoint_dir is not None:
-                        if self.verbosity >= 0:
-                            print(flush=True)
-                        self.checkpoint(checkpoint_dir, name='final')
-                        if self.verbosity >= 0:
-                            print(flush=True)
+                    self._final_checkpoint()
                     return self.state.frontier
             else:
                 if self.verbosity >= 3:
@@ -1580,9 +1593,5 @@ class Sweep(object):
                 if self.verbosity >= 0:
                     print(flush=True)
 
-            if checkpoint_dir is not None:
-                if self.verbosity >= 0:
-                    print(flush=True)
-                self.checkpoint(checkpoint_dir)
-                if self.verbosity >= 0:
-                    print(flush=True)
+            if self.logdir is not None:
+                self._do_checkpoint()
