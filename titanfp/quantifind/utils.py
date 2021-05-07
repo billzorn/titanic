@@ -1,6 +1,7 @@
 """Sweep helpers."""
 
 import os
+import sys
 import random
 import json
 
@@ -246,7 +247,7 @@ def print_frontier(frontier):
 # safe json logging (suitable for calling in a thread)
 
 def log_and_copy(data, fname, work_dir='.tmp', target_dir='.', link=None,
-                 cleanup_re=None, keep_files=None, key=None):
+                 cleanup_re=None, keep_files=0, key=None):
     """Write data as json to fname.
     Do this in a way that is safe for async readers,
     i.e. by writing a temporary file first (in work_dir)
@@ -260,6 +261,8 @@ def log_and_copy(data, fname, work_dir='.tmp', target_dir='.', link=None,
     keeping the most recent files if key is None,
     or otherwise the "greatest" files sorting by that key.
     """
+
+    # write in temporary directory
     os.makedirs(work_dir, exist_ok=True)
     work_path = os.path.join(work_dir, fname)
 
@@ -267,9 +270,31 @@ def log_and_copy(data, fname, work_dir='.tmp', target_dir='.', link=None,
         json.dump(data, f, indent=None, separators=(',', ':'))
         print(file=f, flush=True)
 
+    # check for files to cleanup, then rename and optionally link
     os.makedirs(target_dir, exist_ok=True)
     target_path = os.path.join(target_dir, fname)
+    if cleanup_re is not None:
+        old_files = os.listdir(target_dir)
     os.replace(work_path, target_path)
+
+    if link is not None:
+        link_dir = os.path.dirname(link)
+        link_target = os.path.relpath(target_path, link_dir)
+        # borrow work_path again for a temporary link
+        os.symlink(link_target, work_path)
+        os.replace(work_path, link)
+
+    # cleanup
+    if cleanup_re is not None:
+        to_clean = [name for name in old_files if cleanup_re.fullmatch(name)]
+        to_clean.sort(key=key)
+        for name in to_clean[:len(to_clean)-keep_files]:
+            clean_path = os.path.join(target_dir, name)
+            os.remove(clean_path)
+
+    # this may or may not actually be a good idea...
+    if sys.platform.startswith('linux'):
+        os.sync()
 
 
 # other random stuff

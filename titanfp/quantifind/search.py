@@ -9,6 +9,7 @@ import multiprocessing
 import threading
 import random
 import math
+import re
 
 from .utils import *
 
@@ -870,8 +871,19 @@ class Sweep(object):
         self.batch = batch
         self.retry_attempts = retry_attempts
         self.verbosity = verbosity
+
         # handle this with a context manager
         self.pool = None
+
+        # logging setup
+        self.keep_checkpoints = 2
+        self.checkpoint_suffix = '.json'
+        self.checkpoint_fmt = 'gen{:d}' + self.checkpoint_suffix
+        self.checkpoint_re = re.compile('gen([0-9]+)' + re.escape(self.checkpoint_suffix))
+        self.checkpoint_key = lambda s: self.checkpoint_re.fullmatch(s).group(1)
+        self.checkpoint_tmpdir = '.tmp'
+        self.checkpoint_outdir = 'checkpoints'
+        self.snapshot_name = 'frontier' + self.checkpoint_suffix
         # currently set in the run method
         self.logdir = None
 
@@ -907,37 +919,45 @@ class Sweep(object):
             lines.append(f'  with worker pool {repr(self.pool)}')
         return '\n'.join(lines)
 
-    def checkpoint(self, logdir, name='checkpoints', overwrite=True):
+    def checkpoint(self, logdir, name='latest', overwrite=True):
         """Save a checkpoint of the current settings and search state somewhere under the specified directory."""
-        fname = f'gen{len(self.state.generations)}.json'
-        work_dir = os.path.join(logdir, '.tmp')
-        cp_dir = os.path.join(logdir, name)
+        fname = self.checkpoint_fmt.format(len(self.state.generations))
+        work_dir = os.path.join(logdir, self.checkpoint_tmpdir)
+        target_dir = os.path.join(logdir, self.checkpoint_outdir)
+
+        if name is None:
+            link_path = None
+        else:
+            linkname = name + self.checkpoint_suffix
+            link_path = os.path.join(logdir, linkname)
 
         if self.verbosity >= 0:
-            print(f'Saving checkpoint for gen {len(self.state.generations)} to {cp_dir}...')
+            print(f'Saving checkpoint for gen {len(self.state.generations)} to {target_dir}...')
 
         data = {
             'settings': self.settings.to_dict(),
             'state': self.state.to_dict(),
+            'frontier': list(self.state.frontier),
         }
-        log_and_copy(data, fname, work_dir=work_dir, target_dir=cp_dir)
+        log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir, link=link_path,
+                     cleanup_re=self.checkpoint_re, keep_files=self.keep_checkpoints, key=self.checkpoint_key)
 
         if self.verbosity >= 0:
             print('Checkpoint saved, done.')
 
     def snapshot_frontier(self, logdir):
         """Save a snapshot of the current frontier."""
-        fname = 'frontier.json'
-        work_dir = os.path.join(logdir, '.tmp')
-        cp_dir = logdir
+        fname = self.snapshot_name
+        work_dir = os.path.join(logdir, self.checkpoint_tmpdir)
+        target_dir = logdir
 
         # if self.verbosity >= 0:
-        #     print(f'Saving snapshot at gen {len(self.state.generations)} to {cp_dir}...')
+        #     print(f'Saving snapshot at gen {len(self.state.generations)} to {target_dir}...')
 
         data = {
             'frontier': list(self.state.frontier),
         }
-        log_and_copy(data, fname, work_dir=work_dir, target_dir=cp_dir)
+        log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir)
 
         # if self.verbosity >= 0:
         #     print('Snapshot saved, done.')
