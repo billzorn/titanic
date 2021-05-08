@@ -881,7 +881,7 @@ class Sweep(object):
         self.checkpoint_fmt = 'gen{:d}' + self.checkpoint_suffix
         self.checkpoint_re = re.compile('gen([0-9]+)' + re.escape(self.checkpoint_suffix))
         self.checkpoint_key = lambda s: self.checkpoint_re.fullmatch(s).group(1)
-        self.checkpoint_tmpdir = '.tmp'
+        self.checkpoint_tmpdir = '.tmp.' + str(os.getpid())
         self.checkpoint_outdir = 'checkpoints'
         self.snapshot_name = 'frontier' + self.checkpoint_suffix
         # currently set in the run method
@@ -919,7 +919,46 @@ class Sweep(object):
             lines.append(f'  with worker pool {repr(self.pool)}')
         return '\n'.join(lines)
 
-    def checkpoint(self, logdir, name=None, overwrite=True):
+    def setup_checkpoints(self, checkpoint_dir):
+        """Set up the checkpoint directory; if it already exists, move the old one."""
+        if self.verbosity >= 0:
+            print(f'Saving checkpoints to {checkpoint_dir}.')
+
+        self.logdir = checkpoint_dir
+
+        if os.path.exists(self.logdir):
+            abs_logdir = os.path.abspath(self.logdir.rstrip('/'))
+            basedir, logname = os.path.split(abs_logdir)
+            nearby_dirs = os.listdir(basedir)
+            log_re = re.compile(re.escape(logname + '_') + '([0-9]+)')
+            similar_dirs = [s for s in nearby_dirs if log_re.fullmatch(s)]
+            if len(similar_dirs) == 0:
+                rename_idx = 1
+            else:
+                similar_dirs.sort(key=lambda s: log_re.fullmatch(s).group(1))
+                rename_idx = int(log_re.fullmatch(similar_dirs[-1]).group(1)) + 1
+            rename_to = f'{logname}_{rename_idx}'
+            abs_rename_path = os.path.join(basedir, rename_to)
+
+            if self.verbosity >= 0:
+                print(f'  checkpoint directory already exists; renaming {logname} -> {rename_to}')
+            os.rename(abs_logdir, abs_rename_path)
+
+    def finish_checkpoints(self):
+        """Join the background threads that write checkpoint data, and clear the temporary directory."""
+
+        # threads aren't used yet
+
+        tmp_dir = os.path.join(self.logdir, self.checkpoint_tmpdir)
+        if os.path.exists(tmp_dir):
+            if not os.path.isdir(tmp_dir):
+                print(f'Temporary checkpoint folder {tmp_dir} is not a directory?')
+            elif not len(os.listdir(tmp_dir)) == 0:
+                print(f'Temporary checkpoing folder {tmp_dir} is not empty?')
+            else:
+                os.rmdir(tmp_dir)
+
+    def checkpoint(self, logdir, name=None):
         """Save a checkpoint of the current settings and search state somewhere under the specified directory."""
         fname = self.checkpoint_fmt.format(len(self.state.generations))
         work_dir = os.path.join(logdir, self.checkpoint_tmpdir)
@@ -1513,16 +1552,16 @@ class Sweep(object):
                 link_path = os.path.join(self.logdir, linkname)
                 os.symlink(link_target, tmp_path)
                 os.replace(tmp_path, link_path)
+            self.finish_checkpoints()
     def run_search(self, checkpoint_dir=None, check=False):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
             print('Running QuantiFind sweep...')
-            if checkpoint_dir is not None:
-                print(f'Saving checkpoints to {checkpoint_dir}.')
-            if self.verbosity >= 2:
-                print(self)
 
-        self.logdir = checkpoint_dir
+        self.setup_checkpoints(checkpoint_dir)
+
+        if self.verbosity >= 2:
+            print(self)
 
         self.cleanup_horizon()
         is_initial_gen = (len(self.state.history) == 0)
@@ -1540,6 +1579,7 @@ class Sweep(object):
 
             if new_cfgs <= 0:
                 if self.verbosity >= 0:
+                    print(flush=True)
                     print('Exhausted the search space. Done.')
                 if self.verbosity >= 2:
                     print('final ', end='')
@@ -1563,6 +1603,7 @@ class Sweep(object):
                 if (self.state.initial_gens >= self.settings.restart_gen_target and
                     self.state.initial_cfgs >= self.settings.restart_size_target):
                     if self.verbosity >= 0:
+                        print(flush=True)
                         print(f'Searched for {self.state.initial_gens} initial generations '
                               f'with {self.state.initial_cfgs} total initial configurations. Done.')
                     if self.verbosity >= 2:
