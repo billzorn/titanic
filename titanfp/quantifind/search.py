@@ -854,6 +854,7 @@ class Sweep(object):
 
     def __init__(self, eval_fn, init_fns, neighbor_fns, metric_fns,
                  settings=None, state=None, cores=None, batch=None, retry_attempts=1,
+                 threaded_writes=True,
                  verbosity=3):
         self.eval_fn = eval_fn
         self.init_fns = init_fns
@@ -870,6 +871,7 @@ class Sweep(object):
         self.cores = cores
         self.batch = batch
         self.retry_attempts = retry_attempts
+        self.threaded_writes = threaded_writes
         self.verbosity = verbosity
 
         # handle this with a context manager
@@ -886,6 +888,9 @@ class Sweep(object):
         self.snapshot_name = 'frontier' + self.checkpoint_suffix
         # currently set in the run method
         self.logdir = None
+        # for threaded writes
+        self.checkpoint_thread = None
+        self.snapshot_thread = None
 
     def __enter__(self):
         self.pool = multiprocessing.Pool(self.cores)
@@ -947,7 +952,12 @@ class Sweep(object):
     def finish_checkpoints(self):
         """Join the background threads that write checkpoint data, and clear the temporary directory."""
 
-        # threads aren't used yet
+        if self.checkpoint_thread is not None:
+            self.checkpoint_thread.join()
+            self.checkpoint_thread = None
+        if self.snapshot_thread is not None:
+            self.snapshot_thread.join()
+            self.snapshot_thread = None
 
         tmp_dir = os.path.join(self.logdir, self.checkpoint_tmpdir)
         if os.path.exists(tmp_dir):
@@ -970,36 +980,63 @@ class Sweep(object):
             linkname = name + self.checkpoint_suffix
             link_path = os.path.join(logdir, linkname)
 
-        if self.verbosity >= 0:
-            print(f'Saving checkpoint for gen {len(self.state.generations)} to {target_dir}...')
-
         data = {
             'settings': self.settings.to_dict(),
             'state': self.state.to_dict(),
             'frontier': list(self.state.frontier),
         }
-        log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir, link=link_path,
-                     cleanup_re=self.checkpoint_re, keep_files=self.keep_checkpoints, key=self.checkpoint_key)
 
-        if self.verbosity >= 0:
-            print('Checkpoint saved, done.')
+        if self.threaded_writes:
+            args = (data, fname)
+            kwargs = {
+                'work_dir' : work_dir,
+                'target_dir' : target_dir,
+                'link' : link_path,
+                'cleanup_re' : self.checkpoint_re,
+                'keep_files' : self.keep_checkpoints,
+                'key' : self.checkpoint_key,
+            }
+
+            if self.checkpoint_thread is not None:
+                self.checkpoint_thread.join()
+            self.checkpoint_thread = threading.Thread(target=log_and_copy, args=args, kwargs=kwargs)
+            self.checkpoint_thread.start()
+
+            if self.verbosity >= 0:
+                print(f'Spawned thread to save checkpoint for gen {len(self.state.generations)} to {target_dir}.')
+
+        else:
+            if self.verbosity >= 0:
+                print(f'Saving checkpoint for gen {len(self.state.generations)} to {target_dir}...')
+
+            log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir, link=link_path,
+                         cleanup_re=self.checkpoint_re, keep_files=self.keep_checkpoints, key=self.checkpoint_key)
+
+            if self.verbosity >= 0:
+                print('Checkpoint saved, done.')
 
     def snapshot_frontier(self, logdir):
         """Save a snapshot of the current frontier."""
         fname = self.snapshot_name
         work_dir = os.path.join(logdir, self.checkpoint_tmpdir)
         target_dir = logdir
-
-        # if self.verbosity >= 0:
-        #     print(f'Saving snapshot at gen {len(self.state.generations)} to {target_dir}...')
-
         data = {
             'frontier': list(self.state.frontier),
         }
-        log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir)
 
-        # if self.verbosity >= 0:
-        #     print('Snapshot saved, done.')
+        if self.threaded_writes:
+            args = (data, fname)
+            kwargs = {
+                'work_dir' : work_dir,
+                'target_dir' : target_dir,
+            }
+            if self.snapshot_thread is not None:
+                self.snapshot_thread.join()
+            self.snapshot_thread = threading.Thread(target=log_and_copy, args=args, kwargs=kwargs)
+            self.snapshot_thread.start()
+        else:
+            log_and_copy(data, fname, work_dir=work_dir, target_dir=target_dir)
+
 
     # batch generation methods will "poke" the current cache state,
     # but do not create any new entries or add things to the horizon.
