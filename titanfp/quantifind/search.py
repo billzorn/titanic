@@ -1295,14 +1295,20 @@ class Sweep(object):
         """
         unbounded = ref_size * this_weight
         if unbounded != 0:
-            unbounded = (unbounded // ref_weight) + 1
+            bounded = (unbounded // ref_weight)
+            # implement ceil division
+            if bounded * ref_weight < unbounded:
+                bounded += 1
+        else:
+            bounded = unbounded
+
         if target_bounds is not None:
             min_bound, max_bound = target_bounds
             if min_bound is not None:
-                unbounded = max(min_bound, unbounded)
+                bounded = max(min_bound, bounded)
             if max_bound is not None:
-                unbounded = min(unbounded, max_bound)
-        return unbounded
+                bounded = min(bounded, max_bound)
+        return bounded
 
     def expand_horizon(self):
         """Expand the horizon by adding new configurations.
