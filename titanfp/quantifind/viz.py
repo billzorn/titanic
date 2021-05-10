@@ -2,6 +2,8 @@
 
 import os
 
+import matplotlib.pyplot as plt
+
 from .utils import *
 from . import search
 
@@ -92,3 +94,99 @@ class SearchData(object):
         if self.frontier is not None:
             lines.append(f'{len(self.frontier)} points in the frontier.')
         return '\n'.join(lines)
+
+
+def displaycfg(cfg, qos):
+    cfg_str = repr(cfg)
+    qos_strs = ['{:.2f}'.format(x) if isinstance(x, float) else str(x) for x in qos]
+    qos_str = ', '.join(qos_strs)
+    return f'{cfg_str}\n->  {qos_str}'
+
+def plot_frontier(source, metric_fns, xidx, yidx,
+                  prefilter=None, draw_ghosts=True, opts='C0s--', interactive=True):
+
+    ghost_alpha = 0.4
+
+    fig = plt.figure(figsize=(12,8), dpi=80)
+    ax = fig.gca()
+
+    frontier = source.frontier
+    cfgs = {}
+    for rec in frontier:
+        cfg, qos = rec
+        cfgs[cfg] = rec
+
+    if prefilter is not None:
+        frontier = filter_frontier(frontier, prefilter)
+
+    reduced_frontier, ghosts = reconstruct_frontier(frontier, metric_fns)
+    sortkey = lambda t: t[1][xidx]
+
+    x, y, plot_cfgs = [], [], []
+    for cfg, qos in sorted(reduced_frontier, key=sortkey):
+        x.append(qos[xidx])
+        y.append(qos[yidx])
+        plot_cfgs.append(cfg)
+
+    plot_line = ax.plot(x, y, opts, ds='steps-post')[0]
+
+    if draw_ghosts:
+        x, y, ghost_cfgs = [], [], []
+        for cfg, qos in sorted(ghosts, key=sortkey):
+            x.append(qos[xidx])
+            y.append(qos[yidx])
+            ghost_cfgs.append(cfg)
+
+        ghost_opts = opts.rstrip('--').rstrip('-.').rstrip('-').rstrip(':')
+        ghost_line = ax.plot(x, y, ghost_opts, alpha=ghost_alpha)[0]
+    else:
+        ghost_line = None
+
+    if interactive:
+
+        xytext = (-20,20)
+        annot = ax.annotate('', xy=(0,0), xytext=xytext, textcoords='offset points',
+                            bbox=dict(boxstyle='round', fc='w'),
+                            arrowprops=dict(arrowstyle='->'))
+        annot.set_visible(False)
+        annot.set_zorder(1000)
+
+        def update_annot(event):
+            cont, dat = plot_line.contains(event)
+            if cont:
+                ind = dat['ind'][0]
+                cfg, qos = cfgs[plot_cfgs[ind]]
+            elif ghost_line is not None:
+                cont, dat = ghost_line.contains(event)
+                if cont:
+                    ind = dat['ind'][0]
+                    cfg, qos = cfgs[ghost_cfgs[ind]]
+            else:
+                cont = False
+
+            if not cont:
+                annot.set_visible(False)
+                return
+
+            # # weird magic to keep the annotation in the figure
+            # w, h = fig.get_size_inches() * fig.dpi
+            # ws = (event.x > w/2.0) * -1 + (event.x <= w/2.0)
+            # hs = (event.y > h/2.0) * -1 + (event.y <= h/2.0)
+            # annot.xytext = (xytext[0]*ws, xytext[1]*hs)
+            # # apparently this doesn't work the same way for xytext?
+            # # it seems to work for xybox
+
+            # update the annotation
+            annot.xy = (qos[xidx], qos[yidx])
+            annot.set_text(displaycfg(cfg, qos))
+            annot.get_bbox_patch().set_alpha(0.9)
+            annot.set_visible(True)
+
+        def hover(event):
+            if event.inaxes == ax:
+                update_annot(event)
+                fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect('motion_notify_event', hover)
+
+    plt.show()
