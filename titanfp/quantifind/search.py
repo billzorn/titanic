@@ -1577,19 +1577,17 @@ class Sweep(object):
         """used in run_search"""
         if self.logdir is not None:
             self._do_checkpoint()
+            self.finish_checkpoints()
             out_dir = os.path.join(self.logdir, self.checkpoint_outdir)
             outname = self.checkpoint_fmt.format(len(self.state.generations))
             out_path = os.path.join(out_dir, outname)
             if os.path.exists(out_path):
                 # do the symlink thing
-                tmp_dir = os.path.join(self.logdir, self.checkpoint_tmpdir)
                 linkname = 'final' + self.checkpoint_suffix
-                tmp_path = os.path.join(tmp_dir, linkname)
                 link_target = os.path.relpath(out_path, self.logdir)
                 link_path = os.path.join(self.logdir, linkname)
-                os.symlink(link_target, tmp_path)
-                os.replace(tmp_path, link_path)
-            self.finish_checkpoints()
+                os.symlink(link_target, link_path)
+
     def run_search(self, checkpoint_dir=None, check=False):
         """Run the Pareto frontier exploration sweep!"""
         if self.verbosity >= 0:
