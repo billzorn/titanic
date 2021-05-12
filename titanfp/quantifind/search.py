@@ -886,6 +886,7 @@ class Sweep(object):
         self.checkpoint_tmpdir = '.tmp.' + str(os.getpid())
         self.checkpoint_outdir = 'checkpoints'
         self.snapshot_name = 'frontier' + self.checkpoint_suffix
+        self.snapshot_every = 1.0
         # currently set in the run method
         self.logdir = None
         # for threaded writes
@@ -1487,7 +1488,7 @@ class Sweep(object):
 
             if self.logdir is not None:
                 now = time.time()
-                if pending_point and now > last_snapshot + 2.0:
+                if pending_point and now > last_snapshot + self.snapshot_every:
                     pending_point = False
                     last_snapshot = now
                     self.snapshot_frontier(self.logdir)

@@ -3,6 +3,7 @@
 import os
 import sys
 import random
+import math
 import json
 
 from ..fpbench import fpcparser
@@ -59,6 +60,19 @@ def describe_ctx(ctx):
 
     else:
         return ctx.propstr()
+
+
+# silly backwards compatibility hack
+
+if hasattr(math, 'dist'):
+    dist = math.dist
+else:
+    def dist(p, q):
+        """
+        Euclidean distance between two points p and q.
+        Backwards compatibility for Python versions before 3.8.
+        """
+        return math.sqrt(sum((px - qx) ** 2.0 for px, qx in zip(p, q)))
 
 
 # import Pareto frontier manipulation logic

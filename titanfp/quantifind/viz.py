@@ -1,8 +1,10 @@
 """Vizualization support for Pareto frontiers."""
 
 import os
+import math
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from .utils import *
 from . import search
@@ -62,6 +64,7 @@ class SearchData(object):
             if os.path.exists(self.snapshot_path):
                 data = self._load_json(self.snapshot_path)
                 if 'frontier' in data:
+                    print('refreshed frontier')
                     self.frontier = [(tuple(a), tuple(b)) for a, b in data['frontier']]
 
     def __repr__(self):
@@ -102,91 +105,183 @@ def displaycfg(cfg, qos):
     qos_str = ', '.join(qos_strs)
     return f'{cfg_str}\n->  {qos_str}'
 
-def plot_frontier(source, metric_fns, xidx, yidx,
-                  prefilter=None, draw_ghosts=True, opts='C0s--', interactive=True):
+class LivePlot(object):
+    """Persistent interactive plot."""
 
-    ghost_alpha = 0.4
+    def __init__(self, source, metric_fns, xidx, yidx,
+                 prefilter = None,
+                 draw_ghosts = True,
+                 opts = 'C0s--',
+                 refresh = None):
 
-    fig = plt.figure(figsize=(12,8), dpi=80)
-    ax = fig.gca()
+        # settings
+        self.source = source
+        self.metric_fns = metric_fns
+        self.xidx = xidx
+        self.yidx = yidx
+        self.prefilter = prefilter
+        self.draw_ghosts = draw_ghosts
+        self.opts = opts
+        if refresh is True:
+            self.refresh = 1000
+        else:
+            self.refresh = refresh
+        # hard-coded
+        self.ghost_opts = opts.rstrip('--').rstrip('-.').rstrip('-').rstrip(':')
+        self.ghost_alpha = 0.4
 
-    frontier = source.frontier
-    cfgs = {}
-    for rec in frontier:
-        cfg, qos = rec
-        cfgs[cfg] = rec
+        # plot stuff
+        self.fig = plt.figure(figsize=(12,8), dpi=80)
+        self.ax = self.fig.gca()
+        self.anim = None
 
-    if prefilter is not None:
-        frontier = filter_frontier(frontier, prefilter)
+        # record keeping for interactive display
+        self.known_cfgs = {}
+        self.frontier_line_record = None
+        self.ghost_line_record = None
+        self.old_line_record = None
 
-    reduced_frontier, ghosts = reconstruct_frontier(frontier, metric_fns)
-    sortkey = lambda t: t[1][xidx]
+        # launch interaction
+        if self.source.frontier:
+            self.redraw(self.source.frontier)
+            self.setup_annotation()
 
-    x, y, plot_cfgs = [], [], []
-    for cfg, qos in sorted(reduced_frontier, key=sortkey):
-        x.append(qos[xidx])
-        y.append(qos[yidx])
-        plot_cfgs.append(cfg)
+            if self.refresh:
+                self.setup_refresh(self.refresh)
 
-    plot_line = ax.plot(x, y, opts, ds='steps-post')[0]
 
-    if draw_ghosts:
-        x, y, ghost_cfgs = [], [], []
-        for cfg, qos in sorted(ghosts, key=sortkey):
-            x.append(qos[xidx])
-            y.append(qos[yidx])
-            ghost_cfgs.append(cfg)
+    def active_lines(self):
+        if self.frontier_line_record is not None:
+            yield self.frontier_line_record
+        if self.ghost_line_record is not None:
+            yield self.ghost_line_record
+        if self.old_line_record is not None:
+            yield self.old_line_record
 
-        ghost_opts = opts.rstrip('--').rstrip('-.').rstrip('-').rstrip(':')
-        ghost_line = ax.plot(x, y, ghost_opts, alpha=ghost_alpha)[0]
-    else:
-        ghost_line = None
+    def redraw(self, frontier):
+        """Clear the plot and draw a new frontier"""
 
-    if interactive:
+        if self.prefilter is not None:
+            frontier = filter_frontier(frontier, prefilter)
 
-        xytext = (-20,20)
-        annot = ax.annotate('', xy=(0,0), xytext=xytext, textcoords='offset points',
-                            bbox=dict(boxstyle='round', fc='w'),
-                            arrowprops=dict(arrowstyle='->'))
+        known_cfgs = {}
+        for rec in frontier:
+            cfg, qos = rec
+            known_cfgs[cfg] = rec
+
+        current_frontier, ghosts = reconstruct_frontier(frontier, self.metric_fns, check=False)
+        frontier_line_data = self.align(current_frontier)
+        if self.draw_ghosts:
+            ghost_line_data = self.align(ghosts)
+
+        # clear old info
+        self.ax.clear()
+        self.frontier_line_record = None
+        self.ghost_line_record = None
+        self.old_line_record = None
+
+        # set new info
+        self.known_cfgs = known_cfgs
+        xs, ys, cfgs = frontier_line_data
+        line, = self.ax.plot(xs, ys, self.opts, ds='steps-post')
+        self.frontier_line_record = (xs, ys, cfgs, line)
+        if self.draw_ghosts:
+            xs, ys, cfgs = ghost_line_data
+            line, = self.ax.plot(xs, ys, self.ghost_opts, alpha=self.ghost_alpha)
+            self.ghost_line_record = (xs, ys, cfgs, line)
+
+    def align(self, frontier):
+        """Sort a frontier into a list of x and y coordinates, and a list of cfgs"""
+        xidx, yidx = self.xidx, self.yidx
+        sortkey = lambda t: t[1][xidx]
+
+        xs, ys, cfgs = [], [], []
+        for cfg, qos in sorted(frontier, key=sortkey):
+            xs.append(qos[xidx])
+            ys.append(qos[yidx])
+            cfgs.append(cfg)
+        return xs, ys, cfgs
+
+    def setup_annotation(self):
+        """Start the interactive label on hover."""
+
+        annot = self.ax.annotate('', xy=(0,0), xytext=(-20, 20), textcoords='offset points',
+                                 bbox=dict(boxstyle='round', fc='w'),
+                                 arrowprops=dict(arrowstyle='->'))
         annot.set_visible(False)
+        annot.get_bbox_patch().set_alpha(0.9)
         annot.set_zorder(1000)
 
         def update_annot(event):
-            cont, dat = plot_line.contains(event)
-            if cont:
-                ind = dat['ind'][0]
-                cfg, qos = cfgs[plot_cfgs[ind]]
-            elif ghost_line is not None:
-                cont, dat = ghost_line.contains(event)
-                if cont:
-                    ind = dat['ind'][0]
-                    cfg, qos = cfgs[ghost_cfgs[ind]]
-            else:
-                cont = False
+            contained = False
+            for xs, ys, cfgs, line in self.active_lines():
+                contained, details = line.contains(event)
+                if contained:
+                    event_pt = event.x, event.y
+                    nearby_idxs = details['ind']
+                    idx = nearby_idxs[0]
+                    pt = xs[idx], ys[idx]
+                    nearest = dist(event_pt, pt)
+                    for i in nearby_idxs[1:]:
+                        pt = xs[i], ys[i]
+                        distance = dist(event_pt, pt)
+                        if distance < nearest:
+                            nearest = distance
+                            idx = i
+                    cfg = cfgs[idx]
+                    break
 
-            if not cont:
+            if not contained:
                 annot.set_visible(False)
                 return
 
-            # # weird magic to keep the annotation in the figure
-            # w, h = fig.get_size_inches() * fig.dpi
-            # ws = (event.x > w/2.0) * -1 + (event.x <= w/2.0)
-            # hs = (event.y > h/2.0) * -1 + (event.y <= h/2.0)
-            # annot.xytext = (xytext[0]*ws, xytext[1]*hs)
-            # # apparently this doesn't work the same way for xytext?
-            # # it seems to work for xybox
-
-            # update the annotation
-            annot.xy = (qos[xidx], qos[yidx])
+            cfg, qos = self.known_cfgs[cfg]
+            annot.xy = (qos[self.xidx], qos[self.yidx])
             annot.set_text(displaycfg(cfg, qos))
-            annot.get_bbox_patch().set_alpha(0.9)
             annot.set_visible(True)
 
         def hover(event):
-            if event.inaxes == ax:
+            if event.inaxes == self.ax:
                 update_annot(event)
-                fig.canvas.draw_idle()
+                self.fig.canvas.draw_idle()
 
-        fig.canvas.mpl_connect('motion_notify_event', hover)
+        self.fig.canvas.mpl_connect('motion_notify_event', hover)
 
-    plt.show()
+    def setup_refresh(self, interval_ms):
+        """Start the periodic refresh."""
+
+        def update(i):
+            self.source.refresh(full=False)
+            frontier = self.source.frontier
+            if frontier is None:
+                return []
+
+            new_cfgs = {}
+            for rec in frontier:
+                cfg, qos = rec
+                if cfg not in self.known_cfgs:
+                    new_cfgs[cfg] = rec
+
+            current_frontier, ghosts = reconstruct_frontier(frontier, self.metric_fns, check=False)
+            frontier_line_data = self.align(current_frontier)
+            if self.draw_ghosts:
+                ghost_line_data = self.align(ghosts)
+
+            # update
+            updated_artists = []
+            self.known_cfgs.update(new_cfgs)
+            xs, ys, cfgs, line = self.frontier_line_record
+            xs, ys, cfgs = frontier_line_data
+            self.frontier_line_record, _ = (xs, ys, cfgs, line), line.set_data(xs, ys)
+            updated_artists.append(line)
+            if self.draw_ghosts:
+                 xs, ys, cfgs, line = self.ghost_line_record
+                 xs, ys, cfgs = ghost_line_data
+                 self.ghost_line_record, _ = (xs, ys, cfgs, line), line.set_data(xs, ys)
+                 updated_artists.append(line)
+
+            self.ax.relim()
+            self.ax.autoscale_view()
+            return updated_artists
+
+        self.anim = animation.FuncAnimation(self.fig, update, interval=interval_ms)
