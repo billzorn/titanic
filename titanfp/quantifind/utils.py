@@ -39,7 +39,7 @@ def describe_ctx(ctx):
             return 'bfloat16'
         elif ctx.es == 8 and ctx.nbits == 32:
             return 'float32'
-        elif ctx.es == 11 and ctx.nbits == 32:
+        elif ctx.es == 11 and ctx.nbits == 64:
             return 'float64'
         else:
             return f'(float {ctx.es!s} {ctx.nbits!s})'

@@ -882,7 +882,7 @@ class Sweep(object):
         self.checkpoint_suffix = '.json'
         self.checkpoint_fmt = 'gen{:d}' + self.checkpoint_suffix
         self.checkpoint_re = re.compile('gen([0-9]+)' + re.escape(self.checkpoint_suffix))
-        self.checkpoint_key = lambda s: self.checkpoint_re.fullmatch(s).group(1)
+        self.checkpoint_key = lambda s: int(self.checkpoint_re.fullmatch(s).group(1))
         self.checkpoint_tmpdir = '.tmp.' + str(os.getpid())
         self.checkpoint_outdir = 'checkpoints'
         self.snapshot_name = 'frontier' + self.checkpoint_suffix
@@ -894,7 +894,7 @@ class Sweep(object):
         self.snapshot_thread = None
 
     def __enter__(self):
-        self.pool = multiprocessing.Pool(self.cores)
+        self.pool = multiprocessing.Pool(self.cores, initializer=os.nice, initargs=(10,))
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -941,7 +941,7 @@ class Sweep(object):
             if len(similar_dirs) == 0:
                 rename_idx = 1
             else:
-                similar_dirs.sort(key=lambda s: log_re.fullmatch(s).group(1))
+                similar_dirs.sort(key=lambda s: int(log_re.fullmatch(s).group(1)))
                 rename_idx = int(log_re.fullmatch(similar_dirs[-1]).group(1)) + 1
             rename_to = f'{logname}_{rename_idx}'
             abs_rename_path = os.path.join(basedir, rename_to)
@@ -1532,7 +1532,7 @@ class Sweep(object):
                 self.state.generations[gen_idx] = (horizon_size, new_frontier_points)
 
         if self.verbosity >= 1:
-            print(f'  Evaluated {horizon_size} configurations for generation {gen_idx}, adding {self.state.generations[gen_idx]} to the frontier.')
+            print(f'  Evaluated {horizon_size} configurations for generation {gen_idx}, added {new_frontier_points} to the frontier.')
 
         return new_frontier_points
 
