@@ -179,8 +179,10 @@ def reconstruct_frontier(frontier, metric_fns, check=False, verbose=True):
     all_removed = []
     for result in frontier:
         changed, next_frontier, removed_points = update_frontier(new_frontier, result, metric_fns, check=check)
-        if check and verbose and not changed:
-            print(f'-- point {repr(result)} is not on the frontier --')
+        if not changed:
+            all_removed.append(result)
+            if check and verbose:
+                print(f'-- point {repr(result)} is not on the frontier --')
         new_frontier = next_frontier
         all_removed.extend(removed_points)
     return new_frontier, all_removed
