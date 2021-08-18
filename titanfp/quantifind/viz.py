@@ -377,3 +377,168 @@ class LivePlot(object):
             return updated_artists
 
         self.anim = animation.FuncAnimation(self.fig, update, interval=interval_ms)
+
+        
+class ComparePlot(object):
+    """Compare frontiers across multiple data sources with same metric fns."""
+
+    def __init__(self, sources, metric_fns, xidx, yidx,
+                 prefilter = None,
+                 draw_ghosts = True,
+                 opts = 's--',
+                 refresh = None):
+
+        # settings
+        self.sources = sources
+        self.metric_fns = metric_fns
+        self.xidx = xidx
+        self.yidx = yidx
+        self.prefilter = prefilter
+        self.draw_ghosts = draw_ghosts
+        self.opts = opts
+        # hardcoded
+        self.ghost_opts = opts.rstrip('--').rstrip('-.').rstrip('-').rstrip(':')
+        self.ghost_alpha = 0.1
+
+        # plot stuff
+        self.fig = plt.figure(figsize=(12,8), dpi=80)
+        self.ax = self.fig.gca()
+
+        # go
+        for i, source in enumerate(self.sources):
+            self.draw(source.frontier, i)
+
+    def align(self, frontier):
+        """Sort a frontier into a list of x and y coordinates, and a list of cfgs"""
+        xidx, yidx = self.xidx, self.yidx
+        sortkey = lambda t: t[1][xidx]
+
+        xs, ys, cfgs = [], [], []
+        for cfg, qos in sorted(frontier, key=sortkey):
+            xs.append(qos[xidx])
+            ys.append(qos[yidx])
+            cfgs.append(cfg)
+        return xs, ys, cfgs
+        
+    def draw(self, frontier, color_idx):
+        """Add a frontier to the plot"""
+
+        opts = 'C' + str(color_idx) + self.opts
+        ghost_opts = 'C' + str(color_idx) + self.ghost_opts
+        
+        if self.prefilter is not None:
+            frontier = filter_frontier(frontier, prefilter)
+
+        current_frontier, ghosts = reconstruct_frontier(frontier, self.metric_fns, check=False)
+        
+        xs, ys, cfgs = self.align(current_frontier)
+        self.ax.plot(xs, ys, opts, ds='steps-post')
+        
+        if self.draw_ghosts:
+            xs, ys, cfgs = self.align(ghosts)
+            self.ax.plot(xs, ys, ghost_opts, alpha=self.ghost_alpha)
+
+            
+class XferPlot(object):
+    """Compare metrics on a single frontier."""
+
+    def __init__(self, source, metric_fns, xidx, yidx, xidx2,
+                 prefilter = None,
+                 draw_ghosts = True,
+                 opts = 's--',
+                 refresh = None):
+
+        # settings
+        self.source = source
+        #self.metric_fns = metric_fns
+        self.xidx = xidx
+        self.yidx = yidx
+        self.xidx2 = xidx2
+        self.metric_fns = [f if i == xidx or i == yidx else None for i, f in enumerate(metric_fns)]
+        self.metric_fns2 = [f if i == xidx2 or i == yidx else None for i, f in enumerate(metric_fns)]
+        self.prefilter = prefilter
+        self.draw_ghosts = draw_ghosts
+        self.opts = opts
+        # hardcoded
+        self.ghost_opts = opts.rstrip('--').rstrip('-.').rstrip('-').rstrip(':')
+        self.ghost_alpha = 0.1
+
+        # plot stuff
+        self.fig = plt.figure(figsize=(12,8), dpi=80)
+        self.ax = self.fig.gca()
+        self.ax2 = self.ax.twiny()
+
+        # go
+        self.draw(source.frontier)
+        
+    def align(self, frontier, xidx):
+        """Sort a frontier into a list of x and y coordinates, and a list of cfgs"""
+        yidx =  self.yidx
+        sortkey = lambda t: t[1][xidx]
+
+        xs, ys, cfgs = [], [], []
+        for cfg, qos in sorted(frontier, key=sortkey):
+            xs.append(qos[xidx])
+            ys.append(qos[yidx])
+            cfgs.append(cfg)
+        return xs, ys, cfgs
+        
+    def draw(self, frontier):
+        """Add a frontier to the plot"""
+
+        color_idx = 0
+        opts = 'C' + str(color_idx) + self.opts
+        ghost_opts = 'C' + str(color_idx) + self.ghost_opts
+        
+        if self.prefilter is not None:
+            frontier = filter_frontier(frontier, prefilter)
+
+        current_frontier, ghosts = reconstruct_frontier(frontier, self.metric_fns, check=False)
+        
+        xs1, ys1, cfgs1 = self.align(current_frontier, self.xidx)
+        self.ax.plot(xs1, ys1, opts, ds='steps-post')
+        
+        if self.draw_ghosts:
+            xs, ys, cfgs = self.align(ghosts, self.xidx)
+            self.ax.plot(xs, ys, ghost_opts, alpha=self.ghost_alpha)
+
+        # the twin
+        color_idx = 1
+        opts = 'C' + str(color_idx) + self.opts
+        ghost_opts = 'C' + str(color_idx) + self.ghost_opts
+        
+        # if self.prefilter is not None:
+        #     frontier = filter_frontier(frontier, prefilter)
+
+        current_frontier, ghosts = reconstruct_frontier(frontier, self.metric_fns2, check=False)
+        
+        xs2, ys2, cfgs2 = self.align(current_frontier, self.xidx2)
+        self.ax2.plot(xs2, ys2, opts, ds='steps-post')
+        
+        if self.draw_ghosts:
+            xs, ys, cfgs = self.align(ghosts, self.xidx2)
+            self.ax2.plot(xs, ys, ghost_opts, alpha=self.ghost_alpha)
+
+        # draw arrows
+        x1_range = self.ax.get_xlim()
+        x2_range = self.ax2.get_xlim()
+
+        self.ax.set_xlim((0, x1_range[1]))
+        self.ax2.set_xlim((0, x2_range[1]))
+        
+        # x1_range = self.ax.get_xlim()
+        # x2_range = self.ax2.get_xlim()
+        
+        # ax1_size = x1_range[1] - x1_range[0]
+        # ax2_size = x2_range[1] - x2_range[0]
+        # scale = ax1_size / ax2_size
+        
+        # for cfg, qos in frontier:
+        #     if cfg in cfgs1 or cfg in cfgs2:
+        #         x1 = cfg[self.xidx]
+        #         x2 = cfg[self.xidx2]
+        #         y = cfg[self.yidx]
+
+        #         x2_scaled = x2 * scale
+
+        #         self.ax.arrow(x1, y, x2_scaled - x1, 0)
