@@ -21,3 +21,8 @@ matplotlib
 
 # quantifind
 scikit-image
+
+# viz (for quantifind)
+adjustText
+graphviz
+jupyter
