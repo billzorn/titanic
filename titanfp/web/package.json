@@ -5,17 +5,17 @@
     "version": "0.1.0",
     "dependencies": {},
     "devDependencies": {
-        "jquery": "^3.5.0",
-        "lodash-es": "^4.17.15",
-        "monaco-editor": "0.15.6",
-        "css-loader": "^3.4.2",
-        "style-loader": "^1.1.3",
-        "webpack": "^4.42.0",
-        "webpack-cli": "^3.3.11",
-        "monaco-editor-webpack-plugin": "1.7.0",
-        "html-webpack-plugin": "^3.2.0",
-        "clean-webpack-plugin": "^3.0.0",
-        "copy-webpack-plugin": "^6.0.3"
+        "jquery": "^3.6.0",
+        "lodash-es": "^4.17.x",
+        "monaco-editor": "^0.30.x",
+        "css-loader": "^6.x",
+        "style-loader": "^3.x",
+        "webpack": "^5.x",
+        "webpack-cli": "^4.x",
+        "monaco-editor-webpack-plugin": "^6.x",
+        "html-webpack-plugin": "^5.x",
+        "clean-webpack-plugin": "^4.x",
+        "copy-webpack-plugin": "^10.x"
     },
     "scripts": {
         "build": "webpack",
