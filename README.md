@@ -34,9 +34,9 @@ Here's a list of steps to "install" the tools and make sure they are working.
 
 Usually I use more modern Ubuntu LTS releases (16.04 - 20.04). The following should install all of the package-manager level dependencies needed. On other systems, the commands might vary.
 
-`sudo apt install make gcc g++ python3 python3-venv python3-dev libgmp-dev libmpfr-dev libmpc-dev npm nodejs default-jdk`
+`sudo apt install make gcc g++ python3 python3-venv python3-dev libgmp-dev libmpfr-dev libmpc-dev default-jdk`
 
-On Ubuntu this installs a ton of stuff because node contains a silly number of packages.
+A recent-ish version of node (16+) is required for the webdemo, unfortunately this does not just `sudo apt install` on Ubuntu 20.04 (you get node 10). The easiest way is probably to stick the prebuilt binaries in some local folder and just invoke npm from there.
 
 ### Clone the repo somewhere
 
