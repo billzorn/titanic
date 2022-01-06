@@ -356,7 +356,6 @@ def mpfr_from_mantissa_exp(m, exp):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
         ):
             return gmp.mpfr(0)
 
@@ -371,7 +370,6 @@ def mpfr_from_mantissa_exp(m, exp):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
             scale = gmp.exp2(exp)
 
@@ -385,7 +383,6 @@ def mpfr_from_mantissa_exp(m, exp):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
             c = gmp.mpfr(m)
             return gmp.mul(c, scale)
@@ -465,7 +462,6 @@ def _float_to_mpfr(f):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
     ):
         return gmp.mpfr(f)
 
@@ -482,7 +478,6 @@ def _mpfr_from_frexp(fraction, exponent):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
     ):
         c = gmp.mpfr(fraction)
         scale = gmp.exp2(exponent)

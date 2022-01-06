@@ -27,7 +27,6 @@ def mpfr(x, prec):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ):
@@ -46,7 +45,6 @@ def digital_to_mpfr(x):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
             return gmp.mpfr('nan')
     elif x.isinf:
@@ -60,7 +58,6 @@ def digital_to_mpfr(x):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
              if x.negative:
                  return gmp.mpfr('-inf')
@@ -88,7 +85,6 @@ def digital_to_mpfr(x):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
         ):
             if x.negative:
                 return -gmp.mpfr(0)
@@ -106,7 +102,6 @@ def digital_to_mpfr(x):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
             scale = gmp.exp2(exp)
 
@@ -120,7 +115,6 @@ def digital_to_mpfr(x):
                 trap_invalid=True,
                 trap_erange=True,
                 trap_divzero=True,
-                trap_expbound=True,
         ):
             significand = gmp.mpfr(c)
             if x.negative:
@@ -296,7 +290,8 @@ def compute(opcode, *args, prec=53):
             # We'd really like to know about this as well, but it causes i.e.
             #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
             # I don't know if that behavior is more hilarious or annoying.
-            trap_expbound=False,
+            # This context property was removed in gmpy2 2.1
+            #trap_expbound=False,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
@@ -341,7 +336,8 @@ def compute_constant(name, prec=53):
             # We'd really like to know about this as well, but it causes i.e.
             #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
             # I don't know if that behavior is more hilarious or annoying.
-            trap_expbound=False,
+            # This context property was removed in gmpy2 2.1
+            #trap_expbound=False,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
@@ -371,7 +367,6 @@ def compute_digits(m, e, b, prec=53):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
             round=gmp.RoundToZero,
     ) as gmpctx:
         mpfr_e = gmp.mpfr(e)
@@ -388,7 +383,6 @@ def compute_digits(m, e, b, prec=53):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
             # use RTZ for easy multiple rounding later
             round=gmp.RoundToZero,
     ) as gmpctx:
@@ -415,7 +409,6 @@ def ieee_fbound(w, p):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
     ):
         fbound_scale = gmp.mpfr(2) - gmp.exp2(-p)
         fbound = gmp.exp2(emax) * fbound_scale
@@ -1042,7 +1035,6 @@ def dec_range_to_digital(d1, d2):
                     trap_invalid=False,
                     trap_erange=False,
                     trap_divzero=False,
-                    trap_expbound=False,
                     round=gmp.RoundToZero,
             ) as gmpctx:
                 f1 = (mp1 / mq) * sign
@@ -1133,7 +1125,6 @@ def nearest_uncertain_to_digital(negative, d1, d2):
                 trap_invalid=False,
                 trap_erange=False,
                 trap_divzero=False,
-                trap_expbound=False,
                 # round nearest; we're using MPRF's rounding directly
                 # without fixing it up, and I think this makes
                 # the most sense when studying the envelopes
@@ -1188,7 +1179,6 @@ def nearest_uncertain_to_digital(negative, d1, d2):
                 trap_invalid=False,
                 trap_erange=False,
                 trap_divzero=False,
-                trap_expbound=False,
                 # round nearest; we're using MPRF's rounding directly
                 # without fixing it up, and I think this makes
                 # the most sense when studying the envelopes
@@ -1212,7 +1202,6 @@ def nearest_uncertain_to_digital(negative, d1, d2):
                 trap_invalid=False,
                 trap_erange=False,
                 trap_divzero=False,
-                trap_expbound=False,
                 # round nearest; we're using MPRF's rounding directly
                 # without fixing it up, and I think this makes
                 # the most sense when studying the envelopes
@@ -1378,7 +1367,6 @@ def arith_sim(a, b):
             trap_invalid=True,
             trap_erange=False,
             trap_divzero=True,
-            trap_expbound=False
     ):
         diff = abs(mpfr_a - mpfr_b)
 
@@ -1392,7 +1380,6 @@ def arith_sim(a, b):
             trap_invalid=True,
             trap_erange=False,
             trap_divzero=False,
-            trap_expbound=False
     ):
         reldiff = diff / min(abs(mpfr_a), abs(mpfr_b))
 
@@ -1443,7 +1430,6 @@ def geo_sim(a, b):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=False,
-            trap_expbound=False,
     ):
         ratio = mpfr_a / mpfr_b
         if ratio <= 0:
@@ -1485,7 +1471,6 @@ def geo_sim10(a, b):
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=False,
-            trap_expbound=False,
     ):
         ratio = mpfr_a / mpfr_b
         if ratio <= 0:
@@ -1538,7 +1523,6 @@ def withnprec(op, *args, min_n = -1075, max_p = 53,
             trap_invalid=True,
             trap_erange=True,
             trap_divzero=True,
-            trap_expbound=True,
             # IMPORTANT: we need RTZ in order to be able to multiple-round accurately
             # to the desired precision.
             round=gmp.RoundToZero,
@@ -1803,7 +1787,6 @@ def pi(p):
                     trap_invalid=True,
                     trap_erange=True,
                     trap_divzero=True,
-                    trap_expbound=True,
         ):
             x = gmp.const_pi()
     return Sink(x, inexact=True, sided=False, full=False)
