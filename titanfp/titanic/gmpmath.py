@@ -35,34 +35,12 @@ def mpfr(x, prec):
 
 def digital_to_mpfr(x):
     if x.isnan:
-        with gmp.context(
-                precision=2,
-                emin=-1,
-                emax=1,
-                trap_underflow=True,
-                trap_overflow=True,
-                trap_inexact=True,
-                trap_invalid=True,
-                trap_erange=True,
-                trap_divzero=True,
-        ):
-            return gmp.mpfr('nan')
+        return gmp.nan()
     elif x.isinf:
-         with gmp.context(
-                precision=2,
-                emin=-1,
-                emax=1,
-                trap_underflow=True,
-                trap_overflow=True,
-                trap_inexact=True,
-                trap_invalid=True,
-                trap_erange=True,
-                trap_divzero=True,
-        ):
-             if x.negative:
-                 return gmp.mpfr('-inf')
-             else:
-                 return gmp.mpfr('+inf')
+        if x.negative:
+            return -gmp.inf()
+        else:
+            return gmp.inf()
 
     c = x.c
     exp = x.exp
@@ -87,9 +65,9 @@ def digital_to_mpfr(x):
             trap_divzero=True,
         ):
             if x.negative:
-                return -gmp.mpfr(0)
+                return -gmp.zero()
             else:
-                return gmp.mpfr(0)
+                return gmp.zero()
 
     else:
         with gmp.context(
