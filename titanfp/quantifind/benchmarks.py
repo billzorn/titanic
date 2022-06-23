@@ -291,6 +291,29 @@ rk_data = {
     ),
 }
 
+rk_step_sizes = {
+    'lorenz' : (
+        ('1/256   960'), # 0
+        ('2/256   480'),
+        ('3/256   320'),
+        ('1/64    240'), # original settings
+
+        ('5/256   192'), # 4
+        ('6/256   160'),
+        ('2/64    120'),
+
+        ('10/256  96'), # 7
+        ('3/64    80'),
+
+        ('4/64    60'), #9
+        ('5/64    48'),
+        ('6/64    40'),
+
+        ('8/64    30'), # 12
+        ('10/64   24'), # 13
+    ),
+}
+
 def mk_rk(fn_ctx, rk_ctx, k1_ctx, k2_ctx, k3_ctx, k4_ctx, method='rk4', eqn='lorenz'):
     """RK methods for various chaotic attractors."""
 
