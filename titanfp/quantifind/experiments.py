@@ -18,7 +18,7 @@ def test_run_experiments():
     prefix = 'out/testcp'
     #ex_sqrt.sqrt_experiment(prefix, (3,5,2), (5,12,3), (3,5,7,10), 10, 20)
     #ex_dotprod.dotprod_experiment(prefix, (1,1024,5), (1,32), 5, 100, 5, 5)
-    ex_rk.rk_experiment(prefix, (8,8,0), (12,15,2), (1,1,0), 1, 2, eq_name='lorenz')
+    ex_rk.rk_experiment(prefix, (8,8,0), (12,15,2), (1,1,0), 1, 2, use_step_sizes=True, eq_name='lorenz')
     #ex_img.img_experiment(prefix, (8,8,0), (5,8,2), (1,1,0), 5, 5)
 
 
@@ -45,6 +45,11 @@ def qf_arith_random():
     ex_img.img_random(prefix, (1,8,2), (3,16,3), (0,2,1), 10000)
 
 if __name__ == '__main__':
-    #prefix = 'out/big2'
-    #ex_rk.rk_experiment(prefix, (2,8,2), (3,24,4), (0,2,1), 8, 10, eq_name='all')
-    test_run_experiments()
+    #prefix = 'out/codesign_baseline'
+    prefix = 'out/live'
+    ex_rk.rk_experiment(prefix, (3,8,2), (3,24,4), (0,2,1), 2, 20, use_step_sizes=False, eq_name='lorenz')
+
+    # prefix = 'out/codesign'
+    # ex_rk.rk_experiment(prefix, (3,8,2), (3,24,4), (0,2,1), 2, 20, use_step_sizes=True, eq_name='lorenz')
+
+    # test_run_experiments()

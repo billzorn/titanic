@@ -10,7 +10,7 @@ from ..arithmetic import mpmf, ieee754, posit, analysis
 
 from . import search
 from .utils import *
-from .benchmarks import mk_rk, rk_equations, rk_data
+from .benchmarks import mk_rk, rk_equations, rk_data, rk_step_sizes
 
 
 
@@ -88,6 +88,7 @@ class RkSettings(object):
         self.method = 'rk4'
         self.eqn = 'lorenz'
         args, ref, dref = rk_data[self.eqn]
+        step_sizes = rk_step_sizes[self.eqn]
         self.args = fpcparser.read_exprs(args)
         self.ref = [mpmf.MPMF(e, ctx=f64) for e in ref]
         self.dref = [mpmf.MPMF(e, ctx=f64) for e in dref]
@@ -96,23 +97,33 @@ class RkSettings(object):
     def cfg(self, eqn, use_posit):
         self.eqn = eqn
         args, ref, dref = rk_data[self.eqn]
+        step_sizes = rk_step_sizes[self.eqn]
         self.args = fpcparser.read_exprs(args)
         self.ref = [mpmf.MPMF(e, ctx=f64) for e in ref]
         self.dref = [mpmf.MPMF(e, ctx=f64) for e in dref]
+        self.step_sizes = [fpcparser.read_exprs(e) for e in step_sizes]
         self.use_posit = use_posit
 
 settings = RkSettings()
 
 
-def rk_stage(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec):
+def rk_stage(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec, step_size=None):
     try:
         prog, equation, ctx = setup_rk(ebits, fn_prec, rk_prec, k1_prec, k2_prec, k3_prec, k4_prec,
                                                         method=settings.method, eqn=settings.eqn, use_posit=settings.use_posit)
-        evaltor, als, result_array = run_rk(prog, settings.args)
-        return eval_rk(equation, als, result_array, settings.ref, settings.dref, ctx)
+        args = settings.args
+        if step_size is not None:
+            args = (args[0], *settings.step_sizes[step_size])
+        evaltor, als, result_array = run_rk(prog, args)
+
+        static_bits = fn_prec + rk_prec + k1_prec + k2_prec + k3_prec + k4_prec
+        if not settings.use_posit:
+            static_bits += ebits * 6
+
+        return (static_bits, *eval_rk(equation, als, result_array, settings.ref, settings.dref, ctx))
     except Exception:
         traceback.print_exc()
-        return math.inf, -math.inf, -math.inf, -math.inf, -math.inf
+        return (math.inf, math.inf, -math.inf, -math.inf, -math.inf, -math.inf)
 
 def rk_ref_stage(fn_ctx, rk_ctx, k1_ctx, k2_ctx, k3_ctx, k4_ctx):
     try:
@@ -151,7 +162,7 @@ def rk_ceiling():
     return ceil_pts
 
 
-def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='all'):
+def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, use_step_sizes=False, eq_name='all'):
     if eq_name == 'all':
         rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='lorenz')
         rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_name='rossler')
@@ -161,7 +172,7 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
         print(f'Unknown equation {eq_name}')
         return
 
-    rk_metrics = (operator.lt,) + (operator.gt,) * 4
+    rk_metrics = (operator.lt,) * 2 + (operator.gt,) * 4
 
     init_ebits, neighbor_ebits = integer_neighborhood(*ebit_slice)
     init_pbits, neighbor_pbits = integer_neighborhood(*pbit_slice)
@@ -169,21 +180,29 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
     # for posits
     init_es, neighbor_es = integer_neighborhood(*es_slice)
 
+    if use_step_sizes:
+        init_steps, neighbor_steps = integer_neighborhood(0, 13, 2)
+
     rk_inits = (init_ebits,) + (init_pbits,) * 6
     rk_neighbors = (neighbor_ebits,) + (neighbor_pbits,) * 6
+    if use_step_sizes:
+        rk_inits += (init_steps,)
+        rk_neighbors += (neighbor_steps,)
 
-    cores = 128
+    cores = 64
     sweep_settings = search.SearchSettings(
         profile = 'balanced',
         initial_gen_size = cores * inits,
         restart_gen_target = retries,
         pop_targets = [
-            (cores//2, None),
-            (cores//2, None),
-            (cores//2, None),
-            ((cores*3)//2, None),
+            (cores,   None),
+            (cores,   None),
+            (cores,   None),
+            (cores*3, None),
         ]
     )
+
+    cores = 128
 
     settings.cfg(eq_name, False)
     try:
@@ -195,8 +214,14 @@ def rk_experiment(prefix, ebit_slice, pbit_slice, es_slice, inits, retries, eq_n
     except Exception:
         traceback.print_exc()
 
+    if True: # skip posit experiment
+        return
+
     rk_inits = (init_es,) + (init_pbits,) * 6
     rk_neighbors = (neighbor_es,) + (neighbor_pbits,) * 6
+    if use_step_sizes:
+        rk_inits += (init_steps,)
+        rk_neighbors += (neighbor_steps,)
 
     settings.cfg(eq_name, True)
     try:

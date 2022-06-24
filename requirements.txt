@@ -9,7 +9,7 @@ numpy
 gmpy2
 
 # antlr
-antlr4-python3-runtime ~= 4.9
+antlr4-python3-runtime ~= 4.9.3
 
 # softfloat libs
 #sfpy

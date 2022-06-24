@@ -20,7 +20,7 @@ to perform multiple precision, multiple format computations.
 
 A quick list of what you need to get this running on a Ubuntu 20.04 system:
 
-- antlr4.9, and a java runtime for it (default-jdk works)
+- antlr4.9.3, and a java runtime for it (default-jdk works)
 - make gcc g++
 - python3 python3-venv python3-dev
 - libgmp-dev libmpfr-dev libmpc-dev
@@ -64,8 +64,10 @@ I use the ANTLR4 tool to generate lexers and parsers for the FPCore language. Th
 
 ```
 cd titanic/titanfp/fpbench/antlr
-wget "https://www.antlr.org/download/antlr-4.9.1-complete.jar"
+wget "https://www.antlr.org/download/antlr-4.9.3-complete.jar"
 ```
+
+4.9.3 is known working with Java 8 and is hardcoded in the requirements and the antlr Makefile. Newer versions of ANTLR4 may require Java versions after Java 8.
 
 Now we can run it, to make the generated Python files that Titanic will expect to exist to provide the lexer and parser:
 
