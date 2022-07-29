@@ -150,6 +150,7 @@ class IEEECtx(EvalCtx):
     emin = 1 - emax
     n = emin - p
     fbound = gmpmath.ieee_fbound(es, p)
+    fmax = gmpmath.ieee_fmax(es, p)
 
     def __init__(self, bindings=None, props=None, es=None, nbits=None, rm=None):
         init_es = self.es
@@ -207,6 +208,7 @@ class IEEECtx(EvalCtx):
             self.emin = 1 - self.emax
             self.n = self.emin - self.p
             self.fbound = gmpmath.ieee_fbound(self.es, self.p)
+            self.fmax = gmpmath.ieee_fmax(self.es, self.p)
         else:
             self.es = self.es
             self.nbits = self.nbits
@@ -215,6 +217,7 @@ class IEEECtx(EvalCtx):
             self.emin = self.emin
             self.n = self.n
             self.fbound = self.fbound
+            self.fmax = self.fmax
 
     def _update_props(self, props):
         init_es = self.es
@@ -256,6 +259,7 @@ class IEEECtx(EvalCtx):
             self.emin = 1 - self.emax
             self.n = self.emin - self.p
             self.fbound = gmpmath.ieee_fbound(self.es, self.p)
+            self.fmax = gmpmath.ieee_fmax(self.es, self.p)
 
 
     def _import_fields(self, ctx):
@@ -267,6 +271,7 @@ class IEEECtx(EvalCtx):
         self.emin = ctx.emin
         self.n = ctx.n
         self.fbound = ctx.fbound
+        self.fmax = ctx.fmax
 
     def __repr__(self):
         args = []

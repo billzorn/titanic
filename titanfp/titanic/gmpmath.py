@@ -393,6 +393,28 @@ def ieee_fbound(w, p):
 
     return mpfr_to_digital(fbound)
 
+def ieee_fmax(w, p):
+    """Compute the the largest finite IEEE 754 floating-point value
+    for a given w and p.
+    """
+    emax = (1 << (w - 1)) - 1
+
+    with gmp.context(
+            precision=p + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+    ):
+        fmax_scale = gmp.mpfr(2) - gmp.exp2(1 - p)
+        fmax = gmp.exp2(emax) * fmax_scale
+
+    return mpfr_to_digital(fmax)
+
 
 _mpz_2 = gmp.mpz(2)
 _mpz_5 = gmp.mpz(5)

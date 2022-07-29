@@ -90,16 +90,40 @@ class Float(mpnum.MPNum):
 
         if unrounded.isinf or unrounded.isnan:
             return cls(unrounded, ctx=ctx)
-
         magnitude = cls(unrounded, negative=False)
-        if magnitude < ctx.fbound:
-            return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
-            #return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
-        else:
-            if magnitude > ctx.fbound or magnitude.rc >= 0:
-                return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+
+        # check against fbound
+        if magnitude > ctx.fbound or (magnitude == ctx.fbound and magnitude.rc >= 0):
+            if ctx.rm == RM.RTZ:
+                return cls(negative=unrounded.negative, x=ctx.fmax, ctx=ctx)
+            elif ctx.rm == RM.RTP:
+                if unrounded.negative:
+                    return cls(negative=unrounded.negative, x=ctx.fmax, ctx=ctx)
+                else:
+                    return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+            elif ctx.rm == RM.RTN:
+                if unrounded.negative:
+                    return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+                else:
+                    return cls(negative=unrounded.negative, x=ctx.fmax, ctx=ctx)
             else:
-                return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
+                return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+
+        # check against fmax
+        if magnitude > ctx.fmax or (magnitude == ctx.fmax and magnitude.rc > 0):
+            if ctx.rm == RM.RTP:
+                if unrounded.negative:
+                    return cls(negative=unrounded.negative, x=ctx.fmax, ctx=ctx)
+                else:
+                    return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+            elif ctx.rm == RM.RTN:
+                if unrounded.negative:
+                    return cls(negative=unrounded.negative, isinf=True, ctx=ctx)
+                else:
+                    return cls(negative=unrounded.negative, x=ctx.fmax, ctx=ctx)
+
+        # normal
+        return cls(unrounded.round_new(max_p=ctx.p, min_n=ctx.n, rm=ctx.rm, strict=strict), ctx=ctx)
 
     # most operations come from mpnum
 
