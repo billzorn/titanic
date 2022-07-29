@@ -2,12 +2,25 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
+from enum import IntEnum, unique
+
 from titanfp.titanic import gmpmath
 from . import interpreter
 from . import ieee754
 
 from ..titanic import digital
 from ..titanic.ops import OP, RM
+
+@unique
+class IntervalSign(IntEnum):
+    """Classification of an `Interval` by the sign of the endpoints.
+    See `Interval.classify()` for details."""
+    STRICTLY_NEGATIVE = -2,
+    NEGATIVE          = -1,
+    CONTAINS_ZERO     = 0,
+    POSITIVE          = 1,
+    STRICTLY_POSITIVE = 2,
+
 
 class Interval(object):
     """An interval as originally implemented in the Rival interval arithmetic library.
@@ -201,7 +214,7 @@ class Interval(object):
         else:
             return '[{}, {}]'.format(str(self._lo), str(self._hi))
 
-    # some predicates
+    # (visible) utility functions
 
     def is_point(self) -> bool:
         """"Is the interval a "singleton" interval, e.g. [a, a]?"""
@@ -210,6 +223,39 @@ class Interval(object):
     def contains(self, x) -> bool:
         """Does the interval contain `x`?"""
         return self._lo <= x and x <= self._hi
+
+    def classify(self, strict=False) -> IntervalSign:
+        """Classifies this interval by the sign of the endpoints.
+        By default, this interval can be `NEGATIVE`, `CONTAINS_ZERO`, or `POSITIVE`
+        where intervals with 0 as an endpoint are either `NEGATIVE` and `POSITIVE`.
+        If `strict` is `True`, this interval can be `STRICTLY_POSITIVE`, `CONTAINS_ZERO`
+        or `STRICTLY_NEGATIVE` where intervals with 0 as an endpoint are
+        classified as `CONTAINS_ZERO`.
+        """
+        zero = digital.Digital(m=0, exp=0)
+        if strict:
+            if self._hi < zero:
+                return IntervalSign.STRICTLY_NEGATIVE
+            elif self._lo > zero:
+                return IntervalSign.STRICTLY_POSITIVE
+            else:
+                return IntervalSign.CONTAINS_ZERO
+        else:
+            if self._hi <= zero:
+                return IntervalSign.NEGATIVE
+            elif self._lo >= zero:
+                return IntervalSign.POSITIVE
+            else:
+                return IntervalSign.CONTAINS_ZERO
+
+    def union(self, other):
+        "Returns the union of this interval and another."
+        if self.invalid or other.invalid:
+            return Interval(invalid=True)
+        lo, lo_isfixed = self._lo_endpoint() if self._lo < other._lo else other._lo_endpoint()
+        hi, hi_isfixed = self._hi_endpoint() if self._hi < other._hi else other._hi_endpoint()
+        err = self._err or other._err
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
     # utility funtions
 
@@ -223,8 +269,6 @@ class Interval(object):
         if ctx is None:
             es = max((ival._ctx.es for ival in args))
             p = max((ival._ctx.p for ival in args))
-            es = max(es, self._ctx.es)
-            p = max(p, self._ctx.p)
             ctx = ieee754.ieee_ctx(es, es + p)
         lo_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTN)
         hi_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTP)
@@ -239,31 +283,60 @@ class Interval(object):
             args_fixed = args_fixed and isfixed
 
         result = gmpmath.compute(op, *args, prec=ctx.p)
-        isfixed = args_fixed and not result.inexact
         rounded = ieee754.Float(x=result, ctx=ctx)
+        isfixed = args_fixed and not rounded.inexact
         return rounded, isfixed
 
     # endpoint computation for `add`, `sub`, `hypot`
-    def _eplinear(op, lo_ep, hi_ep, ctx):
-        lo, lo_isfixed = lo_ep
-        hi, hi_isfixed = hi_ep
-        result = gmpmath.compute(op, lo, hi, prec=ctx.p)
-        isfixed = (lo_isfixed and hi_isfixed and not result.inexact) or \
-                           (lo_isfixed and lo.isinf) or \
-                           (hi_isfixed and hi.isinf)
+    def _eplinear(op, a_ep, b_ep, ctx):
+        a, a_isfixed = a_ep
+        b, b_isfixed = b_ep
+        result = gmpmath.compute(op, a, b, prec=ctx.p)
         rounded = ieee754.Float(x=result, ctx=ctx)
+        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                  (a_isfixed and a.isinf) or \
+                  (b_isfixed and b.isinf)
         return rounded, isfixed
 
     # endpoint computation for `mul`
-    # def _epmul(op, lo_ep, hi_ep, ctx):
-    #     lo, lo_isfixed = lo_ep
-    #     hi, hi_isfixed = hi_ep
-    #     result = gmpmath.compute(op, lo, hi, prec=ctx.p)
-    #     endpoint_isfixed = (lo_isfixed and hi_isfixed and not result.inexact) or \
-    #                        (lo_isfixed and lo.isinf) or \
-    #                        (hi_isfixed and hi.isinf)
-    #     rounded = ieee754.Float(x=result, ctx=ctx)
-    #     return rounded, endpoint_isfixed
+    def _epmul(op, a_ep, b_ep, aclass, bclass, ctx):
+        a, a_isfixed, = a_ep
+        b, b_isfixed, = b_ep
+        result = gmpmath.compute(op, a, b, prec=ctx.p)
+        rounded = ieee754.Float(x=result, ctx=ctx)
+        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                  (a_isfixed and a.is_zero() and not a.isinf) or \
+                  (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
+                  (b_isfixed and b.is_zero() and not b.isinf) or \
+                  (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+        return rounded, isfixed
+
+    # endpoint computation for `div`
+    def _epdiv(op, a_ep, b_ep, aclass, ctx):
+        a, a_isfixed, = a_ep
+        b, b_isfixed, = b_ep
+        result = gmpmath.compute(op, a, b, prec=ctx.p)
+        rounded = ieee754.Float(x=result, ctx=ctx)
+        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                  (a_isfixed and a.is_zero() and not a.isinf) or \
+                  (a_isfixed and a.isinf) or \
+                  (b_isfixed and b.is_zero() and not b.isinf) or \
+                  (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+        return rounded, isfixed
+
+    # multiplication helper
+    def _multiply(a, b, c, d, xclass, yclass, err, ctxs):
+        ctx, lo_ctx, hi_ctx = ctxs
+        lo, lo_isfixed = Interval._epmul(OP.mul, a, b, xclass, yclass, lo_ctx)
+        hi, hi_isfixed = Interval._epmul(OP.mul, c, d, xclass, yclass, hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    # division helper
+    def _divide(a, b, c, d, xclass, err, ctxs):
+        ctx, lo_ctx, hi_ctx = ctxs
+        lo, lo_isfixed = Interval._epdiv(OP.div, a, b, xclass, lo_ctx)
+        hi, hi_isfixed = Interval._epdiv(OP.div, c, d, xclass, hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
     # most operations
 
@@ -271,29 +344,129 @@ class Interval(object):
         """Negates this interval. The precision of the interval can be specified by `ctx`.
         Optionally specify `rounded` to round at the current precision
         """
+        if self._invalid:
+            return Interval(invalid=True)
+
         ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
         lo, lo_isfixed = type(self)._epfn(OP.neg, self._hi_endpoint(), ctx=lo_ctx)
         hi, hi_isfixed = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
         err = self._err
-        invalid = self._invalid
-        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
     
     def add(self, other, ctx=None):
         """Adds two intervals together and returns the result.
         The precision of the interval can be specified by `ctx`."""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
         ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
         lo, lo_isfixed = type(self)._eplinear(OP.add, self._lo_endpoint(), other._lo_endpoint(), lo_ctx)
         hi, hi_isfixed = type(self)._eplinear(OP.add, self._hi_endpoint(), other._hi_endpoint(), hi_ctx)
         err = self._err or other._err
-        invalid = self._invalid or other._invalid
-        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
+
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
     def sub(self, other, ctx=None):
         """Subtracts two intervals together and returns the result.
         The precision of the interval can be specified by `ctx`."""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
         ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
         lo, lo_isfixed = type(self)._eplinear(OP.sub, self._lo_endpoint(), other._hi_endpoint(), lo_ctx)
         hi, hi_isfixed = type(self)._eplinear(OP.sub, self._hi_endpoint(), other._lo_endpoint(), hi_ctx)
         err = self._err or other._err
-        invalid = self._invalid or other._invalid
-        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
+
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    def mul(self, other, ctx=None):
+        """Multiplies two intervals together and returns the result.
+        The precision of the interval can be specified by `ctx`."""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        xclass = self.classify()
+        xlo = self._lo_endpoint()
+        xhi = self._hi_endpoint()
+
+        yclass = other.classify()
+        ylo = other._lo_endpoint()
+        yhi = other._hi_endpoint()
+
+        ctxs = self._select_context(self, other, ctx=ctx)
+        err = self._err or other._err
+
+        if xclass == IntervalSign.POSITIVE:
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._multiply(xlo, ylo, xhi, yhi, xclass, yclass, err, ctxs)
+            elif yclass == IntervalSign.NEGATIVE:
+                return type(self)._multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
+            else:   # yclass == IntervalSign.ZERO
+                return type(self)._multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
+        elif xclass == IntervalSign.NEGATIVE:
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._multiply(xlo, yhi, xhi, ylo, xclass, yclass, err, ctxs)
+            elif yclass == IntervalSign.NEGATIVE:
+                return type(self)._multiply(xhi, yhi, xlo, ylo, xclass, yclass, err, ctxs)
+            else:   # yclass == IntervalSign.ZERO
+                return type(self)._multiply(xlo, yhi, xlo, ylo, xclass, yclass, err, ctxs)
+        else:   # xclass == IntervalSign.ZERO
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
+            elif yclass == IntervalSign.NEGATIVE:
+                return type(self)._multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
+            else:   # yclass == IntervalSign.ZERO
+                i1 = type(self)._multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
+                i2 = type(self)._multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
+                i1.union(i2)
+                return i1
+
+    def div(self, other, ctx=None):
+        """Divides two intervals together and returns the result.
+        The precision of the interval can be specified by `ctx`."""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        xclass = self.classify()
+        xlo = self._lo_endpoint()
+        xhi = self._hi_endpoint()
+
+        yclass = other.classify()
+        ylo = other._lo_endpoint()
+        yhi = other._hi_endpoint()
+
+        ctxs = self._select_context(self, other, ctx=ctx)
+        err = self.err or other.err or \
+               (self.classify(strict=True) == IntervalSign.CONTAINS_ZERO and \
+                other.classify(strict=True) == IntervalSign.CONTAINS_ZERO)
+
+        if yclass == IntervalSign.CONTAINS_ZERO:
+            # result is split, so we give up and always return [-inf, inf]
+            isfixed = self._lo_isfixed and other._lo_isfixed
+            return Interval(lo_isfixed=isfixed, hi_isfixed=isfixed)
+        elif xclass == IntervalSign.POSITIVE:
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._divide(xlo, yhi, xhi, ylo, xclass, err, ctxs)
+            else:   # yclass == IntervalSign.NEGATIVE
+                return type(self)._divide(xhi, yhi, xlo, ylo, xclass, err, ctxs)
+        elif xclass == IntervalSign.NEGATIVE:
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._divide(xlo, ylo, xhi, yhi, xclass, err, ctxs)
+            else:   # yclass == IntervalSign.NEGATIVE
+                return type(self)._divide(xhi, ylo, xlo, yhi, xclass, err, ctxs)
+        else:   # xclass == IntervalSign.ZERO
+            if yclass == IntervalSign.POSITIVE:
+                return type(self)._divide(xlo, ylo, xhi, ylo, xclass, err, ctxs)
+            else:   # yclass == IntervalSign.NEGATIVE
+                return type(self)._divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
+
+#
+# TODO: testing
+#  - constructor
+#  - classify
+#  - neg
+#  - add
+#  - sub
+#  - mul
+#  - div
+#
