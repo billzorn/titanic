@@ -324,19 +324,33 @@ class Interval(object):
                   (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
         return rounded, isfixed
 
-    # multiplication helper
+    # helper for multiplication
     def _multiply(a, b, c, d, xclass, yclass, err, ctxs):
         ctx, lo_ctx, hi_ctx = ctxs
         lo, lo_isfixed = Interval._epmul(OP.mul, a, b, xclass, yclass, lo_ctx)
         hi, hi_isfixed = Interval._epmul(OP.mul, c, d, xclass, yclass, hi_ctx)
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
-    # division helper
+    # helper for division
     def _divide(a, b, c, d, xclass, err, ctxs):
         ctx, lo_ctx, hi_ctx = ctxs
         lo, lo_isfixed = Interval._epdiv(OP.div, a, b, xclass, lo_ctx)
         hi, hi_isfixed = Interval._epdiv(OP.div, c, d, xclass, hi_ctx)
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    # helper monotonically increasing functions
+    def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
+        ctx, lo_ctx, hi_ctx = ctxs
+        lo, lo_isfixed = Interval._epfn(op, lo_ep, ctx=lo_ctx)
+        hi, hi_isfixed = Interval._epfn(op, hi_ep, ctx=hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    # helper monotonically decreaing functions
+    def _monotonic_decr(op, lo_ep, hi_ep, err, ctxs):
+        ctx, lo_ctx, hi_ctx = ctxs
+        lo, lo_isfixed = Interval._epfn(op, hi_ep, ctx=lo_ctx)
+        hi, hi_isfixed = Interval._epfn(op, lo_ep, ctx=hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
     # most operations
 
@@ -459,6 +473,22 @@ class Interval(object):
                 return type(self)._divide(xlo, ylo, xhi, ylo, xclass, err, ctxs)
             else:   # yclass == IntervalSign.NEGATIVE
                 return type(self)._divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
+    
+    def fabs(self, ctx=None):
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        cl = self.classify()
+        if cl == IntervalSign.POSITIVE:
+            return Interval(x=self)
+        elif cl == IntervalSign.NEGATIVE:
+            return self.neg()
+        else:
+            neg_lo, _ = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
+            lo, lo_isfixed = ieee754.Float(0, ctx=lo_ctx), self._lo_isfixed and self._hi_isfixed
+            hi, hi_isfixed = (neg_lo, self._lo_isfixed) if neg_lo > self._hi else (self._hi, self._hi_isfixed)
+            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
 
 #
 # TODO: testing
