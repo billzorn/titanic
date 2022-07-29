@@ -2,11 +2,12 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
+from titanfp.titanic import gmpmath
 from . import interpreter
 from . import ieee754
 
 from ..titanic import digital
-from ..titanic.ops import RM
+from ..titanic.ops import OP, RM
 
 class Interval(object):
     """An interval as originally implemented in the Rival interval arithmetic library.
@@ -200,6 +201,7 @@ class Interval(object):
         else:
             return '[{}, {}]'.format(str(self._lo), str(self._hi))
 
+    # some predicates
 
     def is_point(self) -> bool:
         """"Is the interval a "singleton" interval, e.g. [a, a]?"""
@@ -208,3 +210,90 @@ class Interval(object):
     def contains(self, x) -> bool:
         """Does the interval contain `x`?"""
         return self._lo <= x and x <= self._hi
+
+    # utility funtions
+
+    def _lo_endpoint(self):
+        return (self._lo, self._lo_endpoint)
+
+    def _hi_endpoint(self):
+        return (self._hi, self._hi_endpoint)
+
+    def _select_context(self, *args, ctx=None):
+        if ctx is None:
+            es = max((ival._ctx.es for ival in args))
+            p = max((ival._ctx.p for ival in args))
+            es = max(es, self._ctx.es)
+            p = max(p, self._ctx.p)
+            ctx = ieee754.ieee_ctx(es, es + p)
+        lo_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTN)
+        hi_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTP)
+        return ctx, lo_ctx, hi_ctx
+
+    # simple endpoint computation that propagates immovability
+    def _epfn(op, *eps, ctx):
+        args = []
+        args_fixed = False
+        for ival, isfixed in eps:
+            args.append(ival)
+            args_fixed = args_fixed and isfixed
+
+        result = gmpmath.compute(op, *args, prec=ctx.p)
+        isfixed = args_fixed and not result.inexact
+        rounded = ieee754.Float(x=result, ctx=ctx)
+        return rounded, isfixed
+
+    # endpoint computation for `add`, `sub`, `hypot`
+    def _eplinear(op, lo_ep, hi_ep, ctx):
+        lo, lo_isfixed = lo_ep
+        hi, hi_isfixed = hi_ep
+        result = gmpmath.compute(op, lo, hi, prec=ctx.p)
+        isfixed = (lo_isfixed and hi_isfixed and not result.inexact) or \
+                           (lo_isfixed and lo.isinf) or \
+                           (hi_isfixed and hi.isinf)
+        rounded = ieee754.Float(x=result, ctx=ctx)
+        return rounded, isfixed
+
+    # endpoint computation for `mul`
+    # def _epmul(op, lo_ep, hi_ep, ctx):
+    #     lo, lo_isfixed = lo_ep
+    #     hi, hi_isfixed = hi_ep
+    #     result = gmpmath.compute(op, lo, hi, prec=ctx.p)
+    #     endpoint_isfixed = (lo_isfixed and hi_isfixed and not result.inexact) or \
+    #                        (lo_isfixed and lo.isinf) or \
+    #                        (hi_isfixed and hi.isinf)
+    #     rounded = ieee754.Float(x=result, ctx=ctx)
+    #     return rounded, endpoint_isfixed
+
+    # most operations
+
+    def neg(self, ctx=None):
+        """Negates this interval. The precision of the interval can be specified by `ctx`.
+        Optionally specify `rounded` to round at the current precision
+        """
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = type(self)._epfn(OP.neg, self._hi_endpoint(), ctx=lo_ctx)
+        hi, hi_isfixed = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
+        err = self._err
+        invalid = self._invalid
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
+    
+    def add(self, other, ctx=None):
+        """Adds two intervals together and returns the result.
+        The precision of the interval can be specified by `ctx`."""
+        ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
+        lo, lo_isfixed = type(self)._eplinear(OP.add, self._lo_endpoint(), other._lo_endpoint(), lo_ctx)
+        hi, hi_isfixed = type(self)._eplinear(OP.add, self._hi_endpoint(), other._hi_endpoint(), hi_ctx)
+        err = self._err or other._err
+        invalid = self._invalid or other._invalid
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
+
+    def sub(self, other, ctx=None):
+        """Subtracts two intervals together and returns the result.
+        The precision of the interval can be specified by `ctx`."""
+        ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
+        lo, lo_isfixed = type(self)._eplinear(OP.sub, self._lo_endpoint(), other._hi_endpoint(), lo_ctx)
+        hi, hi_isfixed = type(self)._eplinear(OP.sub, self._hi_endpoint(), other._lo_endpoint(), hi_ctx)
+        err = self._err or other._err
+        invalid = self._invalid or other._invalid
+        return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, invalid=invalid, ctx=ctx)
