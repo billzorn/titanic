@@ -26,7 +26,7 @@ class Interval(object):
     """An interval as originally implemented in the Rival interval arithmetic library.
     Original implementation at https://github.com/herbie-fp/rival written by
     Pavel Panchekha and Oliver Flatt. The interval uses MPFR floating-point value bounds,
-    immovability flags to signal a fixed endpoint due to overflow, and error flags to propogate
+    immovability flags to signal a fixed endpoint due to overflow, and error flags to propagate
     partial or complete domain errors.
     """
 
@@ -53,8 +53,6 @@ class Interval(object):
 
     # precision context
     _ctx : ieee754.IEEECtx = ieee754.ieee_ctx(11, 64)
-    _lo_ctx : ieee754.IEEECtx = ieee754.ieee_ctx(11, 64, rm=RM.RTN)
-    _hi_ctx : ieee754.IEEECtx = ieee754.ieee_ctx(11, 64, rm=RM.RTP)
 
     # the internal state is not directly visible: expose it with properties
 
@@ -75,10 +73,9 @@ class Interval(object):
         """Is the lower bound immovable? 
         
         From the original Rival implementation:
-
-          "Intervals may shrink (though they cannot grow) when computed at a higher precision.
-          However, in some cases it is known this will not occur, largely due to overflow.
-          In those cases, the interval is marked fixed, or immovable."
+        "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+        However, in some cases it is known this will not occur, largely due to overflow.
+        In those cases, the interval is marked fixed, or immovable."
         """
         return self._lo_isfixed
 
@@ -87,10 +84,9 @@ class Interval(object):
         """Is the upper bound immovable? 
         
         From the original Rival implementation:
-
-          "Intervals may shrink (though they cannot grow) when computed at a higher precision.
-          However, in some cases it is known this will not occur, largely due to overflow.
-          In those cases, the interval is marked fixed, or immovable."
+        "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+        However, in some cases it is known this will not occur, largely due to overflow.
+        In those cases, the interval is marked fixed, or immovable."
         """
         return self._hi_isfixed
 
@@ -133,39 +129,37 @@ class Interval(object):
         the interval is initialized to the real number line `[-inf, inf]`.
         All other fields can be optionally specified."""
 
-        # _ctx (_lo_ctx and _hi_ctx)
+        # _ctx
         if ctx is not None:
             self._ctx = ctx
-            self._lo_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTN)
-            self._hi_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTP)
         elif x is not None:
             self._ctx = x._ctx
-            self._lo_ctx = x._lo_ctx
-            self._hi_ctx = x._hi_ctx
         else:
             self._ctx = type(self)._ctx
-            self._lo_ctx = type(self)._lo_ctx
-            self._hi_ctx = type(self)._hi_ctx
+        
+        # rounding contexts for endpoints
+        lo_ctx = ieee754.ieee_ctx(es=self._ctx.es, nbits=self._ctx.nbits, rm=RM.RTN)
+        hi_ctx = ieee754.ieee_ctx(es=self._ctx.es, nbits=self._ctx.nbits, rm=RM.RTP)
 
         # _lo and _hi
         if x is not None:
             if lo is not None or hi is not None:
                 raise ValueError('cannot specify both x={} and [lo={}, hi={}]'.format(repr(x), repr(lo), repr(hi)))
             if isinstance(x, type(self)):
-                self._lo = ieee754.Float(x._lo, ctx=self._lo_ctx)
-                self._hi = ieee754.Float(x._hi, ctx=self._hi_ctx)
+                self._lo = ieee754.Float(x._lo, ctx=lo_ctx)
+                self._hi = ieee754.Float(x._hi, ctx=hi_ctx)
             else:
-                self._lo = ieee754.Float(x, ctx=self._lo_ctx)
-                self._hi = ieee754.Float(x, ctx=self._hi_ctx)
+                self._lo = ieee754.Float(x, ctx=lo_ctx)
+                self._hi = ieee754.Float(x, ctx=hi_ctx)
         elif lo is not None:
             if hi is None:
                 raise ValueError('must specify both lo={} and hi={} together'.format(repr(lo), repr(hi)))
             if x is not None:
                 raise ValueError('cannot specify both x={} and [lo={}, hi={}]'.format(repr(x), repr(lo), repr(hi)))
-            self._lo = ieee754.Float(x=lo, ctx=self._lo_ctx)
-            self._hi = ieee754.Float(x=hi, ctx=self._hi_ctx)
+            self._lo = ieee754.Float(x=lo, ctx=lo_ctx)
+            self._hi = ieee754.Float(x=hi, ctx=hi_ctx)
             if self._lo > self._hi:
-                raise ValueError()                
+                raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi))                
         else:
             self._lo = type(self)._lo
             self._hi = type(self)._hi
@@ -229,8 +223,8 @@ class Interval(object):
         By default, this interval can be `NEGATIVE`, `CONTAINS_ZERO`, or `POSITIVE`
         where intervals with 0 as an endpoint are either `NEGATIVE` and `POSITIVE`.
         If `strict` is `True`, this interval can be `STRICTLY_POSITIVE`, `CONTAINS_ZERO`
-        or `STRICTLY_NEGATIVE` where intervals with 0 as an endpoint are
-        classified as `CONTAINS_ZERO`.
+        or `STRICTLY_NEGATIVE` where intervals with 0 as an endpoint are classified
+        as `CONTAINS_ZERO`.
         """
         zero = digital.Digital(m=0, exp=0)
         if strict:
@@ -249,13 +243,50 @@ class Interval(object):
                 return IntervalSign.CONTAINS_ZERO
 
     def union(self, other):
-        "Returns the union of this interval and another."
+        """Returns the union of this interval and another."""
         if self.invalid or other.invalid:
             return Interval(invalid=True)
         lo, lo_isfixed = self._lo_endpoint() if self._lo < other._lo else other._lo_endpoint()
         hi, hi_isfixed = self._hi_endpoint() if self._hi < other._hi else other._hi_endpoint()
         err = self._err or other._err
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def clamp(self, lo, hi, err=False):
+        """Returns a new interval that is clamped between `lo` and `hi`.
+        If `err` is `True` and the current interval lies partially outside `[lo, hi]`,
+        the `err` field of the new interval will be `true`.
+        If `err` is `True` and the current interval lies completely outside `[lo, hi]`,
+        the `invalid` field of the new interval will be `true`."""
+        if lo > hi:
+            raise ValueError('invalid clamp bounds: lo={}, hi={}'.format(self._lo, self._hi))
+
+        # not a valid interval
+        if self._invalid:
+            return Interval(invalid=True)
+
+        # below
+        if self._hi < lo:
+            if err:
+                return Interval(invalid=True)
+            else:
+                return Interval(lo=lo, hi=lo, ctx=self._ctx)
+
+        # above
+        if self._lo > hi:
+            if err:
+                return Interval(invalid=True)
+            else:
+                return Interval(lo=hi, hi=hi, ctx=self._ctx)
+
+        if self._lo < lo:
+            if self._hi > hi:       # partially below and above
+                return Interval(lo=lo, hi=hi, err=err, ctx=self._ctx)
+            else:                   # partially below
+                return Interval(lo=lo, hi=self._hi, err=err, ctx=self._ctx)
+        elif self._hi > hi:         # partially above
+            return Interval(lo=self._lo, hi=hi, err=err, ctx=self._ctx)
+        else:                       # competely inside
+            return Interval(x=self)
 
     # utility funtions
 
@@ -338,25 +369,24 @@ class Interval(object):
         hi, hi_isfixed = Interval._epdiv(OP.div, c, d, xclass, hi_ctx)
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
-    # helper monotonically increasing functions
+    # helper for monotonically increasing functions
     def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
         ctx, lo_ctx, hi_ctx = ctxs
         lo, lo_isfixed = Interval._epfn(op, lo_ep, ctx=lo_ctx)
         hi, hi_isfixed = Interval._epfn(op, hi_ep, ctx=hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
-    # helper monotonically decreaing functions
+    # helper for monotonically decreasing functions
     def _monotonic_decr(op, lo_ep, hi_ep, err, ctxs):
         ctx, lo_ctx, hi_ctx = ctxs
         lo, lo_isfixed = Interval._epfn(op, hi_ep, ctx=lo_ctx)
         hi, hi_isfixed = Interval._epfn(op, lo_ep, ctx=hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
     # most operations
 
     def neg(self, ctx=None):
         """Negates this interval. The precision of the interval can be specified by `ctx`.
-        Optionally specify `rounded` to round at the current precision
         """
         if self._invalid:
             return Interval(invalid=True)
@@ -368,7 +398,7 @@ class Interval(object):
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
     
     def add(self, other, ctx=None):
-        """Adds two intervals together and returns the result.
+        """Adds this interval and another and returns the result.
         The precision of the interval can be specified by `ctx`."""
         if self._invalid or other._invalid:
             return Interval(invalid=True)
@@ -381,7 +411,7 @@ class Interval(object):
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
     def sub(self, other, ctx=None):
-        """Subtracts two intervals together and returns the result.
+        """Subtracts this interval by another and returns the result.
         The precision of the interval can be specified by `ctx`."""
         if self._invalid or other._invalid:
             return Interval(invalid=True)
@@ -394,7 +424,7 @@ class Interval(object):
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
     def mul(self, other, ctx=None):
-        """Multiplies two intervals together and returns the result.
+        """Multiplies this interval and another and returns the result.
         The precision of the interval can be specified by `ctx`."""
         if self._invalid or other._invalid:
             return Interval(invalid=True)
@@ -432,11 +462,10 @@ class Interval(object):
             else:   # yclass == IntervalSign.ZERO
                 i1 = type(self)._multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
                 i2 = type(self)._multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
-                i1.union(i2)
-                return i1
+                return i1.union(i2)
 
     def div(self, other, ctx=None):
-        """Divides two intervals together and returns the result.
+        """Divides this interval by another and returns the result.
         The precision of the interval can be specified by `ctx`."""
         if self._invalid or other._invalid:
             return Interval(invalid=True)
@@ -475,6 +504,9 @@ class Interval(object):
                 return type(self)._divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
     
     def fabs(self, ctx=None):
+        """Returns the absolute value of this interval.
+        The precision of the interval can be specified by `ctx`.
+        """
         if self._invalid:
             return Interval(invalid=True)
 
@@ -488,15 +520,56 @@ class Interval(object):
             neg_lo, _ = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
             lo, lo_isfixed = ieee754.Float(0, ctx=lo_ctx), self._lo_isfixed and self._hi_isfixed
             hi, hi_isfixed = (neg_lo, self._lo_isfixed) if neg_lo > self._hi else (self._hi, self._hi_isfixed)
-            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
+
+    def hypot(self, other, ctx=None):
+        """Performs hypot(other1, other2) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        posx = self.fabs(self._ctx)
+        posy = other.fabs(other._ctx)
+        err = self._err and other._err
+
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = type(self)._eplinear(OP.hypot, posx._lo_endpoint(), posy._lo_endpoint(), lo_ctx)
+        hi, hi_isfixed = type(self)._eplinear(OP.hypot, posx._hi_endpoint(), posy._hi_endpoint(), hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+    
+    def fma(self, other1, other2, ctx=None):
+        """Performs fused-multiply add on this interval and two others.
+        The precision of the interval can be specified by `ctx`.
+        Note: naively implemented by multiplication and division
+        """
+        return self.mul(other1, ctx).add(other2, ctx)
+
+    def sqrt(self, ctx=None):
+        """Returns the square root of this interval.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid:
+            return Interval(invalid=True)
+
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        if self.invalid:
+            return Interval(invalid=True)
+        
+        ctxs = self._select_context(self, ctx=ctx)
+        return type(self)._monotonic_incr(OP.sqrt, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped.err, ctxs)
+
+    def cbrt(self, ctx=None):
+        """Returns the cube root of this interval.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid:
+            return Interval(invalid=True)
+        
+        ctxs = self._select_context(self, ctx=ctx)
+        return type(self)._monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
 
 #
 # TODO: testing
 #  - constructor
-#  - classify
-#  - neg
-#  - add
-#  - sub
-#  - mul
-#  - div
 #
