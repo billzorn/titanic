@@ -235,7 +235,7 @@ gmp_ops = [
 ]
 
 
-def compute(opcode, *args, prec=53):
+def compute(opcode, *args, prec=53, trap_underflow=True, trap_overflow=True):
     """Compute op(*args), with up to prec bits of precision.
     op is specified via opcode, and arguments are universal digital numbers.
     Arguments are treated as exact: the inexactness and result code of the result
@@ -258,8 +258,9 @@ def compute(opcode, *args, prec=53):
             emax=gmp.get_emax_max(),
             subnormalize=False,
             # in theory, we'd like to know about these...
-            trap_underflow=True,
-            trap_overflow=True,
+            # only interval arithmetic disables these
+            trap_underflow=trap_underflow,
+            trap_overflow=trap_overflow,
             # inexact and invalid operations should not be a problem
             trap_inexact=False,
             trap_invalid=False,
@@ -274,6 +275,10 @@ def compute(opcode, *args, prec=53):
             round=gmp.RoundToZero,
     ) as gmpctx:
         result = op(*inputs)
+        if gmpctx.underflow:
+            result = gmp.mpfr(0)
+        elif gmpctx.overflow:
+            result = gmp.inf(gmp.sign(result))
 
     return mpfr_to_digital(result)
 

@@ -3,12 +3,9 @@ Original implementation: https://github.com/herbie-fp/rival
 """
 
 from enum import IntEnum, unique
-from re import S
-from unicodedata import digit
+import gmpy2 as gmp
 
-from numpy import isin
-
-from titanfp.titanic import gmpmath
+from titanfp.titanic import gmpmath, utils
 from . import interpreter
 from . import ieee754
 
@@ -25,13 +22,132 @@ class IntervalSign(IntEnum):
     POSITIVE          = 1,
     STRICTLY_POSITIVE = 2,
 
+#
+#   Interval endpoint computation
+#
+
+# simple endpoint computation that propagates immovability
+def _epfn(op, *eps, ctx):
+    args = []
+    args_fixed = False
+    for ival, isfixed in eps:
+        args.append(ival)
+        args_fixed = args_fixed and isfixed
+
+    result = gmpmath.compute(op, *args, prec=ctx.p, trap_underflow=False, trap_overflow=False)
+    rounded = ieee754.Float._round_to_context(result, ctx=ctx)
+    isfixed = args_fixed and not rounded.inexact
+    return rounded, isfixed
+
+# endpoint computation for `add`, `sub`, `hypot`
+def _eplinear(op, a_ep, b_ep, ctx):
+    a, a_isfixed = a_ep
+    b, b_isfixed = b_ep
+    result = gmpmath.compute(op, a, b, prec=ctx.p)
+    rounded = ieee754.Float._round_to_context(result, ctx=ctx)
+    isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                (a_isfixed and a.isinf) or \
+                (b_isfixed and b.isinf)
+    return rounded, isfixed
+
+# endpoint computation for `mul`
+def _epmul(a_ep, b_ep, aclass, bclass, ctx):
+    a, a_isfixed, = a_ep
+    b, b_isfixed, = b_ep
+    result = gmpmath.compute(OP.mul, a, b, prec=ctx.p)
+    rounded = ieee754.Float._round_to_context(result, ctx=ctx)
+    isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                (a_isfixed and a.is_zero() and not a.isinf) or \
+                (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
+                (b_isfixed and b.is_zero() and not b.isinf) or \
+                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+    return rounded, isfixed
+
+# endpoint computation for `div`
+def _epdiv(a_ep, b_ep, aclass, ctx):
+    a, a_isfixed, = a_ep
+    b, b_isfixed, = b_ep
+    result = gmpmath.compute(OP.div, a, b, prec=ctx.p)
+    rounded = ieee754.Float._round_to_context(result, ctx=ctx)
+    isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                (a_isfixed and a.is_zero() and not a.isinf) or \
+                (a_isfixed and a.isinf) or \
+                (b_isfixed and b.is_zero() and not b.isinf) or \
+                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+    return rounded, isfixed
+
+# endpoint computation or `pow`
+def _eppow(a_ep, b_ep, aclass, bclass, err, ctx):
+    a, a_isfixed, = a_ep
+    b, b_isfixed, = b_ep
+    result = gmpmath.compute(OP.pow, a, b, prec=ctx)
+    rounded = ieee754.Float._round_to_context(result, ctx=ctx)
+    isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
+                (a_isfixed and a == digital.Digital(c=1, exp=0)) or \
+                (a_isfixed and a == digital.Digital(c=0, exp=0) and bclass != IntervalSign.CONTAINS_ZERO) or \
+                (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
+                (b_isfixed and b == digital.Digital(c=0, exp=0)) or \
+                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+    return rounded, isfixed
+
+#
+#   Specialized cases of interval functions
+#
+
+def _multiply(a, b, c, d, xclass, yclass, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _epmul(a, b, xclass, yclass, lo_ctx)
+    hi, hi_isfixed = _epmul(c, d, xclass, yclass, hi_ctx)
+    return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+def _divide(a, b, c, d, xclass, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _epdiv(a, b, xclass, lo_ctx)
+    hi, hi_isfixed = _epdiv(c, d, xclass, hi_ctx)
+    return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+# def _power(a, b, c, d, xclass, yclass, err, ctxs):
+#     ctx, lo_ctx, hi_ctx = ctxs
+#     lo, lo_isfixed = _eppow(a, b, xclass, yclass, lo_ctx)
+#     hi, hi_isfixed = _eppow(c, d, xclass, yclass, hi_ctx)
+#     ival = Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+#     if 
+
+
+def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _epfn(op, lo_ep, ctx=lo_ctx)
+    hi, hi_isfixed = _epfn(op, hi_ep, ctx=hi_ctx)
+    return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+def _monotonic_decr(op, lo_ep, hi_ep, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _epfn(op, hi_ep, ctx=lo_ctx)
+    hi, hi_isfixed = _epfn(op, lo_ep, ctx=hi_ctx)
+    return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+def _overflow(lo, hi, x, y):
+    lo_isfixed = y._lo_isfixed or (x._hi <= lo) or (x._lo <= lo and x._lo_isfixed)
+    hi_isfixed = y._hi_isfixed or (x._lo >= hi) or (x._hi >= hi and x._hi_isfixed)
+    return Interval(lo=y._lo, hi=y._hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=x._err, ctx=y._ctx)
+
+#
+#   Digital constants
+#
+
+with gmp.local_context(gmp.context(), trap_inexact=False):
+    EXP_OVERFLOW =  gmpmath.mpfr_to_digital(gmp.log(gmp.next_below(gmp.inf())) + gmp.mpfr(1))
+    EXP2_OVERFLOW =  gmpmath.mpfr_to_digital(gmp.log2(gmp.next_below(gmp.inf())) + gmp.mpfr(1))
+
+#
+#   Interval type
+#
 
 class Interval(object):
-    """An interval as originally implemented in the Rival interval arithmetic library.
-    Original implementation at https://github.com/herbie-fp/rival written by
-    Pavel Panchekha and Oliver Flatt. The interval uses MPFR floating-point value bounds,
-    immovability flags to signal a fixed endpoint due to overflow, and error flags to propagate
-    partial or complete domain errors.
+    """An interval based on the Rival interval arithmetic library.
+    Original implementation at https://github.com/herbie-fp/rival written by Pavel Panchekha and Oliver Flatt.
+    The interval uses MPFR floating-point value bounds, immovability flags to signal a fixed endpoint
+    due to overflow, and error flags to propagate partial or complete domain errors.
     """
 
     # represents the real number interval [_lo, _hi]
@@ -39,12 +155,12 @@ class Interval(object):
     _lo: ieee754.Float = ieee754.Float(digital.Digital(negative=True, isinf=True), ctx=ieee754.ieee_ctx(11, 64))
     _hi: ieee754.Float = ieee754.Float(digital.Digital(negative=False, isinf=True), ctx=ieee754.ieee_ctx(11, 64))
 
-    # immovability flag
-    # from the original Rival implementation:
-    #
-    #      "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+    # immovability flags
+    # (from the original Rival implementation:
+    #   "Intervals may shrink (though they cannot grow) when computed at a higher precision.
     #   However, in some cases it is known this will not occur, largely due to overflow.
     #   In those cases, the interval is marked fixed, or immovable."
+    # )
     #
     _lo_isfixed: bool = False
     _hi_isfixed: bool = False
@@ -327,84 +443,6 @@ class Interval(object):
         hi_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTP)
         return ctx, lo_ctx, hi_ctx
 
-    # simple endpoint computation that propagates immovability
-    def _epfn(op, *eps, ctx):
-        args = []
-        args_fixed = False
-        for ival, isfixed in eps:
-            args.append(ival)
-            args_fixed = args_fixed and isfixed
-
-        result = gmpmath.compute(op, *args, prec=ctx.p)
-        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
-        isfixed = args_fixed and not rounded.inexact
-        return rounded, isfixed
-
-    # endpoint computation for `add`, `sub`, `hypot`
-    def _eplinear(op, a_ep, b_ep, ctx):
-        a, a_isfixed = a_ep
-        b, b_isfixed = b_ep
-        result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
-        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
-                  (a_isfixed and a.isinf) or \
-                  (b_isfixed and b.isinf)
-        return rounded, isfixed
-
-    # endpoint computation for `mul`
-    def _epmul(op, a_ep, b_ep, aclass, bclass, ctx):
-        a, a_isfixed, = a_ep
-        b, b_isfixed, = b_ep
-        result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
-        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
-                  (a_isfixed and a.is_zero() and not a.isinf) or \
-                  (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
-                  (b_isfixed and b.is_zero() and not b.isinf) or \
-                  (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
-        return rounded, isfixed
-
-    # endpoint computation for `div`
-    def _epdiv(op, a_ep, b_ep, aclass, ctx):
-        a, a_isfixed, = a_ep
-        b, b_isfixed, = b_ep
-        result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
-        isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
-                  (a_isfixed and a.is_zero() and not a.isinf) or \
-                  (a_isfixed and a.isinf) or \
-                  (b_isfixed and b.is_zero() and not b.isinf) or \
-                  (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
-        return rounded, isfixed
-
-    # helper for multiplication
-    def _multiply(a, b, c, d, xclass, yclass, err, ctxs):
-        ctx, lo_ctx, hi_ctx = ctxs
-        lo, lo_isfixed = Interval._epmul(OP.mul, a, b, xclass, yclass, lo_ctx)
-        hi, hi_isfixed = Interval._epmul(OP.mul, c, d, xclass, yclass, hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
-    # helper for division
-    def _divide(a, b, c, d, xclass, err, ctxs):
-        ctx, lo_ctx, hi_ctx = ctxs
-        lo, lo_isfixed = Interval._epdiv(OP.div, a, b, xclass, lo_ctx)
-        hi, hi_isfixed = Interval._epdiv(OP.div, c, d, xclass, hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
-    # helper for monotonically increasing functions
-    def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
-        ctx, lo_ctx, hi_ctx = ctxs
-        lo, lo_isfixed = Interval._epfn(op, lo_ep, ctx=lo_ctx)
-        hi, hi_isfixed = Interval._epfn(op, hi_ep, ctx=hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
-    # helper for monotonically decreasing functions
-    def _monotonic_decr(op, lo_ep, hi_ep, err, ctxs):
-        ctx, lo_ctx, hi_ctx = ctxs
-        lo, lo_isfixed = Interval._epfn(op, hi_ep, ctx=lo_ctx)
-        hi, hi_isfixed = Interval._epfn(op, lo_ep, ctx=hi_ctx)
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
     # most operations
 
     def neg(self, ctx=None):
@@ -414,8 +452,8 @@ class Interval(object):
             return Interval(invalid=True)
 
         ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
-        lo, lo_isfixed = type(self)._epfn(OP.neg, self._hi_endpoint(), ctx=lo_ctx)
-        hi, hi_isfixed = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
+        lo, lo_isfixed = _epfn(OP.neg, self._hi_endpoint(), ctx=lo_ctx)
+        hi, hi_isfixed = _epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
         err = self._err
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
     
@@ -426,8 +464,8 @@ class Interval(object):
             return Interval(invalid=True)
 
         ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
-        lo, lo_isfixed = type(self)._eplinear(OP.add, self._lo_endpoint(), other._lo_endpoint(), lo_ctx)
-        hi, hi_isfixed = type(self)._eplinear(OP.add, self._hi_endpoint(), other._hi_endpoint(), hi_ctx)
+        lo, lo_isfixed = _eplinear(OP.add, self._lo_endpoint(), other._lo_endpoint(), lo_ctx)
+        hi, hi_isfixed = _eplinear(OP.add, self._hi_endpoint(), other._hi_endpoint(), hi_ctx)
         err = self._err or other._err
 
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
@@ -439,8 +477,8 @@ class Interval(object):
             return Interval(invalid=True)
 
         ctx, lo_ctx, hi_ctx = self._select_context(self, other, ctx=ctx)
-        lo, lo_isfixed = type(self)._eplinear(OP.sub, self._lo_endpoint(), other._hi_endpoint(), lo_ctx)
-        hi, hi_isfixed = type(self)._eplinear(OP.sub, self._hi_endpoint(), other._lo_endpoint(), hi_ctx)
+        lo, lo_isfixed = _eplinear(OP.sub, self._lo_endpoint(), other._hi_endpoint(), lo_ctx)
+        hi, hi_isfixed = _eplinear(OP.sub, self._hi_endpoint(), other._lo_endpoint(), hi_ctx)
         err = self._err or other._err
 
         return type(self)(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
@@ -464,26 +502,26 @@ class Interval(object):
 
         if xclass == IntervalSign.POSITIVE:
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._multiply(xlo, ylo, xhi, yhi, xclass, yclass, err, ctxs)
+                return _multiply(xlo, ylo, xhi, yhi, xclass, yclass, err, ctxs)
             elif yclass == IntervalSign.NEGATIVE:
-                return type(self)._multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
+                return _multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
             else:   # yclass == IntervalSign.ZERO
-                return type(self)._multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
+                return _multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
         elif xclass == IntervalSign.NEGATIVE:
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._multiply(xlo, yhi, xhi, ylo, xclass, yclass, err, ctxs)
+                return _multiply(xlo, yhi, xhi, ylo, xclass, yclass, err, ctxs)
             elif yclass == IntervalSign.NEGATIVE:
-                return type(self)._multiply(xhi, yhi, xlo, ylo, xclass, yclass, err, ctxs)
+                return _multiply(xhi, yhi, xlo, ylo, xclass, yclass, err, ctxs)
             else:   # yclass == IntervalSign.ZERO
-                return type(self)._multiply(xlo, yhi, xlo, ylo, xclass, yclass, err, ctxs)
+                return _multiply(xlo, yhi, xlo, ylo, xclass, yclass, err, ctxs)
         else:   # xclass == IntervalSign.ZERO
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
+                return _multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
             elif yclass == IntervalSign.NEGATIVE:
-                return type(self)._multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
+                return _multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
             else:   # yclass == IntervalSign.ZERO
-                i1 = type(self)._multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
-                i2 = type(self)._multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
+                i1 = _multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
+                i2 = _multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
                 return i1.union(i2)
 
     def div(self, other, ctx=None):
@@ -511,19 +549,19 @@ class Interval(object):
             return Interval(lo_isfixed=isfixed, hi_isfixed=isfixed)
         elif xclass == IntervalSign.POSITIVE:
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._divide(xlo, yhi, xhi, ylo, xclass, err, ctxs)
+                return _divide(xlo, yhi, xhi, ylo, xclass, err, ctxs)
             else:   # yclass == IntervalSign.NEGATIVE
-                return type(self)._divide(xhi, yhi, xlo, ylo, xclass, err, ctxs)
+                return _divide(xhi, yhi, xlo, ylo, xclass, err, ctxs)
         elif xclass == IntervalSign.NEGATIVE:
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._divide(xlo, ylo, xhi, yhi, xclass, err, ctxs)
+                return _divide(xlo, ylo, xhi, yhi, xclass, err, ctxs)
             else:   # yclass == IntervalSign.NEGATIVE
-                return type(self)._divide(xhi, ylo, xlo, yhi, xclass, err, ctxs)
+                return _divide(xhi, ylo, xlo, yhi, xclass, err, ctxs)
         else:   # xclass == IntervalSign.ZERO
             if yclass == IntervalSign.POSITIVE:
-                return type(self)._divide(xlo, ylo, xhi, ylo, xclass, err, ctxs)
+                return _divide(xlo, ylo, xhi, ylo, xclass, err, ctxs)
             else:   # yclass == IntervalSign.NEGATIVE
-                return type(self)._divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
+                return _divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
     
     def fabs(self, ctx=None):
         """Returns the absolute value of this interval.
@@ -539,7 +577,7 @@ class Interval(object):
         elif cl == IntervalSign.NEGATIVE:
             return self.neg()
         else:
-            neg_lo, _ = type(self)._epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
+            neg_lo, _ = _epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
             lo, lo_isfixed = ieee754.Float(0, ctx=lo_ctx), self._lo_isfixed and self._hi_isfixed
             hi, hi_isfixed = (neg_lo, self._lo_isfixed) if neg_lo > self._hi else (self._hi, self._hi_isfixed)
             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
@@ -556,8 +594,8 @@ class Interval(object):
         err = self._err and other._err
 
         ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
-        lo, lo_isfixed = type(self)._eplinear(OP.hypot, posx._lo_endpoint(), posy._lo_endpoint(), lo_ctx)
-        hi, hi_isfixed = type(self)._eplinear(OP.hypot, posx._hi_endpoint(), posy._hi_endpoint(), hi_ctx)
+        lo, lo_isfixed = _eplinear(OP.hypot, posx._lo_endpoint(), posy._lo_endpoint(), lo_ctx)
+        hi, hi_isfixed = _eplinear(OP.hypot, posx._hi_endpoint(), posy._hi_endpoint(), hi_ctx)
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
     
     def fma(self, other1, other2, ctx=None):
@@ -579,7 +617,7 @@ class Interval(object):
             return Interval(invalid=True)
 
         ctxs = self._select_context(self, ctx=ctx)
-        return type(self)._monotonic_incr(OP.sqrt, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped.err, ctxs)
+        return _monotonic_incr(OP.sqrt, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped.err, ctxs)
 
     def cbrt(self, ctx=None):
         """Returns the cube root of this interval.
@@ -589,7 +627,42 @@ class Interval(object):
             return Interval(invalid=True)
         
         ctxs = self._select_context(self, ctx=ctx)
-        return type(self)._monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+        return _monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def exp(self, ctx=None):
+        """Computes e^x on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        result = _monotonic_incr(OP.exp, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+        return _overflow(digital.Digital(x=EXP_OVERFLOW, negative=True), EXP_OVERFLOW, self, result)
+
+    def exp_(self, ctx=None):
+        """Alternative name for `Interval.exp()`"""
+        return self.exp(ctx=ctx)
+    
+    def expm1(self, ctx=None):
+        """Computes e^x - 1 on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        result = _monotonic_incr(OP.expm1, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+        return _overflow(digital.Digital(x=EXP_OVERFLOW, negative=True), EXP_OVERFLOW, self, result)
+
+    def exp2(self, ctx=None):
+        """Computes 2^x on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        result = _monotonic_incr(OP.exp2, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+        return _overflow(digital.Digital(x=EXP2_OVERFLOW, negative=True), EXP2_OVERFLOW, self, result)
+        
 
 #
 #   Testing
@@ -646,7 +719,13 @@ def test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx):
     bad = []
     for _ in range(num_tests):
         xf = random_float(ctx=ctx)
-        fl = fl_fn(xf, ctx=ctx)
+        try:
+            fl = fl_fn(xf, ctx=ctx)
+        except gmp.OverflowResultError:
+            fl = ieee754.Float('inf', ctx=ctx)
+        except gmp.UnderflowResultError:
+            fl = ieee754.Float(0.0, ctx=ctx)
+            
 
         x = Interval(xf, ctx=ctx)
         ival = ival_fn(x, ctx=ctx)
@@ -688,11 +767,8 @@ def test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx):
     else:
         print('[PASSED] {}'.format(name))
 
-def test_interval():
+def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64)):
     """Runs unit tests for the Interval type"""
-    num_tests = 10_000
-    ctx = ieee754.ieee_ctx(11, 64)
-    random.seed()
 
     ops = [
         ("neg", ieee754.Float.neg, Interval.neg, 1),
@@ -702,11 +778,14 @@ def test_interval():
         ("mul", ieee754.Float.mul, Interval.mul, 2),
         ("div", ieee754.Float.div, Interval.div, 2),
         ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1)
+        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+
+        ("exp", ieee754.Float.exp_, Interval.exp, 1),
+        ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
+        ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
     ]
 
-    # ops = [("add", ieee754.Float.add, Interval.add, 2)]
-
+    random.seed()
     for name, fl_fn, ival_fn, argc in ops:
         if argc == 1:
             test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx)
