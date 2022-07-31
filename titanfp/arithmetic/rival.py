@@ -3,6 +3,10 @@ Original implementation: https://github.com/herbie-fp/rival
 """
 
 from enum import IntEnum, unique
+from re import S
+from unicodedata import digit
+
+from numpy import isin
 
 from titanfp.titanic import gmpmath
 from . import interpreter
@@ -133,7 +137,10 @@ class Interval(object):
         if ctx is not None:
             self._ctx = ctx
         elif x is not None:
-            self._ctx = x._ctx
+            if isinstance(x, Interval):
+                self._ctx = x._ctx
+            else:
+                self._ctx = type(self)._ctx
         else:
             self._ctx = type(self)._ctx
         
@@ -146,11 +153,14 @@ class Interval(object):
             if lo is not None or hi is not None:
                 raise ValueError('cannot specify both x={} and [lo={}, hi={}]'.format(repr(x), repr(lo), repr(hi)))
             if isinstance(x, type(self)):
-                self._lo = ieee754.Float(x._lo, ctx=lo_ctx)
-                self._hi = ieee754.Float(x._hi, ctx=hi_ctx)
+                self._lo = ieee754.Float._round_to_context(x._lo, ctx=lo_ctx)
+                self._hi = ieee754.Float._round_to_context(x._hi, ctx=lo_ctx)
+            elif isinstance(x, ieee754.Float):
+                self._lo = ieee754.Float._round_to_context(x, ctx=lo_ctx)
+                self._hi = ieee754.Float._round_to_context(x, ctx=hi_ctx)
             else:
-                self._lo = ieee754.Float(x, ctx=lo_ctx)
-                self._hi = ieee754.Float(x, ctx=hi_ctx)
+                self._lo = ieee754.Float(x=x, ctx=lo_ctx)
+                self._hi = ieee754.Float(x=x, ctx=hi_ctx)
         elif lo is not None:
             if hi is None:
                 raise ValueError('must specify both lo={} and hi={} together'.format(repr(lo), repr(hi)))
@@ -165,18 +175,24 @@ class Interval(object):
             self._hi = type(self)._hi
 
         # _lo_isfixed
-        if lo_isfixed:
+        if lo_isfixed is not None:
             self._lo_isfixed = lo_isfixed
         elif x is not None:
-            self._lo_isfixed = x._lo_isfixed
+            if isinstance(x, Interval):
+                self._lo_isfixed = x._lo_isfixed
+            else:
+                self._lo_isfixed = not self._lo.inexact
         else:
             self._lo_isfixed = type(self)._lo_isfixed
 
         # _hi_isfixed
-        if hi_isfixed:
+        if hi_isfixed is not None:
             self._hi_isfixed = hi_isfixed
         elif x is not None:
-            self._hi_isfixed = x._hi_isfixed
+            if isinstance(x, Interval):
+                self._hi_isfixed = x._hi_isfixed
+            else:
+                self._hi_isfixed = not self._hi.inexact
         else:
             self._hi_isfixed = type(self)._hi_isfixed
 
@@ -184,7 +200,10 @@ class Interval(object):
         if err:
             self._err = err
         elif x is not None:
-            self._err = x._err
+            if isinstance(x, Interval):
+                self._err = x._err
+            else:
+                self._err = False
         else:
             self._err = type(self)._err
 
@@ -192,7 +211,10 @@ class Interval(object):
         if invalid:
             self._invalid = invalid
         elif x is not None:
-            self._invalid = x._invalid
+            if isinstance(x, Interval):
+                self._invalid = x._invalid
+            else:
+                self._invalid = self._lo.isnan or self._hi.isnan
         else:
             self._invalid = type(self)._invalid
 
@@ -314,7 +336,7 @@ class Interval(object):
             args_fixed = args_fixed and isfixed
 
         result = gmpmath.compute(op, *args, prec=ctx.p)
-        rounded = ieee754.Float(x=result, ctx=ctx)
+        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
         isfixed = args_fixed and not rounded.inexact
         return rounded, isfixed
 
@@ -323,7 +345,7 @@ class Interval(object):
         a, a_isfixed = a_ep
         b, b_isfixed = b_ep
         result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float(x=result, ctx=ctx)
+        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
         isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                   (a_isfixed and a.isinf) or \
                   (b_isfixed and b.isinf)
@@ -334,7 +356,7 @@ class Interval(object):
         a, a_isfixed, = a_ep
         b, b_isfixed, = b_ep
         result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float(x=result, ctx=ctx)
+        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
         isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                   (a_isfixed and a.is_zero() and not a.isinf) or \
                   (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
@@ -347,7 +369,7 @@ class Interval(object):
         a, a_isfixed, = a_ep
         b, b_isfixed, = b_ep
         result = gmpmath.compute(op, a, b, prec=ctx.p)
-        rounded = ieee754.Float(x=result, ctx=ctx)
+        rounded = ieee754.Float._round_to_context(result, ctx=ctx)
         isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                   (a_isfixed and a.is_zero() and not a.isinf) or \
                   (a_isfixed and a.isinf) or \
@@ -553,9 +575,9 @@ class Interval(object):
             return Interval(invalid=True)
 
         clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
-        if self.invalid:
+        if clamped.invalid:
             return Interval(invalid=True)
-        
+
         ctxs = self._select_context(self, ctx=ctx)
         return type(self)._monotonic_incr(OP.sqrt, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped.err, ctxs)
 
@@ -570,6 +592,125 @@ class Interval(object):
         return type(self)._monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
 
 #
-# TODO: testing
-#  - constructor
+#   Testing
 #
+
+import random
+
+def random_float(min=None, max=None, ctx=None):
+    if ctx is None:
+        ctx = ieee754.ieee_ctx(11, 64)
+    inf_ord = ieee754.digital_to_bits(x=ieee754.Float('inf', ctx=ctx), ctx=ctx)
+
+    if min is not None:
+        min_ord = ieee754.digital_to_bits(min, ctx=ctx)
+    else:
+        min_ord = 1 - inf_ord
+    
+    if max is not None:
+        max_ord = ieee754.digital_to_bits(max, ctx=ctx)
+    else:
+        max_ord = inf_ord - 1
+
+    lo_ord = random.randint(min_ord, max_ord)
+    return ieee754.bits_to_digital(lo_ord, ctx=ctx)
+
+def random_interval(min=None, max=None, ctx=None):
+    if ctx is None:
+        ctx = ieee754.ieee_ctx(11, 64)
+    inf_ord = ieee754.digital_to_bits(x=ieee754.Float('inf', ctx=ctx), ctx=ctx)
+
+    if min is not None:
+        min_ord = ieee754.digital_to_bits(min, ctx=ctx)
+    else:
+        min_ord = 1 - inf_ord
+    
+    if max is not None:
+        max_ord = ieee754.digital_to_bits(max, ctx=ctx)
+    else:
+        max_ord = inf_ord - 1
+
+    lo_ord = random.randint(min_ord, max_ord)
+    lo = ieee754.bits_to_digital(lo_ord, ctx=ctx)
+
+    hi_ord = random.randint(min_ord, max_ord)
+    hi = ieee754.bits_to_digital(hi_ord, ctx=ctx)
+
+    # switch if needed
+    if lo > hi:
+        lo, hi = hi, lo
+
+    return Interval(lo=lo, hi=hi)
+
+def test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx):
+    bad = []
+    for _ in range(num_tests):
+        xf = random_float(ctx=ctx)
+        fl = fl_fn(xf, ctx=ctx)
+
+        x = Interval(xf, ctx=ctx)
+        ival = ival_fn(x, ctx=ctx)
+
+        if fl.isnan and not ival.invalid:
+            bad.append((xf, fl, ival, ival.err, ival.invalid))
+        else:
+            if ival.err or fl < ival.lo or fl > ival.hi:
+                bad.append((xf, fl, ival, ival.err, ival.invalid))
+    if len(bad) > 0:
+        print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
+        for xf, fl, ival, err, invalid in bad:
+            print(' x={} fl={}, ival={}, err={}, invalid={}'.format(
+                str(xf), str(fl), str(ival), err, invalid))
+    else:
+        print('[PASSED] {}'.format(name))
+
+def test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx):
+    bad = []
+    for _ in range(num_tests):
+        xf = random_float(ctx=ctx)
+        yf = random_float(ctx=ctx)
+        fl = fl_fn(xf, yf, ctx=ctx)
+
+        x = Interval(xf, ctx=ctx)
+        y = Interval(yf, ctx=ctx)
+        ival = ival_fn(x, y, ctx=ctx)
+
+        if fl.isnan and not ival.invalid:
+            bad.append((xf, yf, fl, ival, ival.err, ival.invalid))
+        else:
+            if ival.err or fl < ival.lo or fl > ival.hi:
+                bad.append((xf, yf, fl, ival, ival.err, ival.invalid))
+    if len(bad) > 0:
+        print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
+        for xf, fl, yf, ival, err, invalid in bad:
+            print(' x={} y={} fl={}, ival={}, err={}, invalid={}'.format(
+                str(xf), str(yf), str(fl), str(ival), err, invalid))
+    else:
+        print('[PASSED] {}'.format(name))
+
+def test_interval():
+    """Runs unit tests for the Interval type"""
+    num_tests = 10_000
+    ctx = ieee754.ieee_ctx(11, 64)
+    random.seed()
+
+    ops = [
+        ("neg", ieee754.Float.neg, Interval.neg, 1),
+        ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+        ("add", ieee754.Float.add, Interval.add, 2),
+        ("sub", ieee754.Float.sub, Interval.sub, 2),
+        ("mul", ieee754.Float.mul, Interval.mul, 2),
+        ("div", ieee754.Float.div, Interval.div, 2),
+        ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1)
+    ]
+
+    # ops = [("add", ieee754.Float.add, Interval.add, 2)]
+
+    for name, fl_fn, ival_fn, argc in ops:
+        if argc == 1:
+            test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx)
+        elif argc == 2:
+            test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx)
+        else:
+            raise ValueError('invalid argc for testing: argc={}'.format(argc))
