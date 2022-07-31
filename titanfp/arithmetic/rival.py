@@ -760,7 +760,58 @@ class Interval(object):
         ctxs = self._select_context(self, ctx=ctx)
         result = _monotonic_incr(OP.exp2, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
         return _overflow(digital.Digital(x=EXP2_OVERFLOW, negative=True), EXP2_OVERFLOW, self, result)
-        
+    
+    def log(self, ctx=None):
+        """Computes log(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.log, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def log2(self, ctx=None):
+        """Computes log2(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.log2, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def log10(self, ctx=None):
+        """Computes log10(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.log10, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def log1p(self, ctx=None):
+        """Computes log1p(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        clamped = self.clamp(ieee754.Float(-1.0), digital.Digital(negative=False, isinf=True), err=True)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.log1p, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
 
 #
 #   Testing
@@ -869,24 +920,28 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64)):
     """Runs unit tests for the Interval type"""
 
     ops = [
-        ("neg", ieee754.Float.neg, Interval.neg, 1),
-        ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
-        ("add", ieee754.Float.add, Interval.add, 2),
-        ("sub", ieee754.Float.sub, Interval.sub, 2),
-        ("mul", ieee754.Float.mul, Interval.mul, 2),
-        ("div", ieee754.Float.div, Interval.div, 2),
-        ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+        # ("neg", ieee754.Float.neg, Interval.neg, 1),
+        # ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+        # ("add", ieee754.Float.add, Interval.add, 2),
+        # ("sub", ieee754.Float.sub, Interval.sub, 2),
+        # ("mul", ieee754.Float.mul, Interval.mul, 2),
+        # ("div", ieee754.Float.div, Interval.div, 2),
+        # ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+        # ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
 
-        ("rint", rint, Interval.rint, 1),
-        ("round", ieee754.Float.round, Interval.round, 1),
-        ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
-        ("floor", ieee754.Float.floor, Interval.floor, 1),
-        ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+        # ("rint", rint, Interval.rint, 1),
+        # ("round", ieee754.Float.round, Interval.round, 1),
+        # ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+        # ("floor", ieee754.Float.floor, Interval.floor, 1),
+        # ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
 
         ("exp", ieee754.Float.exp_, Interval.exp, 1),
         ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
         ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
+        ("log", ieee754.Float.log, Interval.log, 1),
+        ("log2", ieee754.Float.log2, Interval.log2, 1),
+        ("log10", ieee754.Float.log10, Interval.log10, 1),
+        ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
     ]
 
     random.seed()
