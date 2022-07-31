@@ -5,7 +5,7 @@ Original implementation: https://github.com/herbie-fp/rival
 from enum import IntEnum, unique
 import gmpy2 as gmp
 
-from titanfp.titanic import gmpmath, utils
+from titanfp.titanic import gmpmath
 from . import interpreter
 from . import ieee754
 
@@ -21,6 +21,48 @@ class IntervalSign(IntEnum):
     CONTAINS_ZERO     = 0,
     POSITIVE          = 1,
     STRICTLY_POSITIVE = 2,
+
+#
+#   Unsupported floating-point operations
+#
+
+def rint(x: ieee754.Float, ctx):
+    """Basically just `gmpmath.compute()` specialized for `rint` until
+    Titanic officially supports `rint`."""
+    ctx = x._select_context(x, ctx=ctx)
+    input = gmpmath.digital_to_mpfr(x)
+    # gmpy2 really doesn't like it when you pass nan as an argument
+    if gmp.is_nan(input):
+        return gmpmath.mpfr_to_digital(input)
+    with gmp.context(
+            # one extra bit, so that we can round from RTZ to RNE
+            precision=ctx.p + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            subnormalize=False,
+            # unlike `gmpmath.compute()`, these are disabled
+            trap_underflow=False,
+            trap_overflow=False,
+            # inexact and invalid operations should not be a problem
+            trap_inexact=False,
+            trap_invalid=False,
+            trap_erange=False,
+            trap_divzero=False,
+            # We'd really like to know about this as well, but it causes i.e.
+            #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
+            # I don't know if that behavior is more hilarious or annoying.
+            # This context property was removed in gmpy2 2.1
+            #trap_expbound=False,
+            # use RTZ for easy multiple rounding later
+            round=gmp.RoundToZero,
+    ) as gmpctx:
+        result = gmp.rint(input)
+        if gmpctx.underflow:
+            result = gmp.mpfr(0)
+        elif gmpctx.overflow:
+            result = gmp.inf(gmp.sign(result))
+
+    return x._round_to_context(gmpmath.mpfr_to_digital(result, ignore_rc=True), ctx=ctx, strict=True)
 
 #
 #   Interval endpoint computation
@@ -74,6 +116,13 @@ def _epdiv(a_ep, b_ep, aclass, ctx):
                 (a_isfixed and a.isinf) or \
                 (b_isfixed and b.is_zero() and not b.isinf) or \
                 (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+    return rounded, isfixed
+
+# endpoint computation for `rint` (really just `epfn`)
+def _eprint(ep, ctx):
+    arg, arg_isfixed = ep
+    rounded = rint(arg, ctx)
+    isfixed = arg_isfixed and not rounded.inexact
     return rounded, isfixed
 
 # endpoint computation or `pow`
@@ -629,6 +678,55 @@ class Interval(object):
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
 
+    def rint(self, ctx=None):
+        """Rounds this interval to a nearby integer.
+        Normally, `rint` respects rounding mode, but interval arithmetic will round conservatively.
+        The precision of the interval can be specified by `ctx`."""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = _eprint(self._lo_endpoint(), ctx=lo_ctx)
+        hi, hi_isfixed = _eprint(self._hi_endpoint(), ctx=hi_ctx)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self._err, ctx=ctx)
+
+    def round(self, ctx=None):
+        """Rounds the endpoints of interval to the nearest integer.
+        The precision of the interval can be specified by `ctx`."""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.round, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def ceil(self, ctx=None):
+        """Rounds each endpoint of the interval to the smallest integer not
+        less than the endpoint. The precision of the interval can be specified by `ctx`."""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.ceil, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def floor(self, ctx=None):
+        """Rounds each endpoint of the interval to the largest integer not
+        more than the endpoint. The precision of the interval can be specified by `ctx`."""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.floor, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def trunc(self, ctx=None):
+        """Rounds each endpoint of the interval to the nearest integer not
+        larger in magnitude than the endpoint. The precision of the interval
+        can be specified by `ctx`."""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.trunc, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
     def exp(self, ctx=None):
         """Computes e^x on this interval and returns the result.
         The precision of the interval can be specified by `ctx`"""
@@ -779,6 +877,12 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64)):
         ("div", ieee754.Float.div, Interval.div, 2),
         ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
         ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+
+        ("rint", rint, Interval.rint, 1),
+        ("round", ieee754.Float.round, Interval.round, 1),
+        ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+        ("floor", ieee754.Float.floor, Interval.floor, 1),
+        ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
 
         ("exp", ieee754.Float.exp_, Interval.exp, 1),
         ("expm1", ieee754.Float.expm1, Interval.expm1, 1),

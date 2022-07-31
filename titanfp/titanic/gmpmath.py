@@ -6,8 +6,6 @@ implemented with GMP as a backend, but conveniently extended to Sinking Point.
 import gmpy2 as gmp
 import re
 
-from . import utils
-
 from .integral import bitmask
 from . import conversion
 from . import ops
@@ -101,8 +99,8 @@ def digital_to_mpfr(x):
                 return gmp.mul(significand, scale)
 
 
-def mpfr_to_digital(x):
-    rounded = x.rc != 0
+def mpfr_to_digital(x, ignore_rc=False):
+    rounded = x.rc != 0 and not ignore_rc
 
     if gmp.is_nan(x):
         return digital.Digital(
@@ -122,7 +120,9 @@ def mpfr_to_digital(x):
     # get the right answer, so if we rounded away from zero, it's -1, and if we rounded
     # towards zero, it's 1.
 
-    if negative:
+    if ignore_rc:
+        rc = 0
+    elif negative:
         rc = x.rc
     else:
         rc = -x.rc
@@ -280,7 +280,12 @@ def compute(opcode, *args, prec=53, trap_underflow=True, trap_overflow=True):
         elif gmpctx.overflow:
             result = gmp.inf(gmp.sign(result))
 
-    return mpfr_to_digital(result)
+    # result code is not the classic ternary value in these cases
+        if opcode == ops.OP.round or opcode == ops.OP.ceil or opcode == ops.OP.floor or opcode == ops.OP.trunc:
+            ignore_rc = True
+        else:
+            ignore_rc = False
+    return mpfr_to_digital(result, ignore_rc=ignore_rc)
 
 
 constant_exprs = {
