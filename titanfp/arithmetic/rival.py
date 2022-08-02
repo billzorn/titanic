@@ -4,6 +4,9 @@ Original implementation: https://github.com/herbie-fp/rival
 
 from enum import IntEnum, unique
 import gmpy2 as gmp
+import math
+
+from numpy import isin
 
 from titanfp.titanic import gmpmath
 from . import interpreter
@@ -21,6 +24,16 @@ class IntervalSign(IntEnum):
     CONTAINS_ZERO     = 0,
     POSITIVE          = 1,
     STRICTLY_POSITIVE = 2,
+
+@unique
+class IntervalOrder(IntEnum):
+    """Classification of an `Interval` by comparison against a value.
+    See `Interval.compare()` for details."""
+    STRICTLY_LESS     = -2,
+    LESS              = -1,
+    CONTAINS          = 0
+    GREATER           = 1,
+    STRICTLY_GREATER  = 2,
 
 #
 #   Unsupported floating-point operations
@@ -63,6 +76,46 @@ def rint(x: ieee754.Float, ctx):
             result = gmp.inf(gmp.sign(result))
 
     return x._round_to_context(gmpmath.mpfr_to_digital(result, ignore_rc=True), ctx=ctx, strict=True)
+
+
+def is_integer(x):
+    """Takes a Digital type `x` and returns true if `x` is an integer."""
+    if not isinstance(x, digital.Digital):
+        raise ValueError('expected a Digital type: {}'.format(x))
+    elif x.isinf or x.isnan:
+        return False
+    elif x.is_zero() or x.exp >= 0:
+        return True
+    elif x.exp > x.c.bit_length():
+        return False
+    else:
+        return (x.c & ((2 ** -x.exp) - 1)) == 0
+
+def is_even_integer(x):
+    """Takes a Digital type `x` and returns true if `x` is an even integer."""
+    if not isinstance(x, digital.Digital):
+        raise ValueError('expected a Digital type: {}'.format(x))
+    elif not is_integer(x):
+        return False
+    elif x.is_zero() or x.exp > 0:
+        return True
+    elif -x.exp > x.c.bit_length():
+        return True
+    else:
+        return (abs(x.c) & (2 ** -x.exp)) == 0
+
+def is_odd_integer(x):
+    """Takes a Digital type `x` and returns true if `x` is an odd integer."""
+    if not isinstance(x, digital.Digital):
+        raise ValueError('expected a Digital type: {}'.format(x))
+    elif not is_integer(x):
+        return False
+    elif x.is_zero() or x.exp > 0:
+        return False
+    elif -x.exp > x.c.bit_length():
+        return False
+    else:
+        return (abs(x.c) & (2 ** -x.exp)) != 0
 
 #
 #   Interval endpoint computation
@@ -126,10 +179,10 @@ def _eprint(ep, ctx):
     return rounded, isfixed
 
 # endpoint computation or `pow`
-def _eppow(a_ep, b_ep, aclass, bclass, err, ctx):
+def _eppow(a_ep, b_ep, aclass, bclass, ctx):
     a, a_isfixed, = a_ep
     b, b_isfixed, = b_ep
-    result = gmpmath.compute(OP.pow, a, b, prec=ctx)
+    result = gmpmath.compute(OP.pow, a, b, prec=ctx.p, trap_underflow=False, trap_overflow=False)
     rounded = ieee754.Float._round_to_context(result, ctx=ctx)
     isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                 (a_isfixed and a == digital.Digital(c=1, exp=0)) or \
@@ -155,13 +208,96 @@ def _divide(a, b, c, d, xclass, err, ctxs):
     hi, hi_isfixed = _epdiv(c, d, xclass, hi_ctx)
     return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
-# def _power(a, b, c, d, xclass, yclass, err, ctxs):
-#     ctx, lo_ctx, hi_ctx = ctxs
-#     lo, lo_isfixed = _eppow(a, b, xclass, yclass, lo_ctx)
-#     hi, hi_isfixed = _eppow(c, d, xclass, yclass, hi_ctx)
-#     ival = Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-#     if 
+def _power(a, b, c, d, x, y, xclass, yclass, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _eppow(a, b, xclass, yclass, lo_ctx)
+    hi, hi_isfixed = _eppow(c, d, xclass, yclass, hi_ctx)
+    result = Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+    # HACK: `is_zero` checks for x == 0 and x == +/-INF simultaneously
+    if result._lo.is_zero() or result._hi.is_zero():
+        movability = y.mul(x.log()).exp()
+        return Interval(lo=result._lo,
+                        hi=result._hi,
+                        lo_isfixed=movability._lo_isfixed,
+                        hi_isfixed=movability._hi_isfixed,
+                        err=result._err,
+                        ctx=result._ctx)
+    else:
+        return result
 
+# assumes `x` is positive
+def _power_pos(x, y, ctxs):
+    if x._invalid or y._invalid:
+        return Interval(invalid=True)
+
+    xclass = x.compare(ieee754.Float(1.0))
+    xlo = x._lo_endpoint()
+    xhi = x._hi_endpoint()
+
+    yclass = y.classify()
+    ylo = y._lo_endpoint()
+    yhi = y._hi_endpoint()
+
+    err = x._err or y._err
+    if xclass == IntervalOrder.GREATER:
+        if yclass == IntervalOrder.GREATER:
+            return _power(xlo, ylo, xhi, yhi, x, y, xclass, yclass, err, ctxs)
+        elif yclass == IntervalOrder.LESS:
+            return _power(xhi, ylo, xlo, yhi, x, y, xclass, yclass, err, ctxs)
+        else:   # yclass == IntervalOrder.CONTAINS
+            return _power(xhi, ylo, xhi, yhi, x, y, xclass, yclass, err, ctxs)
+    elif xclass == IntervalOrder.LESS:
+        if yclass == IntervalOrder.GREATER:
+            return _power(xlo, yhi, xhi, ylo, x, y, xclass, yclass, err, ctxs)
+        elif yclass == IntervalOrder.LESS:
+            return _power(xhi, yhi, xlo, ylo, x, y, xclass, yclass, err, ctxs)
+        else:   # yclass == IntervalOrder.CONTAINS
+            return _power(xlo, yhi, xlo, ylo, x, y, xclass, yclass, err, ctxs)
+    else:   # xclass == IntervalOrder.CONTAINS
+        if yclass == IntervalOrder.GREATER:
+            return _power(xlo, yhi, xhi, yhi, x, y, xclass, yclass, err, ctxs)
+        elif yclass == IntervalOrder.LESS:
+            return _power(xhi, ylo, xlo, ylo, x, y, xclass, yclass, err, ctxs)
+        else:   # yclass == IntervalOrder.CONTAINS
+            i1 = _power(xlo, yhi, xhi, yhi, x, y, xclass, yclass, err, ctxs)
+            i2 = _power(xhi, ylo, xlo, ylo, x, y, xclass, yclass, err, ctxs)
+            return i1.union(i2)
+
+# assumes `x` is negative
+def _power_neg(x, y, ctxs):
+    if x._invalid or y._invalid or y._lo < y._hi:
+        return Interval(invalid=True)
+
+    ctx, lo_ctx, hi_ctx = ctxs
+    err = x.err or y.err
+    pos_x = x.fabs()
+    a = y._lo.ceil(ctx)
+    b = y._hi.floor(ctx)
+    if a > b:
+        if x._hi == ieee754.Float(0.0):
+            return Interval(lo=0.0, hi=0.0, lo_isfixed=False, hi_isfixed=False, err=True)
+        else:
+            return Interval(invalid=True)
+    elif a == b:
+        a_isfixed = y._lo_isfixed and y._hi_isfixed
+        p = Interval(lo=a, hi=a, lo_isfixed=a_isfixed, hi_isfixed=a_isfixed, err=err)
+        if is_odd_integer(a):
+            return _power_pos(pos_x, p, ctxs).neg()
+        else:
+            return _power_pos(pos_x, p, ctxs)
+    else:
+        # movability flags not implemented
+        # original implementation just sets them to False
+        one = ieee754.Float(1.0)
+        odd_lo = a if is_odd_integer(a) else a.add(one, lo_ctx)
+        odd_hi = b if is_odd_integer(b) else b.sub(one, hi_ctx)
+        even_lo = a.add(one, lo_ctx) if is_odd_integer(a) else a
+        even_hi = b.sub(one, hi_ctx) if is_odd_integer(b) else b
+        odds = Interval(lo=odd_lo, hi=odd_hi, err=err)
+        evens = Interval(lo=even_lo, hi=even_hi, err=err)
+        i1 = _power_pos(pos_x, evens)
+        i2 = _power_pos(pos_x, odds).neg()
+        return i1.union(i2)
 
 def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
     ctx, lo_ctx, hi_ctx = ctxs
@@ -409,8 +545,8 @@ class Interval(object):
         """Classifies this interval by the sign of the endpoints.
         By default, this interval can be `NEGATIVE`, `CONTAINS_ZERO`, or `POSITIVE`
         where intervals with 0 as an endpoint are either `NEGATIVE` and `POSITIVE`.
-        If `strict` is `True`, this interval can be `STRICTLY_POSITIVE`, `CONTAINS_ZERO`
-        or `STRICTLY_NEGATIVE` where intervals with 0 as an endpoint are classified
+        If `strict` is `True`, this interval can be `STRICTLY_NEGATIVE`, `CONTAINS_ZERO`
+        or `STRICTLY_POSITIVE` where intervals with 0 as an endpoint are classified
         as `CONTAINS_ZERO`.
         """
         zero = digital.Digital(m=0, exp=0)
@@ -428,6 +564,29 @@ class Interval(object):
                 return IntervalSign.POSITIVE
             else:
                 return IntervalSign.CONTAINS_ZERO
+
+    def compare(self, val, strict=False) -> IntervalOrder:
+        """Classifies this interval by comparing against a value.
+        By default, this interval can be `LESS`, `CONTAINS`, or `GREATER`
+        where intervals with `val` as an endpoint are either `LESS` and `GREATER`.
+        If `strict` is `True`, this interval can be `STRICTLY_LESS`, `CONTAINS`
+        or `STRICTLY_GREATER` where intervals with `val` as an endpoint are classified
+        as `CONTAINS`.
+        """
+        if strict:
+            if self._hi < val:
+                return IntervalOrder.STRICTLY_LESS
+            elif self._lo > val:
+                return IntervalOrder.STRICTLY_GREATER
+            else:
+                return IntervalOrder.CONTAINS
+        else:
+            if self._hi <= val:
+                return IntervalOrder.LESS
+            elif self._lo >= val:
+                return IntervalOrder.GREATER
+            else:
+                return IntervalOrder.CONTAINS
 
     def union(self, other):
         """Returns the union of this interval and another."""
@@ -474,6 +633,19 @@ class Interval(object):
             return Interval(lo=self._lo, hi=hi, err=err, ctx=self._ctx)
         else:                       # competely inside
             return Interval(x=self)
+
+    def split(self, val):
+        """Takes a finite value `val` between `self.lo` and `self.hi` and
+        returns two intervals: `[self.lo, val]` and `[val, self.hi]`."""
+        if not isinstance(val):
+            raise ValueError('expected a Digital type {}'.format(val))
+        if val.isnan or val.isinf:
+            raise ValueError('cannot split on a finite value {}'.format(val))
+        if val < self._lo or val > self._hi:
+            raise ValueError('split value must be between the endpoints {}'.format(val))
+        if self.isnan:
+            return Interval(invalid=True), Interval(invalid=True)
+        return Interval(x=self, hi=val), Interval(x=self, lo=val)
 
     # utility funtions
 
@@ -813,6 +985,22 @@ class Interval(object):
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.log1p, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
 
+    def pow(self, other, ctx=None):
+        """Computes pow(x, y) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        zero = ieee754.Float(0.0)
+        ctxs = self._select_context(self, ctx=ctx)
+        if self._hi < zero:
+            return _power_neg(self, other, ctxs)
+        elif self._lo >= zero:
+            return _power_pos(self, other, ctxs)
+        else:
+            neg, pos = self.split(zero)
+            return _power_neg(neg, other).union(_power_pos(pos, other))
+
 #
 #   Testing
 #
@@ -910,38 +1098,48 @@ def test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx):
                 bad.append((xf, yf, fl, ival, ival.err, ival.invalid))
     if len(bad) > 0:
         print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
-        for xf, fl, yf, ival, err, invalid in bad:
+        for xf, yf, fl, ival, err, invalid in bad:
             print(' x={} y={} fl={}, ival={}, err={}, invalid={}'.format(
                 str(xf), str(yf), str(fl), str(ival), err, invalid))
     else:
         print('[PASSED] {}'.format(name))
 
+def pow_overflow(x: ieee754.Float, y: ieee754.Float, ctx):
+    ctx = x._select_context(x, y, ctx=ctx)
+    result = gmpmath.compute(OP.pow, x, y, prec=ctx.p, trap_underflow=False, trap_overflow=False)
+    return ieee754.Float._round_to_context(result, ctx)
+
 def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64)):
     """Runs unit tests for the Interval type"""
 
+    # ops = [
+    #     ("neg", ieee754.Float.neg, Interval.neg, 1),
+    #     ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+    #     ("add", ieee754.Float.add, Interval.add, 2),
+    #     ("sub", ieee754.Float.sub, Interval.sub, 2),
+    #     ("mul", ieee754.Float.mul, Interval.mul, 2),
+    #     ("div", ieee754.Float.div, Interval.div, 2),
+    #     ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+    #     ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+
+    #     ("rint", rint, Interval.rint, 1),
+    #     ("round", ieee754.Float.round, Interval.round, 1),
+    #     ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+    #     ("floor", ieee754.Float.floor, Interval.floor, 1),
+    #     ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+
+    #     ("exp", ieee754.Float.exp_, Interval.exp, 1),
+    #     ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
+    #     ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
+    #     ("log", ieee754.Float.log, Interval.log, 1),
+    #     ("log2", ieee754.Float.log2, Interval.log2, 1),
+    #     ("log10", ieee754.Float.log10, Interval.log10, 1),
+    #     ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
+    #     ("pow", ieee754.Float.pow, Interval.pow, 2),
+    # ]
+
     ops = [
-        # ("neg", ieee754.Float.neg, Interval.neg, 1),
-        # ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
-        # ("add", ieee754.Float.add, Interval.add, 2),
-        # ("sub", ieee754.Float.sub, Interval.sub, 2),
-        # ("mul", ieee754.Float.mul, Interval.mul, 2),
-        # ("div", ieee754.Float.div, Interval.div, 2),
-        # ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-        # ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
-
-        # ("rint", rint, Interval.rint, 1),
-        # ("round", ieee754.Float.round, Interval.round, 1),
-        # ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
-        # ("floor", ieee754.Float.floor, Interval.floor, 1),
-        # ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
-
-        ("exp", ieee754.Float.exp_, Interval.exp, 1),
-        ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
-        ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
-        ("log", ieee754.Float.log, Interval.log, 1),
-        ("log2", ieee754.Float.log2, Interval.log2, 1),
-        ("log10", ieee754.Float.log10, Interval.log10, 1),
-        ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
+        ("pow", pow_overflow, Interval.pow, 2)
     ]
 
     random.seed()
