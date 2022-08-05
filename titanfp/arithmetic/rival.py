@@ -1009,31 +1009,102 @@ class Interval(object):
             neg, pos = self.split(zero)
             return _power_neg(neg, other, ctxs).union(_power_pos(pos, other, ctxs))
 
-    # def cos(self, ctx=None):
-    #     """Computes cos(x) for this interval and returns the result.
-    #     The precision of the interval can be specified by `ctx`"""
-    #     if self._invalid:
-    #         return Interval(invalid=True)
+    def cos(self, ctx=None):
+        """Computes cos(x) for this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
         
-    #     ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
-    #     lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
-    #     hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
-    #     zero = ieee754.Float(0.0)
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+        hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+        one = ieee754.Float(1.0)
+        zero = ieee754.Float(0.0)
 
-    #     a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).floor(lo_ctx)
-    #     b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).floor(hi_ctx)
-    #     if a == b:
-    #         if is_even_integer(a):
-    #             lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
-    #             hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
-    #             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
-    #         else:
-    #             lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
-    #             hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
-    #             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
-    #     else:
-    #         return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
+        a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).floor(lo_ctx)
+        b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).floor(hi_ctx)
+        if a == b:
+            if is_even_integer(a):
+                lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+        elif b.sub(a) == one:
+            if is_even_integer(a):
+                hi1, hi1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
+                hi2, hi2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
+                hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
+                return Interval(lo=one.neg(), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo1, lo1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
+                lo2, lo2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
+                lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
+                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
+        else:
+            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
 
+    
+    def sin(self, ctx=None):
+        """Computes sin(x) for this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+        
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+        hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+        one = ieee754.Float(1.0)
+        half = ieee754.Float(0.5)
+        zero = ieee754.Float(0.0)
+
+        a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).sub(half, lo_ctx).floor(lo_ctx)
+        b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).sub(half, hi_ctx).floor(hi_ctx)
+        if a == b:
+            if is_even_integer(a):
+                lo, lo_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo, lo_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+        elif b.sub(a) == one:
+            if is_even_integer(a):
+                hi1, hi1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=hi_ctx)
+                hi2, hi2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=hi_ctx)
+                hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
+                return Interval(lo=one.neg(), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo1, lo1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=lo_ctx)
+                lo2, lo2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=lo_ctx)
+                lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
+                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
+        else:
+            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
+
+    def tan(self, ctx=None):
+        """Computes tan(x) for this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+        
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+        hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+        half = ieee754.Float(0.5)
+        zero = ieee754.Float(0.0)
+
+        a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).sub(half, lo_ctx).floor(lo_ctx)
+        b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).sub(half, hi_ctx).floor(hi_ctx)
+        if a == b:
+            lo, lo_isfixed = _epfn(OP.tan, self._lo_endpoint(), ctx=lo_ctx)
+            hi, hi_isfixed = _epfn(OP.tan, self._hi_endpoint(), ctx=hi_ctx)
+            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed)
+        else:
+            return Interval(err=True)
 #
 #   Testing
 #
@@ -1226,31 +1297,37 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
     """Runs unit tests for the Interval type"""
 
     ops = [
-        ("neg", ieee754.Float.neg, Interval.neg, 1),
-        ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
-        ("add", ieee754.Float.add, Interval.add, 2),
-        ("sub", ieee754.Float.sub, Interval.sub, 2),
-        ("mul", ieee754.Float.mul, Interval.mul, 2),
-        ("div", ieee754.Float.div, Interval.div, 2),
-        ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
-        ("fma", ieee754.Float.fma, Interval.fma, 3),
-
-        ("rint", rint, Interval.rint, 1),
-        ("round", ieee754.Float.round, Interval.round, 1),
-        ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
-        ("floor", ieee754.Float.floor, Interval.floor, 1),
-        ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
-
-        ("exp", ieee754.Float.exp_, Interval.exp, 1),
-        ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
-        ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
-        ("log", ieee754.Float.log, Interval.log, 1),
-        ("log2", ieee754.Float.log2, Interval.log2, 1),
-        ("log10", ieee754.Float.log10, Interval.log10, 1),
-        ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
-        ("pow", pow_overflow, Interval.pow, 2),
+        ("cos", ieee754.Float.cos, Interval.cos, 1),
+        ("sin", ieee754.Float.sin, Interval.sin, 1),
+        ("tan", ieee754.Float.tan, Interval.tan, 1)
     ]
+
+    # ops = [
+    #     ("neg", ieee754.Float.neg, Interval.neg, 1),
+    #     ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+    #     ("add", ieee754.Float.add, Interval.add, 2),
+    #     ("sub", ieee754.Float.sub, Interval.sub, 2),
+    #     ("mul", ieee754.Float.mul, Interval.mul, 2),
+    #     ("div", ieee754.Float.div, Interval.div, 2),
+    #     ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+    #     ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+    #     ("fma", ieee754.Float.fma, Interval.fma, 3),
+
+    #     ("rint", rint, Interval.rint, 1),
+    #     ("round", ieee754.Float.round, Interval.round, 1),
+    #     ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+    #     ("floor", ieee754.Float.floor, Interval.floor, 1),
+    #     ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+
+    #     ("exp", ieee754.Float.exp_, Interval.exp, 1),
+    #     ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
+    #     ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
+    #     ("log", ieee754.Float.log, Interval.log, 1),
+    #     ("log2", ieee754.Float.log2, Interval.log2, 1),
+    #     ("log10", ieee754.Float.log10, Interval.log10, 1),
+    #     ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
+    #     ("pow", pow_overflow, Interval.pow, 2),
+    # ]
 
     random.seed()
     for name, fl_fn, ival_fn, argc in ops:
