@@ -2,7 +2,9 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
+from ast import In
 from enum import IntEnum, unique
+from re import S
 import gmpy2 as gmp
 import math
 
@@ -440,8 +442,10 @@ class Interval(object):
         elif x is not None:
             if isinstance(x, Interval):
                 self._ctx = x._ctx
-            else:
+            elif isinstance(x, ieee754.Float):
                 self._ctx = type(self)._ctx
+            else:
+                raise ValueError('invalid interval: x={}'.format(x))
         else:
             self._ctx = type(self)._ctx
         
@@ -449,31 +453,35 @@ class Interval(object):
         lo_ctx = ieee754.ieee_ctx(es=self._ctx.es, nbits=self._ctx.nbits, rm=RM.RTN)
         hi_ctx = ieee754.ieee_ctx(es=self._ctx.es, nbits=self._ctx.nbits, rm=RM.RTP)
 
-        # _lo and _hi
-        if x is not None:
-            if lo is not None or hi is not None:
-                raise ValueError('cannot specify both x={} and [lo={}, hi={}]'.format(repr(x), repr(lo), repr(hi)))
-            if isinstance(x, type(self)):
+        # _lo
+        if lo is not None:
+            self._lo = ieee754.Float(lo, ctx=lo_ctx)
+        elif x is not None:
+            if isinstance(x, Interval):
                 self._lo = ieee754.Float._round_to_context(x._lo, ctx=lo_ctx)
-                self._hi = ieee754.Float._round_to_context(x._hi, ctx=lo_ctx)
-            elif isinstance(x, ieee754.Float):
-                self._lo = ieee754.Float._round_to_context(x, ctx=lo_ctx)
-                self._hi = ieee754.Float._round_to_context(x, ctx=hi_ctx)
             else:
-                self._lo = ieee754.Float(x=x, ctx=lo_ctx)
-                self._hi = ieee754.Float(x=x, ctx=hi_ctx)
-        elif lo is not None:
-            if hi is None:
-                raise ValueError('must specify both lo={} and hi={} together'.format(repr(lo), repr(hi)))
-            if x is not None:
-                raise ValueError('cannot specify both x={} and [lo={}, hi={}]'.format(repr(x), repr(lo), repr(hi)))
-            self._lo = ieee754.Float(x=lo, ctx=lo_ctx)
-            self._hi = ieee754.Float(x=hi, ctx=hi_ctx)
-            if self._lo > self._hi:
-                raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi))                
+                if lo is not None:
+                    raise ValueError('cannot specify both x={} and [lo={}, hi={}] when x is not an Interval'.format(repr(x), repr(lo), repr(hi)))
+                self._lo = ieee754.Float(x, ctx=lo_ctx)
         else:
             self._lo = type(self)._lo
+        
+        # _hi
+        if hi is not None:
+            self._hi = ieee754.Float(hi, ctx=hi_ctx)
+        elif x is not None:
+            if isinstance(x, Interval):
+                self._hi = ieee754.Float._round_to_context(x._hi, ctx=hi_ctx)
+            else:
+                if hi is not None:
+                    raise ValueError('cannot specify both x={} and [lo={}, hi={}] when x is not an Interval'.format(repr(x), repr(lo), repr(hi)))
+                self._hi = ieee754.Float(x, ctx=lo_ctx)
+        else:
             self._hi = type(self)._hi
+
+
+        if self._lo > self._hi:
+            raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi))   
 
         # _lo_isfixed
         if lo_isfixed is not None:
@@ -593,7 +601,7 @@ class Interval(object):
         if self.invalid or other.invalid:
             return Interval(invalid=True)
         lo, lo_isfixed = self._lo_endpoint() if self._lo < other._lo else other._lo_endpoint()
-        hi, hi_isfixed = self._hi_endpoint() if self._hi < other._hi else other._hi_endpoint()
+        hi, hi_isfixed = self._hi_endpoint() if self._hi > other._hi else other._hi_endpoint()
         err = self._err or other._err
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
@@ -637,13 +645,13 @@ class Interval(object):
     def split(self, val):
         """Takes a finite value `val` between `self.lo` and `self.hi` and
         returns two intervals: `[self.lo, val]` and `[val, self.hi]`."""
-        if not isinstance(val):
+        if not isinstance(val, digital.Digital):
             raise ValueError('expected a Digital type {}'.format(val))
         if val.isnan or val.isinf:
             raise ValueError('cannot split on a finite value {}'.format(val))
         if val < self._lo or val > self._hi:
             raise ValueError('split value must be between the endpoints {}'.format(val))
-        if self.isnan:
+        if self.invalid:
             return Interval(invalid=True), Interval(invalid=True)
         return Interval(x=self, hi=val), Interval(x=self, lo=val)
 
@@ -727,7 +735,7 @@ class Interval(object):
             elif yclass == IntervalSign.NEGATIVE:
                 return _multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
             else:   # yclass == IntervalSign.ZERO
-                return _multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
+                return _multiply(xhi, ylo, xhi, yhi, xclass, yclass, err, ctxs)
         elif xclass == IntervalSign.NEGATIVE:
             if yclass == IntervalSign.POSITIVE:
                 return _multiply(xlo, yhi, xhi, ylo, xclass, yclass, err, ctxs)
@@ -986,7 +994,7 @@ class Interval(object):
         return _monotonic_incr(OP.log1p, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
 
     def pow(self, other, ctx=None):
-        """Computes pow(x, y) on this interval and returns the result.
+        """Computes pow(x, y) for this interval and another and returns the result.
         The precision of the interval can be specified by `ctx`"""
         if self._invalid or other._invalid:
             return Interval(invalid=True)
@@ -999,7 +1007,32 @@ class Interval(object):
             return _power_pos(self, other, ctxs)
         else:
             neg, pos = self.split(zero)
-            return _power_neg(neg, other).union(_power_pos(pos, other))
+            return _power_neg(neg, other, ctxs).union(_power_pos(pos, other, ctxs))
+
+    # def cos(self, ctx=None):
+    #     """Computes cos(x) for this interval and returns the result.
+    #     The precision of the interval can be specified by `ctx`"""
+    #     if self._invalid:
+    #         return Interval(invalid=True)
+        
+    #     ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+    #     lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+    #     hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+    #     zero = ieee754.Float(0.0)
+
+    #     a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).floor(lo_ctx)
+    #     b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).floor(hi_ctx)
+    #     if a == b:
+    #         if is_even_integer(a):
+    #             lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
+    #             hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
+    #             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+    #         else:
+    #             lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
+    #             hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
+    #             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+    #     else:
+    #         return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
 
 #
 #   Testing
@@ -1007,100 +1040,180 @@ class Interval(object):
 
 import random
 
+class Ordinal(object):
+    def __init__(self, v, ctx):
+        if isinstance(v, ieee754.Float):
+            bits = ieee754.digital_to_bits(v, ctx=ctx)
+            sign = bits >> (ctx.nbits - 1)
+            mag = bits & ((1 << (ctx.nbits - 1)) - 1)
+            self.ord = -mag if sign == 1 else mag
+            self.f = v
+        elif isinstance(v, int):
+            self.f = ieee754.bits_to_digital(((1 << (ctx.nbits - 1)) + abs(v)) if v < 0 else v)
+            self.ord = v
+        else:
+            raise ValueError('Cannot convert {} to an Ordinal type'.format(v))
+
+    def __repr__(self):
+        return '{}(v={}) # ord={}, fl={}'.format(type(self).__name__, self.ord, self.ord, self.f)
+
+    def __str__(self):
+        return '{}(ord={}, fl={})'.format(type(self).__name__, self.ord, self.f)
+
+
 def random_float(min=None, max=None, ctx=None):
     if ctx is None:
         ctx = ieee754.ieee_ctx(11, 64)
-    inf_ord = ieee754.digital_to_bits(x=ieee754.Float('inf', ctx=ctx), ctx=ctx)
+    inf_ord = Ordinal(ieee754.Float('inf', ctx=ctx), ctx=ctx).ord
 
     if min is not None:
-        min_ord = ieee754.digital_to_bits(min, ctx=ctx)
+        min_ord = Ordinal(min, ctx=ctx).ord
     else:
         min_ord = 1 - inf_ord
     
     if max is not None:
-        max_ord = ieee754.digital_to_bits(max, ctx=ctx)
+        max_ord = Ordinal.digital_to_bits(max, ctx=ctx).ord
     else:
         max_ord = inf_ord - 1
 
-    lo_ord = random.randint(min_ord, max_ord)
-    return ieee754.bits_to_digital(lo_ord, ctx=ctx)
+    ord = random.randint(min_ord, max_ord)
+    return Ordinal(ord, ctx=ctx).f
 
-def random_interval(min=None, max=None, ctx=None):
+def random_wide_interval(min=None, max=None, ctx=None):
     if ctx is None:
         ctx = ieee754.ieee_ctx(11, 64)
-    inf_ord = ieee754.digital_to_bits(x=ieee754.Float('inf', ctx=ctx), ctx=ctx)
 
-    if min is not None:
-        min_ord = ieee754.digital_to_bits(min, ctx=ctx)
+    v1 = random_float(min, max, ctx)
+    v2 = random_float(min, max, ctx)
+    if v1 > v2:
+        return Interval(lo=v2, hi=v1)
     else:
-        min_ord = 1 - inf_ord
-    
-    if max is not None:
-        max_ord = ieee754.digital_to_bits(max, ctx=ctx)
+        return Interval(lo=v1, hi=v2)
+
+def random_narrow_interval(min=None, max=None, ctx=None):
+    if ctx is None:
+        ctx = ieee754.ieee_ctx(11, 64)
+
+    v1 = random_float(min, max, ctx)
+    delt = random.randint(1, ctx.p)
+    sdelt = delt * (-1 if random.getrandbits(1) == 1 else 1)
+    v2 = Ordinal(Ordinal(v1, ctx=ctx).ord + sdelt, ctx=ctx).f
+    if sdelt < 0:
+        return Interval(lo=v2, hi=v1)
     else:
-        max_ord = inf_ord - 1
+        return Interval(lo=v1, hi=v2)
 
-    lo_ord = random.randint(min_ord, max_ord)
-    lo = ieee754.bits_to_digital(lo_ord, ctx=ctx)
+def random_interval(min=None, max=None, ctx=None):
+    type = random.randint(1, 3)
+    if type == 1:
+        return random_wide_interval(min, max, ctx)
+    elif type == 2:
+        return random_narrow_interval(min, max, ctx)
+    else:
+        fl = random_float(min, max, ctx)
+        return Interval(lo=fl, hi=fl)
 
-    hi_ord = random.randint(min_ord, max_ord)
-    hi = ieee754.bits_to_digital(hi_ord, ctx=ctx)
+def sample_interval(ival, ctx=None):
+    if ctx is None:
+        ctx = ieee754.ieee_ctx(11, 64)
 
-    # switch if needed
-    if lo > hi:
-        lo, hi = hi, lo
+    lo = Ordinal(ival.lo, ctx=ctx).ord
+    hi = Ordinal(ival.hi, ctx=ctx).ord
+    return Ordinal(random.randint(lo, hi), ctx=ctx).f
 
-    return Interval(lo=lo, hi=hi)
-
-def test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx):
+def test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose):
     bad = []
     for _ in range(num_tests):
-        xf = random_float(ctx=ctx)
+        x = random_interval(ctx=ctx)
+        ival = ival_fn(x, ctx=ctx)
+
+        xf = sample_interval(x, ctx)
         try:
             fl = fl_fn(xf, ctx=ctx)
         except gmp.OverflowResultError:
             fl = ieee754.Float('inf', ctx=ctx)
         except gmp.UnderflowResultError:
             fl = ieee754.Float(0.0, ctx=ctx)
-            
 
-        x = Interval(xf, ctx=ctx)
-        ival = ival_fn(x, ctx=ctx)
-
-        if fl.isnan and not ival.invalid:
-            bad.append((xf, fl, ival, ival.err, ival.invalid))
-        else:
-            if ival.err or fl < ival.lo or fl > ival.hi:
-                bad.append((xf, fl, ival, ival.err, ival.invalid))
+        if fl.isnan:
+            if x.is_point() and not ival.invalid:
+                bad.append((x, xf, fl, ival, ival.err, ival.invalid))
+            elif not ival.err and not ival.invalid:
+                bad.append((x, xf, fl, ival, ival.err, ival.invalid))
+        elif fl < ival.lo or fl > ival.hi:
+            bad.append((x, xf, fl, ival, ival.err, ival.invalid))
     if len(bad) > 0:
         print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
-        for xf, fl, ival, err, invalid in bad:
-            print(' x={} fl={}, ival={}, err={}, invalid={}'.format(
-                str(xf), str(fl), str(ival), err, invalid))
+        if verbose:
+            for x, xf, fl, ival, err, invalid in bad:
+                print(' x={} ({}) fl={}, ival={}, err={}, invalid={}'.format(
+                    str(x), str(xf), str(fl), str(ival), err, invalid))
     else:
         print('[PASSED] {}'.format(name))
 
-def test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx):
+def test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose):
     bad = []
     for _ in range(num_tests):
-        xf = random_float(ctx=ctx)
-        yf = random_float(ctx=ctx)
-        fl = fl_fn(xf, yf, ctx=ctx)
-
-        x = Interval(xf, ctx=ctx)
-        y = Interval(yf, ctx=ctx)
+        x = random_interval(ctx=ctx)
+        y = random_interval(ctx=ctx)
         ival = ival_fn(x, y, ctx=ctx)
 
-        if fl.isnan and not ival.invalid:
-            bad.append((xf, yf, fl, ival, ival.err, ival.invalid))
-        else:
-            if ival.err or fl < ival.lo or fl > ival.hi:
-                bad.append((xf, yf, fl, ival, ival.err, ival.invalid))
+        xf = sample_interval(x, ctx=ctx)
+        yf = sample_interval(y, ctx=ctx)
+        try:
+            fl = fl_fn(xf, yf, ctx=ctx)
+        except gmp.OverflowResultError:
+            fl = ieee754.Float('inf', ctx=ctx)
+        except gmp.UnderflowResultError:
+            fl = ieee754.Float(0.0, ctx=ctx) 
+
+        if fl.isnan:
+            if x.is_point() and y.is_point() and not ival.invalid:
+                bad.append((x, y, xf, yf, fl, ival, ival.err, ival.invalid))
+            elif not ival.err and not ival.invalid:
+                bad.append((x, y, xf, yf, fl, ival, ival.err, ival.invalid))
+        elif  fl < ival.lo or fl > ival.hi:
+            bad.append((x, y, xf, yf, fl, ival, ival.err, ival.invalid))
     if len(bad) > 0:
         print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
-        for xf, yf, fl, ival, err, invalid in bad:
-            print(' x={} y={} fl={}, ival={}, err={}, invalid={}'.format(
-                str(xf), str(yf), str(fl), str(ival), err, invalid))
+        if verbose:
+            for x, y, xf, yf, fl, ival, err, invalid in bad:
+                print(' x={} ({}) y={} ({}) fl={}, ival={}, err={}, invalid={}'.format(
+                    str(x), str(xf), str(y), str(yf), str(fl), str(ival), err, invalid))
+    else:
+        print('[PASSED] {}'.format(name))
+
+def test_ternary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose):
+    bad = []
+    for _ in range(num_tests):
+        x = random_interval(ctx=ctx)
+        y = random_interval(ctx=ctx)
+        z = random_interval(ctx=ctx)
+        ival = ival_fn(x, y, z, ctx=ctx)
+
+        xf = sample_interval(x, ctx=ctx)
+        yf = sample_interval(y, ctx=ctx)
+        zf = sample_interval(z, ctx=ctx)
+        try:
+            fl = fl_fn(xf, yf, zf, ctx=ctx)
+        except gmp.OverflowResultError:
+            fl = ieee754.Float('inf', ctx=ctx)
+        except gmp.UnderflowResultError:
+            fl = ieee754.Float(0.0, ctx=ctx)
+
+        if fl.isnan:
+            if x.is_point() and y.is_point() and z.is_point() and not ival.invalid:
+                bad.append((x, y, z, xf, yf, zf, fl, ival, ival.err, ival.invalid))
+            elif not ival.err and not ival.invalid:
+                bad.append((x, y, z, xf, yf, zf, fl, ival, ival.err, ival.invalid))
+        elif fl < ival.lo or fl > ival.hi:
+            bad.append((x, y, z, xf, yf, zf, fl, ival, ival.err, ival.invalid))
+    if len(bad) > 0:
+        print('[FAILED] {} {}/{}'.format(name, len(bad), num_tests))
+        if verbose:
+            for x, y, z, xf, yf, zf, fl, ival, err, invalid in bad:
+                print(' x={} ({}) y={} ({}) z={} ({}) fl={}, ival={}, err={}, invalid={}'.format(
+                    str(x), str(xf), str(y), str(yf), str(z), str(zf), str(fl), str(ival), err, invalid))
     else:
         print('[PASSED] {}'.format(name))
 
@@ -1109,44 +1222,43 @@ def pow_overflow(x: ieee754.Float, y: ieee754.Float, ctx):
     result = gmpmath.compute(OP.pow, x, y, prec=ctx.p, trap_underflow=False, trap_overflow=False)
     return ieee754.Float._round_to_context(result, ctx)
 
-def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64)):
+def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False):
     """Runs unit tests for the Interval type"""
 
-    # ops = [
-    #     ("neg", ieee754.Float.neg, Interval.neg, 1),
-    #     ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
-    #     ("add", ieee754.Float.add, Interval.add, 2),
-    #     ("sub", ieee754.Float.sub, Interval.sub, 2),
-    #     ("mul", ieee754.Float.mul, Interval.mul, 2),
-    #     ("div", ieee754.Float.div, Interval.div, 2),
-    #     ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-    #     ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
-
-    #     ("rint", rint, Interval.rint, 1),
-    #     ("round", ieee754.Float.round, Interval.round, 1),
-    #     ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
-    #     ("floor", ieee754.Float.floor, Interval.floor, 1),
-    #     ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
-
-    #     ("exp", ieee754.Float.exp_, Interval.exp, 1),
-    #     ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
-    #     ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
-    #     ("log", ieee754.Float.log, Interval.log, 1),
-    #     ("log2", ieee754.Float.log2, Interval.log2, 1),
-    #     ("log10", ieee754.Float.log10, Interval.log10, 1),
-    #     ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
-    #     ("pow", ieee754.Float.pow, Interval.pow, 2),
-    # ]
-
     ops = [
-        ("pow", pow_overflow, Interval.pow, 2)
+        ("neg", ieee754.Float.neg, Interval.neg, 1),
+        ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+        ("add", ieee754.Float.add, Interval.add, 2),
+        ("sub", ieee754.Float.sub, Interval.sub, 2),
+        ("mul", ieee754.Float.mul, Interval.mul, 2),
+        ("div", ieee754.Float.div, Interval.div, 2),
+        ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+        ("fma", ieee754.Float.fma, Interval.fma, 3),
+
+        ("rint", rint, Interval.rint, 1),
+        ("round", ieee754.Float.round, Interval.round, 1),
+        ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+        ("floor", ieee754.Float.floor, Interval.floor, 1),
+        ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+
+        ("exp", ieee754.Float.exp_, Interval.exp, 1),
+        ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
+        ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
+        ("log", ieee754.Float.log, Interval.log, 1),
+        ("log2", ieee754.Float.log2, Interval.log2, 1),
+        ("log10", ieee754.Float.log10, Interval.log10, 1),
+        ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
+        ("pow", pow_overflow, Interval.pow, 2),
     ]
 
     random.seed()
     for name, fl_fn, ival_fn, argc in ops:
         if argc == 1:
-            test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx)
+            test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
         elif argc == 2:
-            test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx)
+            test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
+        elif argc == 3:
+            test_ternary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
         else:
             raise ValueError('invalid argc for testing: argc={}'.format(argc))

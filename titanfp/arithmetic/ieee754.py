@@ -224,7 +224,6 @@ def digital_to_bits(x, ctx=None):
 
     return (S << (ctx.es + pbits)) | (E << pbits) | C
 
-
 def bits_to_digital(i, ctx=ieee_ctx(11, 64)):
     pbits = ctx.p - 1
 
@@ -252,7 +251,6 @@ def bits_to_digital(i, ctx=ieee_ctx(11, 64)):
 
     # unfortunately any rc / exactness information is lost
     return Float(ctx=ctx, negative=negative, c=c, exp=exp, rounded=False, inexact=False)
-
 
 def show_bitpattern(x, ctx=None):
     if isinstance(x, int):
