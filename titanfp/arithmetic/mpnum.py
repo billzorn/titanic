@@ -182,6 +182,7 @@ class MPNum(digital.Digital):
     def sinh(self, ctx=None):
         ctx = self._select_context(self, ctx=ctx)
         result = gmpmath.compute(OP.sinh, self, prec=ctx.p)
+        print(result)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def tan(self, ctx=None):

@@ -2,13 +2,8 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
-from ast import In
 from enum import IntEnum, unique
-from re import S
 import gmpy2 as gmp
-import math
-
-from numpy import isin
 
 from titanfp.titanic import gmpmath
 from . import interpreter
@@ -284,7 +279,7 @@ def _power_neg(x, y, ctxs):
         a_isfixed = y._lo_isfixed and y._hi_isfixed
         p = Interval(lo=a, hi=a, lo_isfixed=a_isfixed, hi_isfixed=a_isfixed, err=err)
         if is_odd_integer(a):
-            return _power_pos(pos_x, p, ctxs).neg()
+            return _power_pos(pos_x, p, ctxs).neg(ctx)
         else:
             return _power_pos(pos_x, p, ctxs)
     else:
@@ -298,8 +293,14 @@ def _power_neg(x, y, ctxs):
         odds = Interval(lo=odd_lo, hi=odd_hi, err=err)
         evens = Interval(lo=even_lo, hi=even_hi, err=err)
         i1 = _power_pos(pos_x, evens)
-        i2 = _power_pos(pos_x, odds).neg()
+        i2 = _power_pos(pos_x, odds).neg(ctx)
         return i1.union(i2)
+
+def _atan2(a, b, c, d, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    lo, lo_isfixed = _epfn(OP.atan2, a, b, ctx=lo_ctx)
+    hi, hi_isfixed = _epfn(OP.atan2, c, d, ctx=hi_ctx)
+    return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
 
 def _monotonic_incr(op, lo_ep, hi_ep, err, ctxs):
     ctx, lo_ctx, hi_ctx = ctxs
@@ -477,11 +478,7 @@ class Interval(object):
                     raise ValueError('cannot specify both x={} and [lo={}, hi={}] when x is not an Interval'.format(repr(x), repr(lo), repr(hi)))
                 self._hi = ieee754.Float(x, ctx=lo_ctx)
         else:
-            self._hi = type(self)._hi
-
-
-        if self._lo > self._hi:
-            raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi))   
+            self._hi = type(self)._hi  
 
         # _lo_isfixed
         if lo_isfixed is not None:
@@ -506,7 +503,7 @@ class Interval(object):
             self._hi_isfixed = type(self)._hi_isfixed
 
         # _err
-        if err:
+        if err is not None:
             self._err = err
         elif x is not None:
             if isinstance(x, Interval):
@@ -517,7 +514,7 @@ class Interval(object):
             self._err = type(self)._err
 
         # _invalid
-        if invalid:
+        if invalid is not None:
             self._invalid = invalid
         elif x is not None:
             if isinstance(x, Interval):
@@ -526,6 +523,10 @@ class Interval(object):
                 self._invalid = self._lo.isnan or self._hi.isnan
         else:
             self._invalid = type(self)._invalid
+
+        # check bounds
+        if not self._invalid and self._lo > self._hi:
+            raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi)) 
 
     def __repr__(self):
         return '{}(lo={}, hi={}, lo_isfixed={}, hi_isfixed={}, err={}, invalid={})'.format(
@@ -605,42 +606,23 @@ class Interval(object):
         err = self._err or other._err
         return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
-    def clamp(self, lo, hi, err=False):
+    def clamp(self, lo, hi):
         """Returns a new interval that is clamped between `lo` and `hi`.
         If `err` is `True` and the current interval lies partially outside `[lo, hi]`,
         the `err` field of the new interval will be `true`.
         If `err` is `True` and the current interval lies completely outside `[lo, hi]`,
         the `invalid` field of the new interval will be `true`."""
-        if lo > hi:
-            raise ValueError('invalid clamp bounds: lo={}, hi={}'.format(self._lo, self._hi))
+        if lo > hi or lo.isnan or hi.isnan:
+            raise ValueError('invalid clamp bounds: lo={}, hi={}'.format(lo, hi))
 
         # not a valid interval
-        if self._invalid:
+        if self._invalid or self._hi < lo or self._lo > hi:
             return Interval(invalid=True)
 
-        # below
-        if self._hi < lo:
-            if err:
-                return Interval(invalid=True)
-            else:
-                return Interval(lo=lo, hi=lo, ctx=self._ctx)
-
-        # above
-        if self._lo > hi:
-            if err:
-                return Interval(invalid=True)
-            else:
-                return Interval(lo=hi, hi=hi, ctx=self._ctx)
-
-        if self._lo < lo:
-            if self._hi > hi:       # partially below and above
-                return Interval(lo=lo, hi=hi, err=err, ctx=self._ctx)
-            else:                   # partially below
-                return Interval(lo=lo, hi=self._hi, err=err, ctx=self._ctx)
-        elif self._hi > hi:         # partially above
-            return Interval(lo=self._lo, hi=hi, err=err, ctx=self._ctx)
-        else:                       # competely inside
-            return Interval(x=self)
+        lo = self._lo if self._lo > lo else lo
+        hi = self._hi if self._hi < hi else hi
+        err = self._err or self._lo < lo or self._hi > hi
+        return Interval(lo=lo, hi=hi, lo_isfixed=self._lo_isfixed, hi_isfixed=self._hi_isfixed, err=err)
 
     def split(self, val):
         """Takes a finite value `val` between `self.lo` and `self.hi` and
@@ -804,7 +786,7 @@ class Interval(object):
         if cl == IntervalSign.POSITIVE:
             return Interval(x=self)
         elif cl == IntervalSign.NEGATIVE:
-            return self.neg()
+            return self.neg(ctx)
         else:
             neg_lo, _ = _epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
             lo, lo_isfixed = ieee754.Float(0, ctx=lo_ctx), self._lo_isfixed and self._hi_isfixed
@@ -841,7 +823,7 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True))
         if clamped.invalid:
             return Interval(invalid=True)
 
@@ -947,7 +929,7 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True))
         if clamped.invalid:
             return Interval(invalid=True)
 
@@ -960,7 +942,7 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True))
         if clamped.invalid:
             return Interval(invalid=True)
 
@@ -973,7 +955,7 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True), err=True)
+        clamped = self.clamp(ieee754.Float(0.0), digital.Digital(negative=False, isinf=True))
         if clamped.invalid:
             return Interval(invalid=True)
 
@@ -986,7 +968,7 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        clamped = self.clamp(ieee754.Float(-1.0), digital.Digital(negative=False, isinf=True), err=True)
+        clamped = self.clamp(ieee754.Float(-1.0), digital.Digital(negative=False, isinf=True))
         if clamped.invalid:
             return Interval(invalid=True)
 
@@ -1009,44 +991,6 @@ class Interval(object):
             neg, pos = self.split(zero)
             return _power_neg(neg, other, ctxs).union(_power_pos(pos, other, ctxs))
 
-    def cos(self, ctx=None):
-        """Computes cos(x) for this interval and returns the result.
-        The precision of the interval can be specified by `ctx`"""
-        if self._invalid:
-            return Interval(invalid=True)
-        
-        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
-        lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
-        hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
-        one = ieee754.Float(1.0)
-        zero = ieee754.Float(0.0)
-
-        a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).floor(lo_ctx)
-        b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).floor(hi_ctx)
-        if a == b:
-            if is_even_integer(a):
-                lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
-                hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
-            else:
-                lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
-                hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
-        elif b.sub(a) == one:
-            if is_even_integer(a):
-                hi1, hi1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
-                hi2, hi2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
-                hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
-                return Interval(lo=one.neg(), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
-            else:
-                lo1, lo1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
-                lo2, lo2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
-                lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
-                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
-        else:
-            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
-
-    
     def sin(self, ctx=None):
         """Computes sin(x) for this interval and returns the result.
         The precision of the interval can be specified by `ctx`"""
@@ -1076,10 +1020,47 @@ class Interval(object):
                 hi1, hi1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=hi_ctx)
                 hi2, hi2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=hi_ctx)
                 hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
-                return Interval(lo=one.neg(), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
             else:
                 lo1, lo1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=lo_ctx)
                 lo2, lo2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=lo_ctx)
+                lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
+                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
+        else:
+            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
+    
+    def cos(self, ctx=None):
+        """Computes cos(x) for this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+        
+        ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+        lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+        hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+        one = ieee754.Float(1.0)
+        zero = ieee754.Float(0.0)
+
+        a = self._lo.div(lo_pi if self._lo < zero else hi_pi, lo_ctx).floor(lo_ctx)
+        b = self._hi.div(hi_pi if self._hi < zero else lo_pi, hi_ctx).floor(hi_ctx)
+        if a == b:
+            if is_even_integer(a):
+                lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
+                hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+        elif b.sub(a) == one:
+            if is_even_integer(a):
+                hi1, hi1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
+                hi2, hi2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
+                hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
+                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+            else:
+                lo1, lo1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
+                lo2, lo2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
                 lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
                 return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
         else:
@@ -1105,6 +1086,152 @@ class Interval(object):
             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed)
         else:
             return Interval(err=True)
+
+    def asin(self, ctx=None):
+        """Computes arcsin(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        one = ieee754.Float(1.0)
+        ctxs = self._select_context(self, ctx=ctx)
+        clamped = self.clamp(one.neg(ctxs[0]), one)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        return _monotonic_incr(OP.asin, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def acos(self, ctx=None):
+        """Computes arccos(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        one = ieee754.Float(1.0)
+        ctxs = self._select_context(self, ctx=ctx)
+        clamped = self.clamp(one.neg(ctxs[0]), one)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        return _monotonic_decr(OP.acos, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def atan(self, ctx=None):
+        """Computes arctan(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.atan, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def atan2(self, other, ctx=None):
+        """Computes atan2(y, x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        err = self.err or other.err
+        zero = ieee754.Float(0.0)
+    
+        yclass = self.compare(zero)
+        yhi = self._hi_endpoint()
+        ylo = self._lo_endpoint()
+
+        xclass = other.compare(zero)
+        xhi = other._hi_endpoint()
+        xlo = other._lo_endpoint()
+
+        if xclass == IntervalOrder.GREATER and yclass == IntervalOrder.GREATER:
+            return _atan2(ylo, xhi, yhi, xlo, err, ctxs)
+        elif xclass == IntervalOrder.GREATER and yclass == IntervalOrder.CONTAINS:
+            return _atan2(ylo, xlo, yhi, xlo, err, ctxs)
+        elif xclass == IntervalOrder.GREATER and yclass == IntervalOrder.LESS:
+            return _atan2(ylo, xlo, yhi, xhi, err, ctxs)
+        elif xclass == IntervalOrder.CONTAINS and yclass == IntervalOrder.GREATER:
+            return _atan2(ylo, xhi, ylo, xlo, err, ctxs)
+        elif xclass == IntervalOrder.CONTAINS and yclass == IntervalOrder.LESS:
+            return _atan2(yhi, xlo, yhi, xhi, err, ctxs)
+        elif xclass == IntervalOrder.LESS and yclass == IntervalOrder.GREATER:
+            return _atan2(yhi, xhi, ylo, xlo, err, ctxs)
+        elif xclass == IntervalOrder.LESS and yclass == IntervalOrder.LESS:
+            return _atan2(yhi, xlo, ylo, xhi, err, ctxs)
+        else:
+            ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
+            lo_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), lo_ctx)
+            hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
+            err = err or other._hi >= zero
+            invalid = other._lo == zero and other._hi == zero and self._lo == zero and self._hi == zero
+            return Interval(lo=lo_pi.neg(ctx), hi=hi_pi, err=err, invalid=invalid)
+    
+    def sinh(self, ctx=None):
+        """Computes sinh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.sinh, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def cosh(self, ctx=None):
+        """Computes cosh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        pos = self.fabs(self.ctx)
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.cosh, pos._lo_endpoint(), pos._hi_endpoint(), pos._err, ctxs)
+
+    def tanh(self, ctx=None):
+        """Computes tanh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.tanh, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+    
+    def asinh(self, ctx=None):
+        """Computes asinh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.asinh, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def acosh(self, ctx=None):
+        """Computes acosh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        one = ieee754.Float(1.0)
+        inf = digital.Digital(isinf=True)
+        clamped = self.clamp(one, inf)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.acosh, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+
+    def atanh(self, ctx=None):
+        """Computes atanh(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        one = ieee754.Float(1.0)
+        clamped = self.clamp(one.neg(), one)
+        if clamped.invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.atanh, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
+#
 #
 #   Testing
 #
@@ -1293,41 +1420,58 @@ def pow_overflow(x: ieee754.Float, y: ieee754.Float, ctx):
     result = gmpmath.compute(OP.pow, x, y, prec=ctx.p, trap_underflow=False, trap_overflow=False)
     return ieee754.Float._round_to_context(result, ctx)
 
+def sinh_overflow(x: ieee754.Float, ctx):
+    ctx = x._select_context(x, ctx=ctx)
+    result = gmpmath.compute(OP.sinh, x, prec=ctx.p, trap_underflow=False, trap_overflow=False)
+    return ieee754.Float._round_to_context(result, ctx)
+
 def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False):
     """Runs unit tests for the Interval type"""
 
     ops = [
-        ("cos", ieee754.Float.cos, Interval.cos, 1),
-        ("sin", ieee754.Float.sin, Interval.sin, 1),
-        ("tan", ieee754.Float.tan, Interval.tan, 1)
     ]
 
-    # ops = [
-    #     ("neg", ieee754.Float.neg, Interval.neg, 1),
-    #     ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
-    #     ("add", ieee754.Float.add, Interval.add, 2),
-    #     ("sub", ieee754.Float.sub, Interval.sub, 2),
-    #     ("mul", ieee754.Float.mul, Interval.mul, 2),
-    #     ("div", ieee754.Float.div, Interval.div, 2),
-    #     ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
-    #     ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
-    #     ("fma", ieee754.Float.fma, Interval.fma, 3),
+    ops = [
+        ("neg", ieee754.Float.neg, Interval.neg, 1),
+        ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
+        ("add", ieee754.Float.add, Interval.add, 2),
+        ("sub", ieee754.Float.sub, Interval.sub, 2),
+        ("mul", ieee754.Float.mul, Interval.mul, 2),
+        ("div", ieee754.Float.div, Interval.div, 2),
+        ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
+        ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
+        ("fma", ieee754.Float.fma, Interval.fma, 3),
 
-    #     ("rint", rint, Interval.rint, 1),
-    #     ("round", ieee754.Float.round, Interval.round, 1),
-    #     ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
-    #     ("floor", ieee754.Float.floor, Interval.floor, 1),
-    #     ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+        ("rint", rint, Interval.rint, 1),
+        ("round", ieee754.Float.round, Interval.round, 1),
+        ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
+        ("floor", ieee754.Float.floor, Interval.floor, 1),
+        ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
 
-    #     ("exp", ieee754.Float.exp_, Interval.exp, 1),
-    #     ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
-    #     ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
-    #     ("log", ieee754.Float.log, Interval.log, 1),
-    #     ("log2", ieee754.Float.log2, Interval.log2, 1),
-    #     ("log10", ieee754.Float.log10, Interval.log10, 1),
-    #     ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
-    #     ("pow", pow_overflow, Interval.pow, 2),
-    # ]
+        ("exp", ieee754.Float.exp_, Interval.exp, 1),
+        ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
+        ("exp2", ieee754.Float.exp2, Interval.exp2, 1),
+        ("log", ieee754.Float.log, Interval.log, 1),
+        ("log2", ieee754.Float.log2, Interval.log2, 1),
+        ("log10", ieee754.Float.log10, Interval.log10, 1),
+        ("log1p", ieee754.Float.log1p, Interval.log1p, 1),
+        ("pow", pow_overflow, Interval.pow, 2),
+
+        ("sin", ieee754.Float.sin, Interval.sin, 1),
+        ("cos", ieee754.Float.cos, Interval.cos, 1),
+        ("tan", ieee754.Float.tan, Interval.tan, 1),
+        ("asin", ieee754.Float.asin, Interval.asin, 1),
+        ("acos", ieee754.Float.acos, Interval.acos, 1),
+        ("atan", ieee754.Float.atan, Interval.atan, 1),
+        ("atan2", ieee754.Float.atan2, Interval.atan2, 2),
+
+        ("sinh", sinh_overflow, Interval.sinh, 1),
+        ("cosh", ieee754.Float.cosh, Interval.cosh, 1),
+        ("tanh", ieee754.Float.tanh, Interval.tanh, 1),
+        ("asinh", ieee754.Float.asinh, Interval.asinh, 1),
+        ("acosh", ieee754.Float.acosh, Interval.acosh, 1),
+        ("atanh", ieee754.Float.atanh, Interval.atanh, 1),
+    ]
 
     random.seed()
     for name, fl_fn, ival_fn, argc in ops:
