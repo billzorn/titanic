@@ -3,6 +3,7 @@ Original implementation: https://github.com/herbie-fp/rival
 """
 
 from enum import IntEnum, unique
+from re import I
 import gmpy2 as gmp
 
 from titanfp.titanic import gmpmath
@@ -272,12 +273,12 @@ def _power_neg(x, y, ctxs):
     b = y._hi.floor(ctx)
     if a > b:
         if x._hi == ieee754.Float(0.0):
-            return Interval(lo=0.0, hi=0.0, lo_isfixed=False, hi_isfixed=False, err=True)
+            return Interval(lo=0.0, hi=0.0, lo_isfixed=False, hi_isfixed=False, err=True, ctx=ctx)
         else:
             return Interval(invalid=True)
     elif a == b:
         a_isfixed = y._lo_isfixed and y._hi_isfixed
-        p = Interval(lo=a, hi=a, lo_isfixed=a_isfixed, hi_isfixed=a_isfixed, err=err)
+        p = Interval(lo=a, hi=a, lo_isfixed=a_isfixed, hi_isfixed=a_isfixed, err=err, ctx=ctx)
         if is_odd_integer(a):
             return _power_pos(pos_x, p, ctxs).neg(ctx)
         else:
@@ -290,8 +291,8 @@ def _power_neg(x, y, ctxs):
         odd_hi = b if is_odd_integer(b) else b.sub(one, hi_ctx)
         even_lo = a.add(one, lo_ctx) if is_odd_integer(a) else a
         even_hi = b.sub(one, hi_ctx) if is_odd_integer(b) else b
-        odds = Interval(lo=odd_lo, hi=odd_hi, err=err)
-        evens = Interval(lo=even_lo, hi=even_hi, err=err)
+        odds = Interval(lo=odd_lo, hi=odd_hi, err=err, ctx=ctx)
+        evens = Interval(lo=even_lo, hi=even_hi, err=err, ctx=ctx)
         i1 = _power_pos(pos_x, evens)
         i2 = _power_pos(pos_x, odds).neg(ctx)
         return i1.union(i2)
@@ -604,7 +605,7 @@ class Interval(object):
         lo, lo_isfixed = self._lo_endpoint() if self._lo < other._lo else other._lo_endpoint()
         hi, hi_isfixed = self._hi_endpoint() if self._hi > other._hi else other._hi_endpoint()
         err = self._err or other._err
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=self.ctx)
 
     def clamp(self, lo, hi):
         """Returns a new interval that is clamped between `lo` and `hi`.
@@ -622,7 +623,7 @@ class Interval(object):
         lo = self._lo if self._lo > lo else lo
         hi = self._hi if self._hi < hi else hi
         err = self._err or self._lo < lo or self._hi > hi
-        return Interval(lo=lo, hi=hi, lo_isfixed=self._lo_isfixed, hi_isfixed=self._hi_isfixed, err=err)
+        return Interval(lo=lo, hi=hi, lo_isfixed=self._lo_isfixed, hi_isfixed=self._hi_isfixed, err=err, ctx=self.ctx)
 
     def split(self, val):
         """Takes a finite value `val` between `self.lo` and `self.hi` and
@@ -635,7 +636,7 @@ class Interval(object):
             raise ValueError('split value must be between the endpoints {}'.format(val))
         if self.invalid:
             return Interval(invalid=True), Interval(invalid=True)
-        return Interval(x=self, hi=val), Interval(x=self, lo=val)
+        return Interval(x=self, hi=val, ctx=self.ctx), Interval(x=self, lo=val, ctx=self.ctx)
 
     # utility funtions
 
@@ -757,7 +758,7 @@ class Interval(object):
         if yclass == IntervalSign.CONTAINS_ZERO:
             # result is split, so we give up and always return [-inf, inf]
             isfixed = self._lo_isfixed and other._lo_isfixed
-            return Interval(lo_isfixed=isfixed, hi_isfixed=isfixed)
+            return Interval(lo_isfixed=isfixed, hi_isfixed=isfixed, ctx=ctxs[0])
         elif xclass == IntervalSign.POSITIVE:
             if yclass == IntervalSign.POSITIVE:
                 return _divide(xlo, yhi, xhi, ylo, xclass, err, ctxs)
@@ -793,8 +794,41 @@ class Interval(object):
             hi, hi_isfixed = (neg_lo, self._lo_isfixed) if neg_lo > self._hi else (self._hi, self._hi_isfixed)
             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
 
+    def fmin(self, other, ctx=None):
+        """Performs fmin(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        ctx, _, _ = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo < other._lo else (other._lo, other._lo_isfixed)
+        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi < other._hi else (other._hi, other._hi_isfixed)
+        err = self.err or other.err
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    def fmax(self, other, ctx=None):
+        """Performs fmax(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        ctx, _, _ = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo > other._lo else (other._lo, other._lo_isfixed)
+        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi > other._hi else (other._hi, other._hi_isfixed)
+        err = self.err or other.err
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    def fdim(self, other, ctx=None):
+        """Performs fmax(x - y, 0) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        zero = Interval(lo=ieee754.Float(0.0), hi=ieee754.Float(0.0))
+        return self.sub(other, ctx).fmax(zero, ctx)
+
     def hypot(self, other, ctx=None):
-        """Performs hypot(other1, other2) on this interval and another.
+        """Performs sqrt(x^2 + y^2) on this interval and another.
         The precision of the interval can be specified by `ctx`.
         """
         if self._invalid or other._invalid:
@@ -1010,24 +1044,24 @@ class Interval(object):
             if is_even_integer(a):
                 lo, lo_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=lo_ctx)
                 hi, hi_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
             else:
                 lo, lo_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=lo_ctx)
                 hi, hi_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
         elif b.sub(a) == one:
             if is_even_integer(a):
                 hi1, hi1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=hi_ctx)
                 hi2, hi2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=hi_ctx)
                 hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
-                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
             else:
                 lo1, lo1_isfixed = _epfn(OP.sin, self._lo_endpoint(), ctx=lo_ctx)
                 lo2, lo2_isfixed = _epfn(OP.sin, self._hi_endpoint(), ctx=lo_ctx)
                 lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
-                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
+                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err, ctx=ctx)
         else:
-            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
+            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err, ctx=ctx)
     
     def cos(self, ctx=None):
         """Computes cos(x) for this interval and returns the result.
@@ -1047,24 +1081,24 @@ class Interval(object):
             if is_even_integer(a):
                 lo, lo_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
                 hi, hi_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
             else:
                 lo, lo_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
                 hi, hi_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
-                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
         elif b.sub(a) == one:
             if is_even_integer(a):
                 hi1, hi1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=hi_ctx)
                 hi2, hi2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=hi_ctx)
                 hi, hi_isfixed = (hi1, hi1_isfixed) if hi1 > hi2 else (hi2, hi2_isfixed)
-                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err)
+                return Interval(lo=one.neg(ctx), hi=hi, lo_isfixed=False, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
             else:
                 lo1, lo1_isfixed = _epfn(OP.cos, self._lo_endpoint(), ctx=lo_ctx)
                 lo2, lo2_isfixed = _epfn(OP.cos, self._hi_endpoint(), ctx=lo_ctx)
                 lo, lo_isfixed = (lo1, lo1_isfixed) if lo1 < lo2 else (lo2, lo2_isfixed)
-                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err)
+                return Interval(lo=lo, hi=one, lo_isfixed=lo_isfixed, hi_isfixed=False, err=self.err, ctx=ctx)
         else:
-            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err)
+            return Interval(lo=ieee754.Float(-1), hi=ieee754.Float(1), err=self.err, ctx=ctx)
 
     def tan(self, ctx=None):
         """Computes tan(x) for this interval and returns the result.
@@ -1083,9 +1117,9 @@ class Interval(object):
         if a == b:
             lo, lo_isfixed = _epfn(OP.tan, self._lo_endpoint(), ctx=lo_ctx)
             hi, hi_isfixed = _epfn(OP.tan, self._hi_endpoint(), ctx=hi_ctx)
-            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed)
+            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, ctx=ctx)
         else:
-            return Interval(err=True)
+            return Interval(invalid=True)
 
     def asin(self, ctx=None):
         """Computes arcsin(x) on this interval and returns the result.
@@ -1162,7 +1196,7 @@ class Interval(object):
             hi_pi = ieee754.Float._round_to_context(gmpmath.compute_constant('PI'), hi_ctx)
             err = err or other._hi >= zero
             invalid = other._lo == zero and other._hi == zero and self._lo == zero and self._hi == zero
-            return Interval(lo=lo_pi.neg(ctx), hi=hi_pi, err=err, invalid=invalid)
+            return Interval(lo=lo_pi.neg(ctx), hi=hi_pi, err=err, invalid=invalid, ctx=ctx)
     
     def sinh(self, ctx=None):
         """Computes sinh(x) on this interval and returns the result.
@@ -1231,7 +1265,35 @@ class Interval(object):
 
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.atanh, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
-#
+
+    def erf(self, ctx=None):
+        """Computes erf(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_incr(OP.erf, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def erfc(self, ctx=None):
+        """Computes erfc(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        return _monotonic_decr(OP.erfc, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def lgamma(self, ctx=None):
+        """Computes lgamma(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        raise ValueError('unimplemented method')
+
+    def tgamma(self, ctx=None):
+        """Computes tgamma(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        raise ValueError('unimplemented method')
+
 #
 #   Testing
 #
@@ -1429,6 +1491,7 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
     """Runs unit tests for the Interval type"""
 
     ops = [
+        
     ]
 
     ops = [
@@ -1441,6 +1504,10 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
         ("sqrt", ieee754.Float.sqrt, Interval.sqrt, 1),
         ("cbrt", ieee754.Float.cbrt, Interval.cbrt, 1),
         ("fma", ieee754.Float.fma, Interval.fma, 3),
+
+        ("fmin", ieee754.Float.fmin, Interval.fmin, 2),
+        ("fmax", ieee754.Float.fmax, Interval.fmax, 2),
+        ("fdim", ieee754.Float.fdim, Interval.fdim, 2),
 
         ("rint", rint, Interval.rint, 1),
         ("round", ieee754.Float.round, Interval.round, 1),
@@ -1471,6 +1538,9 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
         ("asinh", ieee754.Float.asinh, Interval.asinh, 1),
         ("acosh", ieee754.Float.acosh, Interval.acosh, 1),
         ("atanh", ieee754.Float.atanh, Interval.atanh, 1),
+
+        ("erf", ieee754.Float.erf, Interval.erf, 1),
+        ("erfc", ieee754.Float.erfc, Interval.erfc, 1),
     ]
 
     random.seed()
