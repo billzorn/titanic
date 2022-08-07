@@ -2,6 +2,7 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
+from ast import In
 from enum import IntEnum, unique
 from re import I
 import gmpy2 as gmp
@@ -205,6 +206,56 @@ def _divide(a, b, c, d, xclass, err, ctxs):
     lo, lo_isfixed = _epdiv(a, b, xclass, lo_ctx)
     hi, hi_isfixed = _epdiv(c, d, xclass, hi_ctx)
     return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+# assumes both `x` and `y` are positive
+def _fmod_pos(x, y, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    a = x._lo.div(y._hi, lo_ctx).trunc(lo_ctx)
+    b = x._hi.div(y._hi, hi_ctx).trunc(hi_ctx)
+    if a == b:
+        c = x._hi.div(y._hi, lo_ctx).trunc(lo_ctx)
+        d = x._hi.div(y._lo, hi_ctx).trunc(hi_ctx)
+        if c == d:
+            lo = x._lo.sub(c.mul(y._hi, hi_ctx), lo_ctx)
+            hi = x._hi.sub(c.mul(y._lo, lo_ctx), hi_ctx)
+            return Interval(lo=lo, hi=hi, err=err, ctx=ctx)
+        else:
+            lo = ieee754.Float(0.0, ctx)
+            hi = x._hi.div(c.add(ieee754.Float(1.0), hi_ctx), hi_ctx)
+            return Interval(lo=lo, hi=hi, err=err, ctx=ctx)
+    else:
+        lo = ieee754.Float(0.0, ctx)
+        hi = x._hi
+        return Interval(lo=lo, hi=hi, err=err, ctx=ctx)
+
+def _max(x, y):
+    return x if x > y else y
+
+def _min(x, y):
+    return x if x < y else y
+
+# assumes both `x` and `y` are positive
+def _remainder_pos(x, y, err, ctxs):
+    ctx, lo_ctx, hi_ctx = ctxs
+    a = x._lo.div(y._hi, lo_ctx).round(lo_ctx)
+    b = x._hi.div(y._hi, hi_ctx).round(hi_ctx)
+    two = ieee754.Float(2.0, ctx)
+    if a == b:
+        c = x._hi.div(y._hi, lo_ctx).round(lo_ctx)
+        d = x._hi.div(y._lo, hi_ctx).round(hi_ctx)
+        if c == d:
+            y2 = y._hi.div(two, ctx)    # round nearest ??
+            lo = _max(x._lo.sub(c.mul(y._hi, hi_ctx), lo_ctx), y2.neg())
+            hi = _min(x._hi.sub(c.mul(y._lo, lo_ctx), hi_ctx), y2)
+            return Interval(lo=lo, hi=hi, err=err, ctx=ctx)
+        else:
+            half = ieee754.Float(0.5, ctx)
+        y2_lo = _max(x._lo.sub(c.mul(y._hi, hi_ctx), lo_ctx), y._hi.div(two, ctx).neg())
+        y2_hi = x._hi.div(c.add(half, lo_ctx), lo_ctx).div(two, ctx)
+        return Interval(lo=_min(y2_lo, y2_hi.neg()), hi=y2_hi, err=err, ctx=ctx)
+    else:
+        y2 = y._hi.div(two, ctx)    # round nearest ??
+        return Interval(lo=y2.neg(), hi=y2, err=err, ctx=ctx)
 
 def _power(a, b, c, d, x, y, xclass, yclass, err, ctxs):
     ctx, lo_ctx, hi_ctx = ctxs
@@ -655,7 +706,24 @@ class Interval(object):
         hi_ctx = ieee754.ieee_ctx(es=ctx.es, nbits=ctx.nbits, rm=RM.RTP)
         return ctx, lo_ctx, hi_ctx
 
-    # most operations
+    # classification
+
+    def isfinite(self):
+        raise ValueError('not implemented')
+
+    def isinf(self):
+        raise ValueError('not implemented')
+
+    def isnan(self):
+        raise ValueError('not implemented')
+
+    def isnormal(self):
+        raise ValueError('not implemented')
+
+    def issignbit(self):
+        raise ValueError('not implemented')
+
+    # math operations
 
     def neg(self, ctx=None):
         """Negates this interval. The precision of the interval can be specified by `ctx`.
@@ -794,39 +862,6 @@ class Interval(object):
             hi, hi_isfixed = (neg_lo, self._lo_isfixed) if neg_lo > self._hi else (self._hi, self._hi_isfixed)
             return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=self.err, ctx=ctx)
 
-    def fmin(self, other, ctx=None):
-        """Performs fmin(x, y) on this interval and another.
-        The precision of the interval can be specified by `ctx`.
-        """
-        if self._invalid or other._invalid:
-            return Interval(invalid=True)
-
-        ctx, _, _ = self._select_context(self, ctx=ctx)
-        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo < other._lo else (other._lo, other._lo_isfixed)
-        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi < other._hi else (other._hi, other._hi_isfixed)
-        err = self.err or other.err
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
-    def fmax(self, other, ctx=None):
-        """Performs fmax(x, y) on this interval and another.
-        The precision of the interval can be specified by `ctx`.
-        """
-        if self._invalid or other._invalid:
-            return Interval(invalid=True)
-
-        ctx, _, _ = self._select_context(self, ctx=ctx)
-        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo > other._lo else (other._lo, other._lo_isfixed)
-        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi > other._hi else (other._hi, other._hi_isfixed)
-        err = self.err or other.err
-        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
-
-    def fdim(self, other, ctx=None):
-        """Performs fmax(x - y, 0) on this interval and another.
-        The precision of the interval can be specified by `ctx`.
-        """
-        zero = Interval(lo=ieee754.Float(0.0), hi=ieee754.Float(0.0))
-        return self.sub(other, ctx).fmax(zero, ctx)
-
     def hypot(self, other, ctx=None):
         """Performs sqrt(x^2 + y^2) on this interval and another.
         The precision of the interval can be specified by `ctx`.
@@ -873,6 +908,98 @@ class Interval(object):
         
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.cbrt, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def fmin(self, other, ctx=None):
+        """Performs fmin(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        ctx, _, _ = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo < other._lo else (other._lo, other._lo_isfixed)
+        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi < other._hi else (other._hi, other._hi_isfixed)
+        err = self.err or other.err
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    def fmax(self, other, ctx=None):
+        """Performs fmax(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self._invalid or other._invalid:
+            return Interval(invalid=True)
+
+        ctx, _, _ = self._select_context(self, ctx=ctx)
+        lo, lo_isfixed = (self._lo, self._lo_isfixed) if self._lo > other._lo else (other._lo, other._lo_isfixed)
+        hi, hi_isfixed = (self._hi, self._hi_isfixed) if self._hi > other._hi else (other._hi, other._hi_isfixed)
+        err = self.err or other.err
+        return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+
+    def copysign(self, other, ctx):
+        """Performs copysign(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        if self.invalid or other.invalid:
+            return Interval(invalid=True)
+
+        magnitude = self.fabs()
+        can_neg = other._lo.negative
+        can_pos = not other._hi.negative
+        err = self.err or self.err
+
+        ctx, lo_ctx, hi_ctx = self._select_context(magnitude, ctx=ctx)
+        if can_neg and can_pos:
+            lo, lo_isfixed = _epfn(OP.neg, (magnitude._hi, magnitude._hi_isfixed), ctx=lo_ctx)
+            return Interval(lo=lo, hi=magnitude.hi, lo_isfixed=lo_isfixed, hi_isfixed=magnitude.hi_isfixed, err=err, ctx=ctx)
+        elif can_neg and not can_pos:
+            lo, lo_isfixed = _epfn(OP.neg, (magnitude._hi, magnitude._hi_isfixed), ctx=lo_ctx)
+            hi, hi_isfixed = _epfn(OP.neg, (magnitude._lo, magnitude._lo_isfixed), ctx=hi_ctx)
+            return Interval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err, ctx=ctx)
+        else:
+            return Interval(x=magnitude)
+
+    def fdim(self, other, ctx=None):
+        """Performs fmax(x - y, 0) on this interval and another.
+        The precision of the interval can be specified by `ctx`.
+        """
+        zero = Interval(lo=ieee754.Float(0.0), hi=ieee754.Float(0.0))
+        return self.sub(other, ctx).fmax(zero, ctx)
+
+    def fmod(self, other, ctx=None):
+        """Computes fmod(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`."""
+        zero = ieee754.Float(0.0)
+        if self.invalid or other.invalid or (other._lo == zero and other.is_point()):
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        err = self.err or other.err or other.contains(zero)
+        pos_y = other.fabs(other.ctx)
+        if self._hi <= zero:
+            return _fmod_pos(self.neg(self.ctx), pos_y, err, ctxs).neg(ctx)
+        elif self._lo >= zero:
+            return _fmod_pos(self, pos_y, err, ctxs)
+        else:
+            neg, pos = self.split(zero)
+            return _fmod_pos(pos, pos_y, err, ctxs).union(_fmod_pos(neg.neg(neg.ctx), pos_y, err, ctxs).neg(ctx))
+
+    def remainder(self, other, ctx=None):
+        """Computes remainder(x, y) on this interval and another.
+        The precision of the interval can be specified by `ctx`."""
+        zero = ieee754.Float(0.0)
+        if self.invalid or other.invalid or (other._lo == zero and other.is_point()):
+            return Interval(invalid=True)
+
+        ctxs = self._select_context(self, ctx=ctx)
+        err = self.err or other.err or other.contains(zero)
+        pos_y = other.fabs(other.ctx)
+        if self._hi <= zero:
+            return _remainder_pos(self.neg(self.ctx), pos_y, err, ctxs).neg(ctx)
+        elif self._lo >= zero:
+            return _remainder_pos(self, pos_y, err, ctxs)
+        else:
+            neg, pos = self.split(zero)
+            return _remainder_pos(pos, pos_y, err, ctxs).union(_remainder_pos(neg.neg(neg.ctx), pos_y, err, ctxs).neg(ctx))
 
     def rint(self, ctx=None):
         """Rounds this interval to a nearby integer.
@@ -922,6 +1049,13 @@ class Interval(object):
 
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.trunc, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
+
+    def nearbyint(self, ctx=None):
+        """Rounds this interval to a nearby integer.
+        Normally, `nearbyint` respects rounding mode, but interval arithmetic will round conservatively.
+        The precision of the interval can be specified by `ctx`."""
+        # no different than `rint` except for flags, so ...
+        return self.rint(ctx)
 
     def exp(self, ctx=None):
         """Computes e^x on this interval and returns the result.
@@ -1491,10 +1625,6 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
     """Runs unit tests for the Interval type"""
 
     ops = [
-        
-    ]
-
-    ops = [
         ("neg", ieee754.Float.neg, Interval.neg, 1),
         ("fabs", ieee754.Float.fabs, Interval.fabs, 1),
         ("add", ieee754.Float.add, Interval.add, 2),
@@ -1508,12 +1638,16 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
         ("fmin", ieee754.Float.fmin, Interval.fmin, 2),
         ("fmax", ieee754.Float.fmax, Interval.fmax, 2),
         ("fdim", ieee754.Float.fdim, Interval.fdim, 2),
+        ("fmod", ieee754.Float.fmod, Interval.fmod, 2),
+        ("remainder", ieee754.Float.remainder, Interval.remainder, 2),
+        ("copysign", ieee754.Float.copysign, Interval.copysign, 2),
 
         ("rint", rint, Interval.rint, 1),
         ("round", ieee754.Float.round, Interval.round, 1),
         ("ceil", ieee754.Float.ceil, Interval.ceil, 1),
         ("floor", ieee754.Float.floor, Interval.floor, 1),
         ("trunc", ieee754.Float.trunc, Interval.trunc, 1),
+        ("nearbyint", ieee754.Float.nearbyint, Interval.nearbyint, 1),
 
         ("exp", ieee754.Float.exp_, Interval.exp, 1),
         ("expm1", ieee754.Float.expm1, Interval.expm1, 1),
@@ -1542,6 +1676,10 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
         ("erf", ieee754.Float.erf, Interval.erf, 1),
         ("erfc", ieee754.Float.erfc, Interval.erfc, 1),
     ]
+
+    # ops = [
+    #     ("copysign", ieee754.Float.copysign, Interval.copysign, 2),
+    # ]
 
     random.seed()
     for name, fl_fn, ival_fn, argc in ops:

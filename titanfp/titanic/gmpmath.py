@@ -281,10 +281,14 @@ def compute(opcode, *args, prec=53, trap_underflow=True, trap_overflow=True):
             result = gmp.inf(gmp.sign(result))
 
     # result code is not the classic ternary value in these cases
-        if opcode == ops.OP.round or opcode == ops.OP.ceil or opcode == ops.OP.floor or opcode == ops.OP.trunc:
-            ignore_rc = True
-        else:
-            ignore_rc = False
+    if opcode == ops.OP.round or \
+       opcode == ops.OP.ceil or \
+       opcode == ops.OP.floor or \
+       opcode == ops.OP.trunc or \
+       opcode == ops.OP.nearbyint:
+        ignore_rc = True
+    else:
+        ignore_rc = False
     return mpfr_to_digital(result, ignore_rc=ignore_rc)
 
 
