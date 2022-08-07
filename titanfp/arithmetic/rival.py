@@ -1429,6 +1429,40 @@ class Interval(object):
         raise ValueError('unimplemented method')
 
 #
+#   Interpreter
+#
+
+class Interpreter(interpreter.StandardInterpreter):
+    dtype = Interval
+    ctype = ieee754.IEEECtx
+
+    def arg_to_digital(self, x, ctx):
+        return self.dtype(x, ctx=ctx)
+
+    def _eval_constant(self, e, ctx):
+        try:
+            return None, self.dtype(x=self.constants[e.value], ctx=ctx)
+        except KeyError:
+            return None, self.round_to_context(gmpmath.compute_constant(e.value, prec=ctx.p), ctx=ctx)
+
+    def _eval_integer(self, e, ctx):
+        x = digital.Digital(m=e.i, exp=0, inexact=False)
+        return None, self.round_to_context(x, ctx=ctx)
+
+    def _eval_rational(self, e, ctx):
+        p = digital.Digital(m=e.p, exp=0, inexact=False)
+        q = digital.Digital(m=e.q, exp=0, inexact=False)
+        x = gmpmath.compute(OP.div, p, q, prec=ctx.p)
+        return None, self.round_to_context(x, ctx=ctx)
+
+    def _eval_digits(self, e, ctx):
+        x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
+        return None, self.round_to_context(x, ctx=ctx)
+
+    def round_to_context(self, x, ctx):
+        return self.dtype(x, ctx=ctx)
+
+#
 #   Testing
 #
 
