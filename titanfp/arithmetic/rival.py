@@ -505,7 +505,7 @@ def _power_pos(x, y, ctxs):
     if x._invalid or y._invalid:
         return Interval(invalid=True)
 
-    xclass = x.compare(ieee754.Float(1.0))
+    xclass = x.classify(ieee754.Float(1.0))
     xlo = x._lo_endpoint()
     xhi = x._hi_endpoint()
 
@@ -2167,7 +2167,7 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
     ]
 
     # ops = [
-    #     ("copysign", ieee754.Float.copysign, Interval.copysign, 2),
+    #     ("pow", pow_overflow, Interval.pow, 2),
     # ]
 
     random.seed()
