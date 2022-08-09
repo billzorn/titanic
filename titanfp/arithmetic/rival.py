@@ -4,6 +4,7 @@ Original implementation: https://github.com/herbie-fp/rival
 
 from enum import IntEnum, unique
 import gmpy2 as gmp
+import re
 
 from titanfp.titanic import gmpmath
 from . import interpreter
@@ -209,7 +210,7 @@ class BooleanInterval(object):
             if isinstance(x, BooleanInterval):
                 self._lo = x._lo
             elif isinstance(x, bool):
-                self._lo = lo
+                self._lo = x
             else:
                 raise ValueError('expected a boolean: lo={}'.format(lo))
         else:
@@ -224,7 +225,7 @@ class BooleanInterval(object):
             if isinstance(x, BooleanInterval):
                 self._hi = x._hi
             elif isinstance(x, bool):
-                self._hi = hi
+                self._hi = x
             else:
                 raise ValueError('expected a boolean: hi={}'.format(hi))
         else:
@@ -377,9 +378,9 @@ def _epmul(a_ep, b_ep, aclass, bclass, ctx):
     rounded = ieee754.Float._round_to_context(result, ctx=ctx)
     isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                 (a_isfixed and a.is_zero() and not a.isinf) or \
-                (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
+                (a_isfixed and a.isinf and bclass != IntervalOrder.CONTAINS) or \
                 (b_isfixed and b.is_zero() and not b.isinf) or \
-                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+                (b_isfixed and b.isinf and aclass != IntervalOrder.CONTAINS)
     return rounded, isfixed
 
 # endpoint computation for `div`
@@ -392,7 +393,7 @@ def _epdiv(a_ep, b_ep, aclass, ctx):
                 (a_isfixed and a.is_zero() and not a.isinf) or \
                 (a_isfixed and a.isinf) or \
                 (b_isfixed and b.is_zero() and not b.isinf) or \
-                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+                (b_isfixed and b.isinf and aclass != IntervalOrder.CONTAINS)
     return rounded, isfixed
 
 # endpoint computation for `rint` (really just `epfn`)
@@ -410,10 +411,10 @@ def _eppow(a_ep, b_ep, aclass, bclass, ctx):
     rounded = ieee754.Float._round_to_context(result, ctx=ctx)
     isfixed = (a_isfixed and b_isfixed and not rounded.inexact) or \
                 (a_isfixed and a == digital.Digital(c=1, exp=0)) or \
-                (a_isfixed and a == digital.Digital(c=0, exp=0) and bclass != IntervalSign.CONTAINS_ZERO) or \
-                (a_isfixed and a.isinf and bclass != IntervalSign.CONTAINS_ZERO) or \
+                (a_isfixed and a == digital.Digital(c=0, exp=0) and bclass != IntervalOrder.CONTAINS) or \
+                (a_isfixed and a.isinf and bclass != IntervalOrder.CONTAINS) or \
                 (b_isfixed and b == digital.Digital(c=0, exp=0)) or \
-                (b_isfixed and b.isinf and aclass != IntervalSign.CONTAINS_ZERO)
+                (b_isfixed and b.isinf and aclass != IntervalOrder.CONTAINS)
     return rounded, isfixed
 
 #
@@ -719,10 +720,8 @@ class Interval(object):
         elif x is not None:
             if isinstance(x, Interval):
                 self._ctx = x._ctx
-            elif isinstance(x, ieee754.Float):
-                self._ctx = type(self)._ctx
             else:
-                raise ValueError('invalid interval: x={}'.format(x))
+                self._ctx = type(self)._ctx
         else:
             self._ctx = type(self)._ctx
         
@@ -816,11 +815,18 @@ class Interval(object):
         else:
             return '[{}, {}]'.format(str(self._lo), str(self._hi))
 
+    def __int__(self):
+        return int(self.rint(self.ctx)._lo)
+
     # (visible) utility functions
 
     def is_point(self) -> bool:
         """"Is the interval a "singleton" interval, e.g. [a, a]?"""
         return self._lo == self._hi
+
+    def is_integer(self) -> bool:
+        """Is this interval an integer?"""
+        return self.is_point() and self._lo.is_integer()
 
     def contains(self, x) -> bool:
         """Does the interval contain `x`?"""
@@ -854,7 +860,7 @@ class Interval(object):
         definitely less than, maybe less than, maybe greater than, definitely greater than.
         All interval comparators can be implemented using this primitive."""
         if not isinstance(other, Interval):
-            raise ValueError('expected an interval: other={}'.format(other))
+            other = Interval(x=other)
         return self._hi < other._lo, self._lo < other._hi, self._hi > other._lo, self._lo > other._lo
 
     def union(self, other):
@@ -1709,7 +1715,15 @@ class Interpreter(interpreter.StandardInterpreter):
     ctype = ieee754.IEEECtx
 
     def arg_to_digital(self, x, ctx):
-        return self.dtype(x, ctx=ctx)
+        if isinstance(x, str):
+            m = re.match(r'\[(?P<lo>.*),(?P<hi>.*)\]', x)
+            if m is not None:
+                md = m.groupdict()
+                return self.dtype(lo=md['lo'], hi=md['hi'], ctx=ctx)
+            else:
+                return self.dtype(x, ctx=ctx)
+        else:
+            return self.dtype(x, ctx=ctx)
 
     def _eval_constant(self, e, ctx):
         try:
@@ -1736,27 +1750,172 @@ class Interpreter(interpreter.StandardInterpreter):
 
     #   Need to override boolean operators
 
-    # def _eval_lt(self, e, ctx):
-    #     if len(e.children) == 2:
-    #         in0 = self.evaluate(e.children[0], ctx)
-    #         in1 = self.evaluate(e.children[1], ctx)
-    #         return [in0, in1], in0.lt(in1)
-    #     elif len(e.children) < 2:
-    #         return [], BooleanInterval(x=True)
-    #     else:
-    #         inputs = []
-    #         a = self.evaluate(e.children[0], ctx)
-    #         inputs.append(a)
-    #         for child in e.children[1:]:
-    #             b = self.evaluate(child, ctx)
-    #             inputs.append(b)
-    #             lt = a.lt(b).bool_or_none()
-    #             if lt == False:
-    #                 return inputs, False
-    #             a = b
-    #         return [], a
+    def _eval_lt(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.lt(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.lt(b))
+                if result.bool_or_none() == False:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result
 
+    def _eval_gt(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.gt(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.gt(b))
+                if result.bool_or_none() == False:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result
 
+    def _eval_lte(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.lte(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.lte(b))
+                if result.bool_or_none() == False:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result
+
+    def _eval_gte(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.gte(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.gte(b))
+                if result.bool_or_none() == False:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result
+
+    def _eval_eq(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.eq(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.eq(b))
+                if result.bool_or_none() == False:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result
+
+    def _eval_neq(self, e, ctx):
+        if len(e.children) == 2:
+            in0 = self.evaluate(e.children[0], ctx)
+            in1 = self.evaluate(e.children[1], ctx)
+            return [in0, in1], in0.neq(in1)
+        elif len(e.children) < 2:
+            return [], BooleanInterval(x=True)
+        else:
+            inputs = []
+            result = BooleanInterval(x=True)
+            a = self.evaluate(e.children[0], ctx)
+            inputs.append(a)
+            for child in e.children[1:]:
+                b = self.evaluate(child, ctx)
+                inputs.append(b)
+                result = result.conjoin(a.eq(b))
+                if result.bool_or_none() == True:
+                    return inputs, BooleanInterval(x=False)
+                a = b
+            return [], result.neg()
+
+    def _eval_and(self, e, ctx):
+        result = BooleanInterval(x=True)
+        for child in e.children:
+            result = result.conjoin(self.evaluate(child, ctx))
+        return None, result
+
+    def _eval_or(self, e, ctx):
+        result = BooleanInterval(x=True)
+        for child in e.children:
+            result = result.disjoin(self.evaluate(child, ctx))
+        return None, result
+
+    def _eval_not(self, e, ctx):
+        return None, self.evaluate(e.children[0], ctx).negate()
+
+    def _eval_if(self, e, ctx):
+        cond = self.evaluate(e.cond, ctx)
+        if cond.invalid:    # this seems to be what Titanic normally
+            result = Interval(invalid=True)
+        elif cond.lo:
+            ift = self.evaluate(e.then_body, ctx)
+            if ift.invalid:
+                result = Interval(invalid=True)
+            else:
+                err = ift.err and cond.err
+                result = Interval(x=ift, err=err)
+        elif not cond.hi:
+            iff = self.evaluate(e.else_body, ctx)
+            if iff.invalid:
+                result = Interval(invalid=True)
+            else:
+                err = iff.err and cond.err
+                result = Interval(x=iff, err=err)
+        else:
+            ift = self.evaluate(e.then_body, ctx)
+            iff = self.evaluate(e.else_body, ctx)
+            u = ift.union(iff)
+            err = u.err and cond.err
+            result = Interval(x=u, err=err)
+        return None, result
 
 #
 #   Testing
