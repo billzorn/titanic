@@ -23,7 +23,7 @@ from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
 #from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
-from ..arithmetic import rival as interval
+from ..arithmetic import interval
 from ..arithmetic import mpmf
 
 here = os.path.dirname(os.path.realpath(__file__))
