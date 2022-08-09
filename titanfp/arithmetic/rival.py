@@ -2,9 +2,7 @@
 Original implementation: https://github.com/herbie-fp/rival
 """
 
-from ast import In
 from enum import IntEnum, unique
-from re import I
 import gmpy2 as gmp
 
 from titanfp.titanic import gmpmath
@@ -15,19 +13,9 @@ from ..titanic import digital
 from ..titanic.ops import OP, RM
 
 @unique
-class IntervalSign(IntEnum):
-    """Classification of an `Interval` by the sign of the endpoints.
-    See `Interval.classify()` for details."""
-    STRICTLY_NEGATIVE = -2,
-    NEGATIVE          = -1,
-    CONTAINS_ZERO     = 0,
-    POSITIVE          = 1,
-    STRICTLY_POSITIVE = 2,
-
-@unique
 class IntervalOrder(IntEnum):
-    """Classification of an `Interval` by comparison against a value.
-    See `Interval.compare()` for details."""
+    """Classification of an `Interval` by comparison against a scalar value.
+    See `Interval.classify()` for details."""
     STRICTLY_LESS     = -2,
     LESS              = -1,
     CONTAINS          = 0
@@ -115,6 +103,243 @@ def is_odd_integer(x):
         return False
     else:
         return (abs(x.c) & (2 ** -x.exp)) != 0
+
+#
+#   Boolean interval
+#
+
+class BooleanInterval(object):
+    """A boolean interval based on the Rival interval arithmetic library.
+    Original implementation at https://github.com/herbie-fp/rival written by Pavel Panchekha and Oliver Flatt.
+    The interval uses boolean bounds, immovability flags to signal a fixed endpoint,
+    and error flags to propagate partial or complete domain errors.
+    """
+
+    # represents the boolean interval [_lo, _hi]
+    # where _lo == _hi means the value is known.
+    # (using ieee754.Float since this makes the most sense)
+    _lo: bool = False
+    _hi: bool = True
+
+    # immovability flags
+    # from the original Rival implementation:
+    #   "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+    #   However, in some cases it is known this will not occur, largely due to overflow.
+    #   In those cases, the interval is marked fixed, or immovable."
+    #
+    _lo_isfixed: bool = False
+    _hi_isfixed: bool = True
+
+    # domain error
+    _err: bool = False
+
+    # invalid interval
+    _invalid: bool = False
+
+    # the internal state is not directly visible: expose it with properties
+
+    @property
+    def lo(self):
+        """The lower bound.
+        """
+        return self._lo
+
+    @property
+    def hi(self):
+        """The upper bound.
+        """
+        return self._hi
+
+    @property
+    def lo_isfixed(self):
+        """Is the lower bound immovable? 
+        
+        From the original Rival implementation:
+        "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+        However, in some cases it is known this will not occur, largely due to overflow.
+        In those cases, the interval is marked fixed, or immovable."
+        """
+        return self._lo_isfixed
+
+    @property
+    def hi_isfixed(self):
+        """Is the upper bound immovable? 
+        
+        From the original Rival implementation:
+        "Intervals may shrink (though they cannot grow) when computed at a higher precision.
+        However, in some cases it is known this will not occur, largely due to overflow.
+        In those cases, the interval is marked fixed, or immovable."
+        """
+        return self._hi_isfixed
+
+    @property
+    def err(self):
+        """Did a (partial) domain error occur?
+        Not to be confused with `invalid`    
+        """
+        return self._err
+
+    @property
+    def invalid(self):
+        """Did a complete domain error occur?       
+        """
+        return self._invalid
+
+    def __init__(self,
+                 x=None,
+                 lo=None,
+                 hi=None,
+                 lo_isfixed=False,
+                 hi_isfixed=False,
+                 err=False,
+                 invalid=False):
+        """Creates a new interval. The first argument `x` is either an interval
+        to clone and update, or a backing type to construct the smallest interval
+        according to the format specified by `ctx`. The arguments `lo` and `hi`
+        construts the interval `[lo, hi]`. If none of these arguments are provided,
+        the interval is initialized to the real number line `[-inf, inf]`.
+        All other fields can be optionally specified."""
+
+        # _lo
+        if lo is not None:
+            if not isinstance(lo, bool):
+                raise ValueError('expected a boolean: lo={}'.format(lo))
+            self._lo = lo
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._lo = x._lo
+            elif isinstance(x, bool):
+                self._lo = lo
+            else:
+                raise ValueError('expected a boolean: lo={}'.format(lo))
+        else:
+            self._lo = type(self)._lo
+        
+        # _hi
+        if hi is not None:
+            if not isinstance(hi, bool):
+                raise ValueError('expected a boolean: hi={}'.format(hi))
+            self._hi = hi
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._hi = x._hi
+            elif isinstance(x, bool):
+                self._hi = hi
+            else:
+                raise ValueError('expected a boolean: hi={}'.format(hi))
+        else:
+            self._hi = type(self)._hi  
+
+        # _lo_isfixed
+        if lo_isfixed is not None:
+            self._lo_isfixed = lo_isfixed
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._lo_isfixed = x._lo_isfixed
+            else:
+                self._lo_isfixed = False
+        else:
+            self._lo_isfixed = type(self)._lo_isfixed
+
+        # _hi_isfixed
+        if hi_isfixed is not None:
+            self._hi_isfixed = hi_isfixed
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._hi_isfixed = x._hi_isfixed
+            else:
+                self._hi_isfixed = False
+        else:
+            self._hi_isfixed = type(self)._hi_isfixed
+
+        # _err
+        if err is not None:
+            self._err = err
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._err = x._err
+            else:
+                self._err = False
+        else:
+            self._err = type(self)._err
+
+        # _invalid
+        if invalid is not None:
+            self._invalid = invalid
+        elif x is not None:
+            if isinstance(x, BooleanInterval):
+                self._invalid = x._invalid
+            else:
+                self._invalid = self._lo.isnan or self._hi.isnan
+        else:
+            self._invalid = type(self)._invalid
+
+        # check bounds
+        if self._lo and not self._hi:
+            raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi)) 
+
+    def __repr__(self):
+        return '{}(lo={}, hi={}, lo_isfixed={}, hi_isfixed={}, err={}, invalid={})'.format(
+            type(self).__name__, repr(self._lo), repr(self._hi), repr(self._lo_isfixed),
+            repr(self._hi_isfixed), repr(self._err), repr(self._invalid)
+        )
+
+    def __str__(self):
+        if self._invalid:
+            return '[invalid, invalid]'
+        else:
+            return '[{}, {}]'.format(str(self._lo), str(self._hi))
+
+    def bool_or_none(self):
+        """Returns the boolean representation of this interval if
+        both endpoints agree, else returns None."""
+        return self._lo if not self._invalid and self._lo == self._hi else None
+
+    def neg(self):
+        """Applies boolean NOT this interval."""
+        if self._invalid:
+            return BooleanInterval(invalid=True)
+
+        lo, lo_isfixed = (not self._hi, self._hi_isfixed)
+        hi, hi_isfixed = (not self._lo, self._lo_isfixed)
+        err = self._err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def conjoin(self, other):
+        """Applies boolean AND to this interval and another and returns the result"""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        lo = self._lo and other._lo
+        hi = self._hi and other._hi
+        lo_isfixed = self._lo_isfixed and other._lo_isfixed
+        hi_isfixed = self._hi_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def disjoin(self, other):
+        """Applies boolean OR to this interval and another and returns the result"""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        lo = self._lo or other._lo
+        hi = self._hi or other._hi
+        lo_isfixed = self._lo_isfixed and other._lo_isfixed
+        hi_isfixed = self._hi_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def union(self, other):
+        """Returns the union of this interval and another."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        lo = self._lo and other._lo
+        hi = self._hi or other._hi
+        lo_isfixed = self._lo_isfixed and other._lo_isfixed
+        hi_isfixed = self._hi_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
 #
 #   Interval endpoint computation
@@ -386,8 +611,8 @@ with gmp.local_context(gmp.context(), trap_inexact=False):
 class Interval(object):
     """An interval based on the Rival interval arithmetic library.
     Original implementation at https://github.com/herbie-fp/rival written by Pavel Panchekha and Oliver Flatt.
-    The interval uses MPFR floating-point value bounds, immovability flags to signal a fixed endpoint
-    due to overflow, and error flags to propagate partial or complete domain errors.
+    The interval uses MPFR floating-point value bounds, immovability flags to signal a fixed endpoint,
+    and error flags to propagate partial or complete domain errors.
     """
 
     # represents the real number interval [_lo, _hi]
@@ -396,11 +621,10 @@ class Interval(object):
     _hi: ieee754.Float = ieee754.Float(digital.Digital(negative=False, isinf=True), ctx=ieee754.ieee_ctx(11, 64))
 
     # immovability flags
-    # (from the original Rival implementation:
+    # from the original Rival implementation:
     #   "Intervals may shrink (though they cannot grow) when computed at a higher precision.
     #   However, in some cases it is known this will not occur, largely due to overflow.
     #   In those cases, the interval is marked fixed, or immovable."
-    # )
     #
     _lo_isfixed: bool = False
     _hi_isfixed: bool = False
@@ -424,7 +648,7 @@ class Interval(object):
 
     @property
     def hi(self):
-        """The lower bound.
+        """The upper bound.
         """
         return self._hi
 
@@ -581,9 +805,9 @@ class Interval(object):
             raise ValueError('invalid interval: lo={}, hi={}'.format(self._lo, self._hi)) 
 
     def __repr__(self):
-        return '{}(lo={}, hi={}, lo_isfixed={}, hi_isfixed={}, err={}, invalid={})'.format(
+        return '{}(lo={}, hi={}, lo_isfixed={}, hi_isfixed={}, err={}, invalid={}, ctx={})'.format(
             type(self).__name__, repr(self._lo), repr(self._hi), repr(self._lo_isfixed),
-            repr(self._hi_isfixed), repr(self._err), repr(self._invalid)
+            repr(self._hi_isfixed), repr(self._err), repr(self._invalid), repr(self._ctx)
         )
 
     def __str__(self):
@@ -602,31 +826,7 @@ class Interval(object):
         """Does the interval contain `x`?"""
         return self._lo <= x and x <= self._hi
 
-    def classify(self, strict=False) -> IntervalSign:
-        """Classifies this interval by the sign of the endpoints.
-        By default, this interval can be `NEGATIVE`, `CONTAINS_ZERO`, or `POSITIVE`
-        where intervals with 0 as an endpoint are either `NEGATIVE` and `POSITIVE`.
-        If `strict` is `True`, this interval can be `STRICTLY_NEGATIVE`, `CONTAINS_ZERO`
-        or `STRICTLY_POSITIVE` where intervals with 0 as an endpoint are classified
-        as `CONTAINS_ZERO`.
-        """
-        zero = digital.Digital(m=0, exp=0)
-        if strict:
-            if self._hi < zero:
-                return IntervalSign.STRICTLY_NEGATIVE
-            elif self._lo > zero:
-                return IntervalSign.STRICTLY_POSITIVE
-            else:
-                return IntervalSign.CONTAINS_ZERO
-        else:
-            if self._hi <= zero:
-                return IntervalSign.NEGATIVE
-            elif self._lo >= zero:
-                return IntervalSign.POSITIVE
-            else:
-                return IntervalSign.CONTAINS_ZERO
-
-    def compare(self, val, strict=False) -> IntervalOrder:
+    def classify(self, val=ieee754.Float(0.0), strict=False) -> IntervalOrder:
         """Classifies this interval by comparing against a value.
         By default, this interval can be `LESS`, `CONTAINS`, or `GREATER`
         where intervals with `val` as an endpoint are either `LESS` and `GREATER`.
@@ -648,6 +848,14 @@ class Interval(object):
                 return IntervalOrder.GREATER
             else:
                 return IntervalOrder.CONTAINS
+
+    def compare(self, other) -> bool:
+        """Compares this interval returning a 4-tuple of boolean values:
+        definitely less than, maybe less than, maybe greater than, definitely greater than.
+        All interval comparators can be implemented using this primitive."""
+        if not isinstance(other, Interval):
+            raise ValueError('expected an interval: other={}'.format(other))
+        return self._hi < other._lo, self._lo < other._hi, self._hi > other._lo, self._lo > other._lo
 
     def union(self, other):
         """Returns the union of this interval and another."""
@@ -688,6 +896,62 @@ class Interval(object):
         if self.invalid:
             return Interval(invalid=True), Interval(invalid=True)
         return Interval(x=self, hi=val, ctx=self.ctx), Interval(x=self, lo=val, ctx=self.ctx)
+
+    def eq(self, other):
+        """Returns a boolean interval representing `self` == `other`."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        m_lt, c_lt, c_gt, m_gt = self.compare(other)
+        lo = not c_lt and c_gt
+        hi = not m_lt and m_gt
+        isfixed = self._lo_isfixed and self._hi_isfixed and other._lo_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=isfixed, hi_isfixed=isfixed, err=err)
+
+    def lt(self, other):
+        """Returns a boolean interval representing `self` < `other`."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        m_lt, c_lt, _, _ = self.compare(other)
+        lo_isfixed = self._hi_isfixed and other._lo_isfixed
+        hi_isfixed = self._lo_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=m_lt, hi=c_lt, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def lte(self, other):
+        """Returns a boolean interval representing `self` <= `other`."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        _, _, c_gt, m_gt = self.compare(other)
+        lo_isfixed = self._hi_isfixed and other._lo_isfixed
+        hi_isfixed = self._lo_isfixed and other._hi_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=(not c_gt), hi=(not m_gt), lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def gt(self, other):
+        """Returns a boolean interval representing `self` > `other`."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        _, _, c_gt, m_gt = self.compare(other)
+        lo_isfixed = self._lo_isfixed and other._hi_isfixed
+        hi_isfixed = self._hi_isfixed and other._lo_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=m_gt, hi=c_gt, lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
+
+    def gte(self, other):
+        """Returns a boolean interval representing `self` >= `other`."""
+        if self._invalid or other._invalid:
+            return BooleanInterval(invalid=True)
+
+        m_lt, c_lt, _, _ = self.compare(other)
+        lo_isfixed = self._lo_isfixed and other._hi_isfixed
+        hi_isfixed = self._hi_isfixed and other._lo_isfixed
+        err = self._err or other._err
+        return BooleanInterval(lo=(not c_lt), hi=(not m_lt), lo_isfixed=lo_isfixed, hi_isfixed=hi_isfixed, err=err)
 
     # utility funtions
 
@@ -780,26 +1044,26 @@ class Interval(object):
         ctxs = self._select_context(self, other, ctx=ctx)
         err = self._err or other._err
 
-        if xclass == IntervalSign.POSITIVE:
-            if yclass == IntervalSign.POSITIVE:
+        if xclass == IntervalOrder.GREATER:
+            if yclass == IntervalOrder.GREATER:
                 return _multiply(xlo, ylo, xhi, yhi, xclass, yclass, err, ctxs)
-            elif yclass == IntervalSign.NEGATIVE:
+            elif yclass == IntervalOrder.LESS:
                 return _multiply(xhi, ylo, xlo, yhi, xclass, yclass, err, ctxs)
-            else:   # yclass == IntervalSign.ZERO
+            else:   # yclass == IntervalOrder.CONTAINS
                 return _multiply(xhi, ylo, xhi, yhi, xclass, yclass, err, ctxs)
-        elif xclass == IntervalSign.NEGATIVE:
-            if yclass == IntervalSign.POSITIVE:
+        elif xclass == IntervalOrder.LESS:
+            if yclass == IntervalOrder.GREATER:
                 return _multiply(xlo, yhi, xhi, ylo, xclass, yclass, err, ctxs)
-            elif yclass == IntervalSign.NEGATIVE:
+            elif yclass == IntervalOrder.LESS:
                 return _multiply(xhi, yhi, xlo, ylo, xclass, yclass, err, ctxs)
-            else:   # yclass == IntervalSign.ZERO
+            else:   # yclass == IntervalOrder.CONTAINS
                 return _multiply(xlo, yhi, xlo, ylo, xclass, yclass, err, ctxs)
-        else:   # xclass == IntervalSign.ZERO
-            if yclass == IntervalSign.POSITIVE:
+        else:   # xclass == IntervalOrder.CONTAINS
+            if yclass == IntervalOrder.GREATER:
                 return _multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
-            elif yclass == IntervalSign.NEGATIVE:
+            elif yclass == IntervalOrder.LESS:
                 return _multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
-            else:   # yclass == IntervalSign.ZERO
+            else:   # yclass == IntervalOrder.CONTAINS
                 i1 = _multiply(xhi, ylo, xlo, ylo, xclass, yclass, err, ctxs)
                 i2 = _multiply(xlo, yhi, xhi, yhi, xclass, yclass, err, ctxs)
                 return i1.union(i2)
@@ -820,27 +1084,27 @@ class Interval(object):
 
         ctxs = self._select_context(self, other, ctx=ctx)
         err = self.err or other.err or \
-               (self.classify(strict=True) == IntervalSign.CONTAINS_ZERO and \
-                other.classify(strict=True) == IntervalSign.CONTAINS_ZERO)
+               (self.classify(strict=True) == IntervalOrder.CONTAINS and \
+                other.classify(strict=True) == IntervalOrder.CONTAINS)
 
-        if yclass == IntervalSign.CONTAINS_ZERO:
+        if yclass == IntervalOrder.CONTAINS:
             # result is split, so we give up and always return [-inf, inf]
             isfixed = self._lo_isfixed and other._lo_isfixed
             return Interval(lo_isfixed=isfixed, hi_isfixed=isfixed, ctx=ctxs[0])
-        elif xclass == IntervalSign.POSITIVE:
-            if yclass == IntervalSign.POSITIVE:
+        elif xclass == IntervalOrder.GREATER:
+            if yclass == IntervalOrder.GREATER:
                 return _divide(xlo, yhi, xhi, ylo, xclass, err, ctxs)
-            else:   # yclass == IntervalSign.NEGATIVE
+            else:   # yclass == IntervalOrder.LESS
                 return _divide(xhi, yhi, xlo, ylo, xclass, err, ctxs)
-        elif xclass == IntervalSign.NEGATIVE:
-            if yclass == IntervalSign.POSITIVE:
+        elif xclass == IntervalOrder.LESS:
+            if yclass == IntervalOrder.GREATER:
                 return _divide(xlo, ylo, xhi, yhi, xclass, err, ctxs)
-            else:   # yclass == IntervalSign.NEGATIVE
+            else:   # yclass == IntervalSign.LESS
                 return _divide(xhi, ylo, xlo, yhi, xclass, err, ctxs)
-        else:   # xclass == IntervalSign.ZERO
-            if yclass == IntervalSign.POSITIVE:
+        else:   # xclass == IntervalOrder.GREATER
+            if yclass == IntervalOrder.GREATER:
                 return _divide(xlo, ylo, xhi, ylo, xclass, err, ctxs)
-            else:   # yclass == IntervalSign.NEGATIVE
+            else:   # yclass == IntervalOrder.LESS
                 return _divide(xhi, yhi, xlo, yhi, xclass, err, ctxs)
     
     def fabs(self, ctx=None):
@@ -852,9 +1116,9 @@ class Interval(object):
 
         ctx, lo_ctx, hi_ctx = self._select_context(self, ctx=ctx)
         cl = self.classify()
-        if cl == IntervalSign.POSITIVE:
+        if cl == IntervalOrder.GREATER:
             return Interval(x=self)
-        elif cl == IntervalSign.NEGATIVE:
+        elif cl == IntervalOrder.LESS:
             return self.neg(ctx)
         else:
             neg_lo, _ = _epfn(OP.neg, self._lo_endpoint(), ctx=hi_ctx)
@@ -1143,6 +1407,16 @@ class Interval(object):
         ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.log1p, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
 
+    def logb(self, ctx=None):
+        """Computes logb(x) on this interval and returns the result.
+        The precision of the interval can be specified by `ctx`"""
+        if self._invalid:
+            return Interval(invalid=True)
+
+        pos = self.fabs()
+        lpos = pos.log()
+        return lpos.floor(ctx)
+
     def pow(self, other, ctx=None):
         """Computes pow(x, y) for this interval and another and returns the result.
         The precision of the interval can be specified by `ctx`"""
@@ -1396,8 +1670,6 @@ class Interval(object):
             return Interval(invalid=True)
 
         ctxs = self._select_context(self, ctx=ctx)
-
-        ctxs = self._select_context(self, ctx=ctx)
         return _monotonic_incr(OP.atanh, clamped._lo_endpoint(), clamped._hi_endpoint(), clamped._err, ctxs)
 
     def erf(self, ctx=None):
@@ -1461,6 +1733,30 @@ class Interpreter(interpreter.StandardInterpreter):
 
     def round_to_context(self, x, ctx):
         return self.dtype(x, ctx=ctx)
+
+    #   Need to override boolean operators
+
+    # def _eval_lt(self, e, ctx):
+    #     if len(e.children) == 2:
+    #         in0 = self.evaluate(e.children[0], ctx)
+    #         in1 = self.evaluate(e.children[1], ctx)
+    #         return [in0, in1], in0.lt(in1)
+    #     elif len(e.children) < 2:
+    #         return [], BooleanInterval(x=True)
+    #     else:
+    #         inputs = []
+    #         a = self.evaluate(e.children[0], ctx)
+    #         inputs.append(a)
+    #         for child in e.children[1:]:
+    #             b = self.evaluate(child, ctx)
+    #             inputs.append(b)
+    #             lt = a.lt(b).bool_or_none()
+    #             if lt == False:
+    #                 return inputs, False
+    #             a = b
+    #         return [], a
+
+
 
 #
 #   Testing
