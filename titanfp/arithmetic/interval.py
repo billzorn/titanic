@@ -65,25 +65,11 @@ def rint(x: ieee754.Float, ctx):
 
     return x._round_to_context(gmpmath.mpfr_to_digital(result, ignore_rc=True), ctx=ctx, strict=True)
 
-
-def is_integer(x):
-    """Takes a Digital type `x` and returns true if `x` is an integer."""
-    if not isinstance(x, digital.Digital):
-        raise ValueError('expected a Digital type: {}'.format(x))
-    elif x.isinf or x.isnan:
-        return False
-    elif x.is_zero() or x.exp >= 0:
-        return True
-    elif x.exp > x.c.bit_length():
-        return False
-    else:
-        return (x.c & ((2 ** -x.exp) - 1)) == 0
-
 def is_even_integer(x):
     """Takes a Digital type `x` and returns true if `x` is an even integer."""
     if not isinstance(x, digital.Digital):
         raise ValueError('expected a Digital type: {}'.format(x))
-    elif not is_integer(x):
+    elif not x.is_integer():
         return False
     elif x.is_zero() or x.exp > 0:
         return True
@@ -96,7 +82,7 @@ def is_odd_integer(x):
     """Takes a Digital type `x` and returns true if `x` is an odd integer."""
     if not isinstance(x, digital.Digital):
         raise ValueError('expected a Digital type: {}'.format(x))
-    elif not is_integer(x):
+    elif not x.is_integer():
         return False
     elif x.is_zero() or x.exp > 0:
         return False
@@ -906,7 +892,7 @@ class Interval(object):
     def eq(self, other):
         """Returns a boolean interval representing `self` == `other`."""
         if self._invalid or other._invalid:
-            return BooleanInterval(invalid=True)
+            return BooleanInterval(lo=False, hi=False)
 
         m_lt, c_lt, c_gt, m_gt = self.compare(other)
         lo = not c_lt and c_gt
@@ -918,7 +904,7 @@ class Interval(object):
     def lt(self, other):
         """Returns a boolean interval representing `self` < `other`."""
         if self._invalid or other._invalid:
-            return BooleanInterval(invalid=True)
+            return BooleanInterval(lo=False, hi=False)
 
         m_lt, c_lt, _, _ = self.compare(other)
         lo_isfixed = self._hi_isfixed and other._lo_isfixed
@@ -929,7 +915,7 @@ class Interval(object):
     def lte(self, other):
         """Returns a boolean interval representing `self` <= `other`."""
         if self._invalid or other._invalid:
-            return BooleanInterval(invalid=True)
+            return BooleanInterval(lo=False, hi=False)
 
         _, _, c_gt, m_gt = self.compare(other)
         lo_isfixed = self._hi_isfixed and other._lo_isfixed
@@ -940,7 +926,7 @@ class Interval(object):
     def gt(self, other):
         """Returns a boolean interval representing `self` > `other`."""
         if self._invalid or other._invalid:
-            return BooleanInterval(invalid=True)
+            return BooleanInterval(lo=False, hi=False)
 
         _, _, c_gt, m_gt = self.compare(other)
         lo_isfixed = self._lo_isfixed and other._hi_isfixed
@@ -951,7 +937,7 @@ class Interval(object):
     def gte(self, other):
         """Returns a boolean interval representing `self` >= `other`."""
         if self._invalid or other._invalid:
-            return BooleanInterval(invalid=True)
+            return BooleanInterval(lo=False, hi=False)
 
         m_lt, c_lt, _, _ = self.compare(other)
         lo_isfixed = self._lo_isfixed and other._hi_isfixed
@@ -979,19 +965,47 @@ class Interval(object):
     # classification
 
     def isfinite(self):
-        raise ValueError('not implemented')
+        if self._invalid:
+            return Interval(lo=False, hi=False)
+
+        lo = self._lo.isfinite() and self._hi.isfinite()
+        hi = self._lo.isfinite() or self._hi.isfinite()
+        isfixed = self._lo_isfixed and self._hi_isfixed
+        err = self.err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=isfixed, hi_isfixed=isfixed, err=err)
 
     def isinf(self):
-        raise ValueError('not implemented')
+        if self._invalid:
+            return Interval(lo=False, hi=False)
+
+        lo = self._lo.isinf and self._hi.isinf
+        hi = self._lo.isinf or self._hi.isinf
+        isfixed = self._lo_isfixed and self._hi_isfixed
+        err = self.err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=isfixed, hi_isfixed=isfixed, err=err)
 
     def isnan(self):
-        raise ValueError('not implemented')
+        return BooleanInterval(lo=self._invalid, hi=self._invalid)
 
     def isnormal(self):
-        raise ValueError('not implemented')
+        if self._invalid:
+            return Interval(lo=False, hi=False)
 
-    def issignbit(self):
-        raise ValueError('not implemented')
+        lo = self._lo.isnormal() and self._hi.isnormal()
+        hi = self._lo.isnormal() or self._hi.isnormal()
+        isfixed = self._lo_isfixed and self._hi_isfixed
+        err = self.err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=isfixed, hi_isfixed=isfixed, err=err)
+
+    def signbit(self):
+        if self._invalid:
+            return Interval(lo=False, hi=False)
+
+        lo = self._lo.signbit() and self._hi.signbit()
+        hi = self._lo.signbit() or self._hi.signbit()
+        isfixed = self._lo_isfixed and self._hi_isfixed
+        err = self.err
+        return BooleanInterval(lo=lo, hi=hi, lo_isfixed=isfixed, hi_isfixed=isfixed, err=err)
 
     # math operations
 
@@ -1725,6 +1739,9 @@ class Interpreter(interpreter.StandardInterpreter):
         else:
             return self.dtype(x, ctx=ctx)
 
+    def round_to_context(self, x, ctx):
+        return self.dtype(x, ctx=ctx)
+
     def _eval_constant(self, e, ctx):
         try:
             return None, self.dtype(x=self.constants[e.value], ctx=ctx)
@@ -1745,10 +1762,19 @@ class Interpreter(interpreter.StandardInterpreter):
         x = gmpmath.compute_digits(e.m, e.e, e.b, prec=ctx.p)
         return None, self.round_to_context(x, ctx=ctx)
 
-    def round_to_context(self, x, ctx):
-        return self.dtype(x, ctx=ctx)
+    def _eval_isinf(self, e, ctx):
+        in0 = self.evaluate(e.children[0], ctx)
+        if isinstance(in0, BooleanInterval):
+            return [in0], BooleanInterval(lo=False, hi=False)
+        else:
+            return [in0], in0.isinf()
 
-    #   Need to override boolean operators
+    def _eval_isnan(self, e, ctx):
+        in0 = self.evaluate(e.children[0], ctx)
+        if isinstance(in0, BooleanInterval):
+            return [in0], BooleanInterval(lo=False, hi=False)
+        else:
+            return [in0], in0.isnan()
 
     def _eval_lt(self, e, ctx):
         if len(e.children) == 2:
