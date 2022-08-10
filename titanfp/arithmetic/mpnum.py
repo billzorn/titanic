@@ -7,7 +7,7 @@ class MPNum(digital.Digital):
     @classmethod
     def _select_context(cls, *args, ctx=None):
         raise ValueError('virtual method: unimplemented')
-    
+
     @classmethod
     def _round_to_context(cls, unrounded, ctx=None, strict=False):
         raise ValueError('virtual method: unimplemented')
@@ -179,7 +179,6 @@ class MPNum(digital.Digital):
     def sinh(self, ctx=None):
         ctx = self._select_context(self, ctx=ctx)
         result = gmpmath.compute(OP.sinh, self, prec=ctx.p)
-        print(result)
         return self._round_to_context(result, ctx=ctx, strict=True)
 
     def tan(self, ctx=None):

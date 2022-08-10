@@ -1,5 +1,5 @@
-"""Interval arithmetic based on Rival
-Original implementation: https://github.com/herbie-fp/rival
+"""Interval arithmetic based on Rival.
+Original implementation: https://github.com/herbie-fp/rival.
 """
 
 from enum import IntEnum, unique
