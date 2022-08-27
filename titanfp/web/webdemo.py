@@ -23,6 +23,7 @@ from ..arithmetic import interpreter, analysis
 from ..arithmetic import ieee754, posit
 #from ..arithmetic import softfloat, softposit
 from ..arithmetic import sinking, sinkingposit
+from ..arithmetic import interval
 from ..arithmetic import mpmf
 
 here = os.path.dirname(os.path.realpath(__file__))
@@ -43,6 +44,7 @@ webdemo_eval_backends = {
     #'softposit': softposit.Interpreter,
     'sinking-point': sinking.Interpreter,
     'sinking-posit': sinkingposit.Interpreter,
+    'interval': interval.Interpreter,
     'mpmf': mpmf.Interpreter,
 }
 

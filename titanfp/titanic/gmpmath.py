@@ -6,8 +6,6 @@ implemented with GMP as a backend, but conveniently extended to Sinking Point.
 import gmpy2 as gmp
 import re
 
-from . import utils
-
 from .integral import bitmask
 from . import conversion
 from . import ops
@@ -101,8 +99,8 @@ def digital_to_mpfr(x):
                 return gmp.mul(significand, scale)
 
 
-def mpfr_to_digital(x):
-    rounded = x.rc != 0
+def mpfr_to_digital(x, ignore_rc=False):
+    rounded = x.rc != 0 and not ignore_rc
 
     if gmp.is_nan(x):
         return digital.Digital(
@@ -122,7 +120,9 @@ def mpfr_to_digital(x):
     # get the right answer, so if we rounded away from zero, it's -1, and if we rounded
     # towards zero, it's 1.
 
-    if negative:
+    if ignore_rc:
+        rc = 0
+    elif negative:
         rc = x.rc
     else:
         rc = -x.rc
@@ -235,7 +235,7 @@ gmp_ops = [
 ]
 
 
-def compute(opcode, *args, prec=53):
+def compute(opcode, *args, prec=53, trap_underflow=True, trap_overflow=True):
     """Compute op(*args), with up to prec bits of precision.
     op is specified via opcode, and arguments are universal digital numbers.
     Arguments are treated as exact: the inexactness and result code of the result
@@ -258,8 +258,9 @@ def compute(opcode, *args, prec=53):
             emax=gmp.get_emax_max(),
             subnormalize=False,
             # in theory, we'd like to know about these...
-            trap_underflow=True,
-            trap_overflow=True,
+            # only interval arithmetic disables these
+            trap_underflow=trap_underflow,
+            trap_overflow=trap_overflow,
             # inexact and invalid operations should not be a problem
             trap_inexact=False,
             trap_invalid=False,
@@ -274,8 +275,21 @@ def compute(opcode, *args, prec=53):
             round=gmp.RoundToZero,
     ) as gmpctx:
         result = op(*inputs)
+        if gmpctx.underflow:
+            result = gmp.mpfr(0)
+        elif gmpctx.overflow:
+            result = gmp.inf(gmp.sign(result))
 
-    return mpfr_to_digital(result)
+    # result code is not the classic ternary value in these cases
+    if opcode == ops.OP.round or \
+       opcode == ops.OP.ceil or \
+       opcode == ops.OP.floor or \
+       opcode == ops.OP.trunc or \
+       opcode == ops.OP.nearbyint:
+        ignore_rc = True
+    else:
+        ignore_rc = False
+    return mpfr_to_digital(result, ignore_rc=ignore_rc)
 
 
 constant_exprs = {
@@ -392,6 +406,28 @@ def ieee_fbound(w, p):
         fbound = gmp.exp2(emax) * fbound_scale
 
     return mpfr_to_digital(fbound)
+
+def ieee_fmax(w, p):
+    """Compute the the largest finite IEEE 754 floating-point value
+    for a given w and p.
+    """
+    emax = (1 << (w - 1)) - 1
+
+    with gmp.context(
+            precision=p + 1,
+            emin=gmp.get_emin_min(),
+            emax=gmp.get_emax_max(),
+            trap_underflow=True,
+            trap_overflow=True,
+            trap_inexact=True,
+            trap_invalid=True,
+            trap_erange=True,
+            trap_divzero=True,
+    ):
+        fmax_scale = gmp.mpfr(2) - gmp.exp2(1 - p)
+        fmax = gmp.exp2(emax) * fmax_scale
+
+    return mpfr_to_digital(fmax)
 
 
 _mpz_2 = gmp.mpz(2)
