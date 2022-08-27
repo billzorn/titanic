@@ -1,16 +1,15 @@
-from abc import abstractmethod
 from ..titanic import digital, gmpmath
 from ..titanic.ops import OP
 
 class MPNum(digital.Digital):
 
     # must be implemented in subclasses
-    @abstractmethod
-    def _select_context(cls, *args, ctx=None):
+    @classmethod
+    def _select_context(cls, *args, ctx=None) -> digital.Digital:
         raise ValueError('virtual method: unimplemented')
 
-    @abstractmethod
-    def _round_to_context(cls, unrounded, ctx=None, strict=False):
+    @classmethod
+    def _round_to_context(cls, unrounded, ctx=None, strict=False) -> digital.Digital:
         raise ValueError('virtual method: unimplemented')
 
     # most operations
