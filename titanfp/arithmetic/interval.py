@@ -2,9 +2,9 @@
 Original implementation: https://github.com/herbie-fp/rival.
 """
 
-from enum import IntEnum, unique
 import gmpy2 as gmp
-import math, re
+import multiprocessing as mp
+import math, re, enum
 
 from titanfp.titanic import gmpmath
 from . import interpreter
@@ -13,8 +13,8 @@ from . import ieee754
 from ..titanic import digital
 from ..titanic.ops import OP, RM
 
-@unique
-class IntervalOrder(IntEnum):
+@enum.unique
+class IntervalOrder(enum.IntEnum):
     """Classification of an `Interval` by comparison against a scalar value.
     See `Interval.classify()` for details."""
     STRICTLY_LESS     = -2,
@@ -460,10 +460,24 @@ def _fmod_pos(x, y, err, ctxs):
         return Interval(lo=lo, hi=hi, err=err, ctx=ctx)
 
 def _max(x, y):
-    return x if x > y else y
+    if x.isnan:
+        return y
+    elif y.isnan:
+        return x
+    elif x < y:
+        return y
+    else:
+        return x
 
 def _min(x, y):
-    return x if x < y else y
+    if x.isnan:
+        return y
+    elif y.isnan:
+        return x
+    elif x > y:
+        return y
+    else:
+        return x
 
 # assumes both `x` and `y` are positive
 def _remainder_pos(x, y, err, ctxs):
@@ -613,37 +627,40 @@ def _convex(op, xmin, ymin, x, err, ctxs):
         return i1.union(i2)
 
 def _midpoint(lo, hi, ctx):
-    step = math.floor((Ordinal(hi, ctx).ord - Ordinal(lo, ctx).ord) / 2)
+    ord_diff = abs(Ordinal(hi, ctx).ord - Ordinal(lo, ctx).ord)
+    step = math.floor(ord_diff / 2)
     return Ordinal(Ordinal(lo, ctx).ord + step, ctx).f
 
-def _convex_find_min(op, ctxs, lo, hi):
+def _convex_find_min(op, ctxs, lo: ieee754.Float, hi: ieee754.Float):
     ctx, lo_ctx, hi_ctx = ctxs
-    mlo = hi.add(lo.mul(ieee754.Float(2.0, ctx), ctx), ctx).div(ieee754.Float(3.0, ctx), ctx)
-    mhi = lo.add(hi.mul(ieee754.Float(2.0, ctx), ctx), ctx).div(ieee754.Float(3.0, ctx), ctx)
+    two = ieee754.Float(2.0)
+    three = ieee754.Float(3.0)
+
+    mlo = hi.add(lo.mul(two, ctx), ctx).div(three, ctx)
+    mhi = lo.add(hi.mul(two, ctx), ctx).div(three, ctx)
     while True:
-        # compute lgamma on endpoints
-        ylo = ieee754.Float._round_to_context(gmpmath.compute(op, lo, prec=ctx.p), hi_ctx)
-        yhi = ieee754.Float._round_to_context(gmpmath.compute(op, hi, prec=ctx.p), hi_ctx)
-        ymlo = ieee754.Float._round_to_context(gmpmath.compute(op, mlo, prec=ctx.p), lo_ctx)
-        ymhi = ieee754.Float._round_to_context(gmpmath.compute(op, mhi, prec=ctx.p), lo_ctx)
+        ylo = ieee754.Float._round_to_context(gmpmath.compute(op, lo, prec=ctx.p), ctx=hi_ctx)
+        ymlo = ieee754.Float._round_to_context(gmpmath.compute(op, mlo, prec=ctx.p), ctx=lo_ctx)
+        ymhi = ieee754.Float._round_to_context(gmpmath.compute(op, mhi, prec=ctx.p), ctx=lo_ctx)
+        yhi = ieee754.Float._round_to_context(gmpmath.compute(op, hi, prec=ctx.p), ctx=hi_ctx)
         # invariant: ylo >= ymlo and yhi >= ymhi
         # base case: ylo and yhi = +inf.bf
+        # lgamma decreasing from lo to mlo and increasing from mhi to hi
+
         if abs(Ordinal(lo, ctx).ord - Ordinal(hi, ctx).ord) <= 3:
             dy1 = ymlo.sub(ylo, hi_ctx)
             dy2 = ymhi.sub(yhi, hi_ctx)
             # overcorrect for possible deviation downward
-            dy = _max(dy1, dy2).div(ieee754.Float(2.0, ctx), hi_ctx)
-            return mlo, ymlo.add(dy, lo_ctx)
+            dy = _max(dy1, dy2).div(two, hi_ctx)
+            return mlo, _min(ymlo, ymhi).add(dy, lo_ctx)
         elif abs(Ordinal(mlo, ctx).ord - Ordinal(mhi, ctx).ord) <= 1:
-            # loop
-            lo_ord = Ordinal(Ordinal(mlo, ctx).ord - 1, ctx)
-            hi_ord = Ordinal(Ordinal(mhi, ctx).ord + 1, ctx)
-            lo, mlo, mhi, hi = (lo_ord.f, mlo, mhi, hi_ord.f)
+            prev_mlo = mlo.next_float()
+            next_mhi = mhi.next_float()
+            lo, mlo, mhi, hi = (prev_mlo, mlo, mhi, next_mhi)
         elif ymlo > ymhi:
-            # if true, lgamma decreasing from mlo to mhi; loop
+            # lgamma is decreasing from mlo to mhi
             lo, mlo, mhi, hi = (mlo, mhi, _midpoint(mhi, hi, ctx), hi)
         else:
-            # loop
             lo, mlo, mhi, hi = (lo, _midpoint(lo, mlo, ctx), mlo, mhi)
 
 def _overflow(lo, hi, x, y):
@@ -1425,10 +1442,6 @@ class Interval(object):
         ctxs = self._select_context(self, ctx=ctx)
         result = _monotonic_incr(OP.exp, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
         return _overflow(digital.Digital(x=EXP_OVERFLOW, negative=True), EXP_OVERFLOW, self, result)
-
-    def exp_(self, ctx=None):
-        """Alternative name for `Interval.exp()`"""
-        return self.exp(ctx=ctx)
     
     def expm1(self, ctx=None):
         """Computes e^x - 1 on this interval and returns the result.
@@ -1788,37 +1801,47 @@ class Interval(object):
     def lgamma(self, ctx=None):
         """Computes lgamma(x) on this interval and returns the result.
         The precision of the interval can be specified by `ctx`"""
+        global LGAMMA_POS_PREC
+        global LGAMMA_POS_XMIN
+        global LGAMMA_POS_YMIN
+
         if self._invalid:
             return Interval(invalid=True)
+
+        # constants
+        zero = ieee754.Float(0.0)
+        one = ieee754.Float(1.0)
+        one_half = ieee754.Float(1.5)
     
         ctxs = self._select_context(self, ctx=ctx)
-        if self._lo > ieee754.Float(1.5):
+        ctx, _, _ = ctxs
+        if self._lo > one_half:
             # gamma is stricly increasing here
             return _monotonic_incr(OP.lgamma, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
-        elif self._lo >= ieee754.Float(0.0) and self._hi <= ieee754.Float(1.4):
+        elif self._lo >= zero and self._hi <= ieee754.Float(1.4):
             # gamma is stricly decreasing here
             return _monotonic_decr(OP.lgamma, self._lo_endpoint(), self._hi_endpoint(), self._err, ctxs)
-        elif self._lo >= ieee754.Float(0.0):
+        elif self._lo >= zero:
             # gamma has a single minimum here which is about 1.46163
             # common enough to cache
-            global LGAMMA_POS_PREC
-            global LGAMMA_POS_XMIN
-            global LGAMMA_POS_YMIN
-
             if LGAMMA_POS_PREC is None or ctx.p > LGAMMA_POS_PREC:
                 xmin, ymin = _convex_find_min(OP.lgamma, ctxs, ieee754.Float(1.46163), ieee754.Float(1.46164))
                 LGAMMA_POS_XMIN = xmin
                 LGAMMA_POS_YMIN = ymin
                 LGAMMA_POS_PREC = ctx.p
             return _convex(OP.lgamma, LGAMMA_POS_XMIN, LGAMMA_POS_YMIN, self, self._err, ctxs)
-        elif self._lo.add(ieee754.Float(1.0, ctx), ctx) == self._lo:
+        elif self._hi > ieee754.Float(1.4):
+            # interval covers 0 and the largest minimum; split to be safe
+            i1, i2 = self.split(zero)
+            return i1.lgamma().union(i2.lgamma())
+        elif self._lo.add(one, ctx) == self._lo:
             # gaps are too big find finding minima, just give up
             if self._lo == self._hi:
                 return Interval(invalid=True)
             else:
                 return Interval(lo_isfixed=self._lo_isfixed, hi_isfixed=True, err=True, ctx=ctx)
         elif self._lo.floor(ctx) == self._hi.floor(ctx) or \
-             self._hi == self._lo.floor(ctx).add(ieee754.Float(1.0), ctx):
+             self._hi == self._lo.floor(ctx).add(one, ctx):
              # gamma is concave in some direction between xlo and xhi
              xmin, ymin = _convex_find_min(OP.lgamma, ctxs, self._lo.floor(ctx), self._hi.ceil(ctx))
              return _convex(OP.lgamma, xmin, ymin, self, self._err, ctxs)
@@ -1831,11 +1854,10 @@ class Interval(object):
             return i1.lgamma(ctx).union(i2.lgamma(ctx))
         else:
             lo_ceil = self._lo.ceil(ctx)
-            lo_ceilp1 = lo_ceil.add(ieee754.Float(1.0, ctx), ctx)
+            lo_ceilp1 = lo_ceil.add(one, ctx)
             ep_isfixed = self._lo_isfixed and self._hi_isfixed
             i1 = Interval(x=self, hi=lo_ceil, hi_isfixed=ep_isfixed, err=self._err, ctx=ctx)
             i2 = Interval(lo=lo_ceil, lo_isfixed=ep_isfixed, hi=lo_ceilp1, hi_isfixed=ep_isfixed, err=self._err, ctx=ctx)
-            print('{} {} => {} {}'.format(str(i1), str(i2), str(i1.lgamma(ctx)), str(i2.lgamma(ctx))))
             return i1.lgamma(ctx).union(i2.lgamma(ctx))
 
     def tgamma(self, ctx=None):
@@ -1844,14 +1866,14 @@ class Interval(object):
         if self._invalid:
             return Interval(invalid=True)
 
-        lgmy = self.lgamma(ctx)
-        absy = lgmy.exp(ctx)
+        logy = self.lgamma(ctx)
+        absy = logy.exp(ctx)
         lo = self._lo
         hi = self._hi
         if lo > ieee754.Float(0.0):
             return absy
         elif lo.floor(ctx) != hi.floor(ctx):
-            return Interval(lo_isfixed=self._lo_isfixed, hi_isfixed=self._hi_isfixed, err=self._err, ctx=ctx)
+            return Interval(lo_isfixed=self._lo_isfixed, hi_isfixed=self._hi_isfixed, err=True, ctx=ctx)
         elif lo == hi and lo.is_integer():
             return Interval(invalid=True)
         elif is_even_integer(lo.floor(ctx)):
@@ -2254,7 +2276,21 @@ def sinh_overflow(x: ieee754.Float, ctx):
     result = gmpmath.compute(OP.sinh, x, prec=ctx.p, trap_underflow=False, trap_overflow=False)
     return ieee754.Float._round_to_context(result, ctx)
 
-def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False):
+def test_interval_thread(config):
+    name, fl_fn, ival_fn, argc, num_tests, ctx, verbose = config
+    if argc == 1:
+        test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
+    elif argc == 2:
+        test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
+    elif argc == 3:
+        test_ternary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
+    else:
+        raise ValueError('invalid argc for testing: argc={}'.format(argc))
+
+def test_interval(num_tests=10_000,
+                  ctx=ieee754.ieee_ctx(11, 64),
+                  verbose=True,
+                  threads=None):
     """Runs unit tests for the Interval type"""
 
     ops = [
@@ -2308,19 +2344,20 @@ def test_interval(num_tests=10_000, ctx=ieee754.ieee_ctx(11, 64), verbose=False)
 
         ("erf", ieee754.Float.erf, Interval.erf, 1),
         ("erfc", ieee754.Float.erfc, Interval.erfc, 1),
+
+        ("lgamma", ieee754.Float.lgamma, Interval.lgamma, 1),
+        ("tgamma", ieee754.Float.tgamma, Interval.tgamma, 1),
     ]
 
-    ops = [
-        ("lgamma", ieee754.Float.lgamma, Interval.lgamma, 1)
-    ]
+    # ops = [
+    
+    # ]
 
     random.seed()
-    for name, fl_fn, ival_fn, argc in ops:
-        if argc == 1:
-            test_unary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
-        elif argc == 2:
-            test_binary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
-        elif argc == 3:
-            test_ternary_fn(name, fl_fn, ival_fn, num_tests, ctx, verbose)
-        else:
-            raise ValueError('invalid argc for testing: argc={}'.format(argc))
+    configs = [(n, fl, ival, argc, num_tests, ctx, verbose) for n, fl, ival, argc in ops]
+    if threads is not None:
+        with mp.Pool(processes=threads) as pool:
+            pool.map(test_interval_thread, configs)
+    else:
+        for config in configs:
+            test_interval_thread(config)
