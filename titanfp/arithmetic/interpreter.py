@@ -139,7 +139,7 @@ class Evaluator(object):
         ast.Tanh: '_eval_tanh',
         ast.Exp: '_eval_exp',
         ast.Exp2: '_eval_exp2',
-        ast.Expm1: '_eval_exmp1',
+        ast.Expm1: '_eval_expm1',
         ast.Log: '_eval_log',
         ast.Log10: '_eval_log10',
         ast.Log1p: '_eval_log1p',
