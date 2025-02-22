@@ -14,6 +14,32 @@ from . import ops
 from . import digital
 from .sinking import Sink
 
+class SignedOverflow(gmp.OverflowResultError):
+    """
+    Signals that an operation has overflowed.
+
+    Returns whether the result would have been positive or negative.
+    """
+
+    sign: bool
+
+    def __init__(self, msg: str, sign: bool):
+        super().__init__(msg)
+        self.sign = sign
+
+class SignedUnderflow(gmp.UnderflowResultError):
+    """
+    Signals that an operation has Underflow
+
+    Returns whether the result would have been positive or negative.
+    """
+
+    sign: bool
+
+    def __init__(self, msg: str, sign: bool):
+        super().__init__(msg)
+        self.sign = sign
+
 
 def mpfr(x, prec):
     with gmp.context(
@@ -252,28 +278,34 @@ def compute(opcode, *args, prec=53):
         if gmp.is_nan(f):
             return mpfr_to_digital(f)
     with gmp.context(
-            # one extra bit, so that we can round from RTZ to RNE
-            precision=prec + 1,
-            emin=gmp.get_emin_min(),
-            emax=gmp.get_emax_max(),
-            subnormalize=False,
-            # in theory, we'd like to know about these...
-            trap_underflow=True,
-            trap_overflow=True,
-            # inexact and invalid operations should not be a problem
-            trap_inexact=False,
-            trap_invalid=False,
-            trap_erange=False,
-            trap_divzero=False,
-            # We'd really like to know about this as well, but it causes i.e.
-            #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
-            # I don't know if that behavior is more hilarious or annoying.
-            # This context property was removed in gmpy2 2.1
-            #trap_expbound=False,
-            # use RTZ for easy multiple rounding later
-            round=gmp.RoundToZero,
+        # one extra bit, so that we can round from RTZ to RNE
+        precision=prec + 1,
+        emin=gmp.get_emin_min(),
+        emax=gmp.get_emax_max(),
+        subnormalize=False,
+        # in theory, we'd like to know about these...
+        # when these exceptions occur, we lose the sign of the value
+        # so we should instead try to catch it later
+        trap_underflow=False,
+        trap_overflow=False,
+        # inexact and invalid operations should not be a problem
+        trap_inexact=False,
+        trap_invalid=False,
+        trap_erange=False,
+        trap_divzero=False,
+        # We'd really like to know about this as well, but it causes i.e.
+        #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
+        # I don't know if that behavior is more hilarious or annoying.
+        # This context property was removed in gmpy2 2.1
+        #trap_expbound=False,
+        # use RTZ for easy multiple rounding later
+        round=gmp.RoundToZero,
     ) as gmpctx:
         result = op(*inputs)
+        if gmpctx.overflow:
+            raise SignedOverflow('overflow', gmp.is_signed(result))
+        elif gmpctx.underflow():
+            raise SignedUnderflow('underflow', gmp.is_signed(result))
 
     return mpfr_to_digital(result)
 
