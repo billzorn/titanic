@@ -252,6 +252,11 @@ class BaseInterpreter(Evaluator):
     def _eval_val(self, e, ctx):
         return None, self.arg_to_digital(e.value, ctx)
 
+    def _eval_hexnum(self, e, ctx):
+        # older versions of gmpy2 are broken
+        value = e.value.replace('-0x', '0x-')
+        return None, self.arg_to_digital(value, ctx)
+
     def _eval_constant(self, e, ctx):
         try:
             return None, self.constants[e.value]
