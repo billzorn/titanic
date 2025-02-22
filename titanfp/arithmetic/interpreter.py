@@ -893,7 +893,7 @@ class StandardInterpreter(SimpleInterpreter):
 
     def _eval_exp(self, e, ctx):
         in0 = self.evaluate(e.children[0], ctx)
-        return [in0], in0.exp(ctx=ctx)
+        return [in0], in0.exp_(ctx=ctx)
 
     def _eval_exp2(self, e, ctx):
         in0 = self.evaluate(e.children[0], ctx)
