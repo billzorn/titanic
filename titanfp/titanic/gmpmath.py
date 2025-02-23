@@ -127,8 +127,15 @@ def digital_to_mpfr(x):
                 return gmp.mul(significand, scale)
 
 
-def mpfr_to_digital(x):
-    rounded = x.rc != 0
+def mpfr_to_digital(x, ignore_rc: bool = False):
+    # handle the case where we should ignore the result code
+    if ignore_rc:
+        rc = 0
+    else:
+        rc = x.rc
+
+    # compute inexactness
+    rounded = rc != 0
 
     if gmp.is_nan(x):
         return digital.Digital(
@@ -148,10 +155,8 @@ def mpfr_to_digital(x):
     # get the right answer, so if we rounded away from zero, it's -1, and if we rounded
     # towards zero, it's 1.
 
-    if negative:
-        rc = x.rc
-    else:
-        rc = -x.rc
+    if not negative:
+        rc = -rc
 
     if gmp.is_infinite(x):
         return digital.Digital(
@@ -260,6 +265,13 @@ gmp_ops = [
     gmp.gamma,
 ]
 
+_round_int_ops = [
+    gmp.ceil,
+    gmp.floor,
+    gmp.rint,
+    gmp.round_away,
+    gmp.trunc,
+]
 
 def compute(opcode, *args, prec=53):
     """Compute op(*args), with up to prec bits of precision.
@@ -301,13 +313,16 @@ def compute(opcode, *args, prec=53):
         # use RTZ for easy multiple rounding later
         round=gmp.RoundToZero,
     ) as gmpctx:
+        # compute the result and check for overflow/underflow
         result = op(*inputs)
         if gmpctx.overflow:
             raise SignedOverflow('overflow', gmp.is_signed(result))
-        elif gmpctx.underflow():
+        elif gmpctx.underflow:
             raise SignedUnderflow('underflow', gmp.is_signed(result))
-
-    return mpfr_to_digital(result)
+    # clear the result code for certain operations
+    ignore_rc = op in _round_int_ops
+    # convert to the Digital type
+    return mpfr_to_digital(result, ignore_rc=ignore_rc)
 
 
 constant_exprs = {
