@@ -139,7 +139,7 @@ class Evaluator(object):
         ast.Tanh: '_eval_tanh',
         ast.Exp: '_eval_exp',
         ast.Exp2: '_eval_exp2',
-        ast.Expm1: '_eval_exmp1',
+        ast.Expm1: '_eval_expm1',
         ast.Log: '_eval_log',
         ast.Log10: '_eval_log10',
         ast.Log1p: '_eval_log1p',
@@ -251,6 +251,11 @@ class BaseInterpreter(Evaluator):
 
     def _eval_val(self, e, ctx):
         return None, self.arg_to_digital(e.value, ctx)
+
+    def _eval_hexnum(self, e, ctx):
+        # older versions of gmpy2 are broken
+        value = e.value.replace('-0x', '0x-')
+        return None, self.arg_to_digital(value, ctx)
 
     def _eval_constant(self, e, ctx):
         try:
@@ -888,7 +893,7 @@ class StandardInterpreter(SimpleInterpreter):
 
     def _eval_exp(self, e, ctx):
         in0 = self.evaluate(e.children[0], ctx)
-        return [in0], in0.exp(ctx=ctx)
+        return [in0], in0.exp_(ctx=ctx)
 
     def _eval_exp2(self, e, ctx):
         in0 = self.evaluate(e.children[0], ctx)

@@ -14,6 +14,32 @@ from . import ops
 from . import digital
 from .sinking import Sink
 
+class SignedOverflow(gmp.OverflowResultError):
+    """
+    Signals that an operation has overflowed.
+
+    Returns whether the result would have been positive or negative.
+    """
+
+    sign: bool
+
+    def __init__(self, msg: str, sign: bool):
+        super().__init__(msg)
+        self.sign = sign
+
+class SignedUnderflow(gmp.UnderflowResultError):
+    """
+    Signals that an operation has Underflow
+
+    Returns whether the result would have been positive or negative.
+    """
+
+    sign: bool
+
+    def __init__(self, msg: str, sign: bool):
+        super().__init__(msg)
+        self.sign = sign
+
 
 def mpfr(x, prec):
     with gmp.context(
@@ -101,8 +127,15 @@ def digital_to_mpfr(x):
                 return gmp.mul(significand, scale)
 
 
-def mpfr_to_digital(x):
-    rounded = x.rc != 0
+def mpfr_to_digital(x, ignore_rc: bool = False):
+    # handle the case where we should ignore the result code
+    if ignore_rc:
+        rc = 0
+    else:
+        rc = x.rc
+
+    # compute inexactness
+    rounded = rc != 0
 
     if gmp.is_nan(x):
         return digital.Digital(
@@ -122,10 +155,8 @@ def mpfr_to_digital(x):
     # get the right answer, so if we rounded away from zero, it's -1, and if we rounded
     # towards zero, it's 1.
 
-    if negative:
-        rc = x.rc
-    else:
-        rc = -x.rc
+    if not negative:
+        rc = -rc
 
     if gmp.is_infinite(x):
         return digital.Digital(
@@ -234,6 +265,13 @@ gmp_ops = [
     gmp.gamma,
 ]
 
+_round_int_ops = [
+    gmp.ceil,
+    gmp.floor,
+    gmp.rint,
+    gmp.round_away,
+    gmp.trunc,
+]
 
 def compute(opcode, *args, prec=53):
     """Compute op(*args), with up to prec bits of precision.
@@ -252,30 +290,39 @@ def compute(opcode, *args, prec=53):
         if gmp.is_nan(f):
             return mpfr_to_digital(f)
     with gmp.context(
-            # one extra bit, so that we can round from RTZ to RNE
-            precision=prec + 1,
-            emin=gmp.get_emin_min(),
-            emax=gmp.get_emax_max(),
-            subnormalize=False,
-            # in theory, we'd like to know about these...
-            trap_underflow=True,
-            trap_overflow=True,
-            # inexact and invalid operations should not be a problem
-            trap_inexact=False,
-            trap_invalid=False,
-            trap_erange=False,
-            trap_divzero=False,
-            # We'd really like to know about this as well, but it causes i.e.
-            #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
-            # I don't know if that behavior is more hilarious or annoying.
-            # This context property was removed in gmpy2 2.1
-            #trap_expbound=False,
-            # use RTZ for easy multiple rounding later
-            round=gmp.RoundToZero,
+        # one extra bit, so that we can round from RTZ to RNE
+        precision=prec + 1,
+        emin=gmp.get_emin_min(),
+        emax=gmp.get_emax_max(),
+        subnormalize=False,
+        # in theory, we'd like to know about these...
+        # when these exceptions occur, we lose the sign of the value
+        # so we should instead try to catch it later
+        trap_underflow=False,
+        trap_overflow=False,
+        # inexact and invalid operations should not be a problem
+        trap_inexact=False,
+        trap_invalid=False,
+        trap_erange=False,
+        trap_divzero=False,
+        # We'd really like to know about this as well, but it causes i.e.
+        #   mul(-25, inf) -> raise TypeError("mul() requires 'mpfr','mpfr' arguments")
+        # I don't know if that behavior is more hilarious or annoying.
+        # This context property was removed in gmpy2 2.1
+        #trap_expbound=False,
+        # use RTZ for easy multiple rounding later
+        round=gmp.RoundToZero,
     ) as gmpctx:
+        # compute the result and check for overflow/underflow
         result = op(*inputs)
-
-    return mpfr_to_digital(result)
+        if gmpctx.overflow:
+            raise SignedOverflow('overflow', gmp.is_signed(result))
+        elif gmpctx.underflow:
+            raise SignedUnderflow('underflow', gmp.is_signed(result))
+    # clear the result code for certain operations
+    ignore_rc = op in _round_int_ops
+    # convert to the Digital type
+    return mpfr_to_digital(result, ignore_rc=ignore_rc)
 
 
 constant_exprs = {

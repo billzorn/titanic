@@ -7,7 +7,7 @@ packages = ['titanfp', 'titanfp.titanic', 'titanfp.fpbench', 'titanfp.arithmetic
 
 [project]
 name = "titanfp"
-version = "0.1.0"
+version = "0.1.1"
 description = "number systems research with FPBench, including implementation of posits"
 authors = [
     { name = "Bill Zorn", email = "billzorn@cs.washington.edu" },
