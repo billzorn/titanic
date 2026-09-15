@@ -1,9 +1,9 @@
 import antlr4
 
 from .fpcommon import *
-from .FPYLexer import FPYLexer
-from .FPYParser import FPYParser
-from .FPYVisitor import FPYVisitor
+from .gen.FPYLexer import FPYLexer
+from .gen.FPYParser import FPYParser
+from .gen.FPYVisitor import FPYVisitor
 
 class Visitor(FPYVisitor):
 

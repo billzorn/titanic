@@ -3,11 +3,11 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ['titanfp', 'titanfp.titanic', 'titanfp.fpbench', 'titanfp.arithmetic']
+packages = ['titanfp', 'titanfp.titanic', 'titanfp.fpbench', 'titanfp.fpbench.gen', 'titanfp.arithmetic']
 
 [project]
 name = "titanfp"
-version = "0.1.1"
+version = "0.1.2"
 description = "number systems research with FPBench, including implementation of posits"
 authors = [
     { name = "Bill Zorn", email = "billzorn@cs.washington.edu" },

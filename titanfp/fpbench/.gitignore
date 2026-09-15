@@ -1,9 +1,10 @@
 *.interp
 *.tokens
 antlr/*.jar
-FPCoreLexer.py
-FPCoreParser.py
-FPCoreVisitor.py
-FPYLexer.py
-FPYParser.py
-FPYVisitor.py
+
+# ANTLR writes its generated parsers into gen/.  Ignore the generated modules
+# but keep the package marker, which is checked in.  (The root .gitignore has a
+# blanket `gen/` rule, so the directory has to be re-included first.)
+!gen/
+gen/*
+!gen/__init__.py

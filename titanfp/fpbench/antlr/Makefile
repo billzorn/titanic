@@ -3,7 +3,7 @@
 # requires java to be available on the path. openjdk version "1.8.0_151" works.
 
 ANTLR_JAR = antlr-4.9.3-complete.jar
-PYTHON_TARGET_DIR = ..
+PYTHON_TARGET_DIR = ../gen
 RM = rm -f
 
 all: fpcore fpy

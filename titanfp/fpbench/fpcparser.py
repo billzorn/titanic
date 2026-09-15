@@ -2,9 +2,9 @@ import typing
 import re
 
 import antlr4
-from .FPCoreLexer import FPCoreLexer
-from .FPCoreParser import FPCoreParser
-from .FPCoreVisitor import FPCoreVisitor
+from .gen.FPCoreLexer import FPCoreLexer
+from .gen.FPCoreParser import FPCoreParser
+from .gen.FPCoreVisitor import FPCoreVisitor
 
 from .fpcommon import *
 from . import fpcast as ast
